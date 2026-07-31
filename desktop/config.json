@@ -1,0 +1,12 @@
+{
+  "appName": "Madrasa EMS",
+  "preferLocalBundle": true,
+  "offlineOnly": true,
+  "enableDevTools": true,
+  "localServerHost": "127.0.0.1",
+  "localServerPort": 17654,
+  "width": 1366,
+  "height": 768,
+  "minWidth": 1024,
+  "minHeight": 640
+}

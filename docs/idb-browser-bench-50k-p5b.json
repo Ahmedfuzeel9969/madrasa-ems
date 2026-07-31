@@ -1,0 +1,39 @@
+{
+  "generatedAt": "2026-07-08T09:43:10.190Z",
+  "phase": "Priority 5B browser verification",
+  "scales": [
+    {
+      "records": 50000,
+      "inserted": 50000,
+      "insertMs": 124836.4,
+      "indexBuildMs": 5787537,
+      "tokensPerRow": 16,
+      "estimatedSearchPuts": 800000,
+      "msPerRowIndex": 115.751,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 1211.6,
+      "filterMs": 956.1,
+      "searchMs": 4086.1,
+      "admissionFirstPageMs": 1224.9,
+      "pageSortTotal": 50000,
+      "filterTotal": 42857,
+      "searchTotal": 42857,
+      "persistence": { "expected": 50000, "actual": 50000, "ok": true }
+    }
+  ],
+  "checks": {
+    "noLoadAllOnSortedPage": true,
+    "noColAllOnSortedPage": true,
+    "noLoadAllOnSearch": true,
+    "noColAllOnSearch": true,
+    "persistenceOk": true,
+    "legacyArrearsDisabled": true
+  },
+  "playwrightDurationMs": 6003528,
+  "classification": "VERIFIED"
+}

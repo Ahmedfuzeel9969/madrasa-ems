@@ -1,0 +1,233 @@
+﻿access-keys.js	37	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+access-keys.js	38	Read	P2	.collection('TenantSettings').doc('accessKeys').get()
+access-keys.js	52	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+access-keys.js	53	Read	P2	.collection('TenantSettings').doc('accessKeys')
+access-keys.js	139	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+access-keys.js	140	Read	P2	.collection('StaffPermissions').doc(staffId)
+access-keys.js	160	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+access-keys.js	161	Read	P2	.collection('StaffPermissions').doc(staffId).get()
+access-keys.js	178	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+access-keys.js	179	Read	P2	.collection('ParentAccessKeys').doc(studentId)
+access-keys.js	201	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+access-keys.js	202	Read	P2	.collection('ParentAccessKeys').doc(sid).get()
+admin-panel.js	284	Read	P1	db.collection('All_Madrasas').doc(uid).collection('TenantSettings').doc('auditEx
+admin-panel.js	1198	Read	P1	return db.collection('All_Madrasas').doc(tenantId).collection('Staff_Links')
+admin-panel.js	2233	Read	P1	db.collection('All_Madrasas').doc(tenantId).collection('ParentMessages').doc(msg
+admin-panel.js	2252	Read	P1	return db.collection('All_Madrasas').doc(tenantId).collection('ParentMessages')
+admin-panel.js	2403	Read	P1	db.collection('All_Madrasas').doc(tenantId).collection('ParentMessages').doc(out
+admin-panel.js	2718	Read	P1	db.collection('All_Madrasas').doc(uid).collection('SecurityLog')
+admission.js	476	Read	P0	let docRef = firestore.collection('All_Madrasas').doc(uid);
+admission.js	594	Write	P0	docRef.collection('Rejected').doc(currentEditingId).delete();
+admission.js	595	Write	P0	docRef.collection('Registrations').doc(user.id).set(firestoreDoc);
+admission.js	598	Write	P0	docRef.collection('Registrations').doc(user.id).set(firestoreDoc, { merge: true 
+admission.js	602	Write	P0	docRef.collection('Registrations').doc(user.id).set(firestoreDoc);
+admission.js	608	Write	P0	docRef.collection('Rejected').doc(user.id).set(firestoreDoc, { merge: true });
+admission.js	611	Write	P0	docRef.collection('Registrations').doc(currentEditingId).delete();
+admission.js	612	Write	P0	docRef.collection('Rejected').doc(user.id).set(firestoreDoc);
+admission.js	616	Write	P0	docRef.collection('Rejected').doc(user.id).set(firestoreDoc);
+admission.js	1270	Write	P0	db.collection('All_Madrasas').doc(uid).collection(collectionName).doc(id).delete
+attendance-helper.js	38	Read	P0	return db.collection('All_Madrasas').doc(uid).collection('Attendance')
+attendance.js	54	Read	P0	attConfigUnsub = db.collection('All_Madrasas').doc(tenantId).collection('Attenda
+attendance.js	55	Listener	P0	.doc('periods').onSnapshot(function (doc) {
+attendance.js	146	Read	P0	return db.collection('All_Madrasas').doc(uid).collection('Attendance').doc(dbKey
+attendance.js	159	Read	P0	db.collection('All_Madrasas').doc(uid).collection('Attendance').doc(dbKey)
+attendance.js	209	Read	P0	db.collection('All_Madrasas').doc(uid).collection('Attendance').doc(dbKey)
+attendance.js	270	Read	P0	currentAttListener = db.collection('All_Madrasas').doc(uid)
+attendance.js	271	Listener	P0	.collection('Attendance').doc(dbKey).onSnapshot((doc) => {
+attendance.js	674	Read	P0	const col = db.collection('All_Madrasas').doc(uid).collection('Attendance');
+attendance.js	982	Write	P0	db.collection('All_Madrasas').doc(uid).collection('Attendance').doc(window.curre
+auth.js	63	Read	P1	return firestore.collection('SuperAdmins').doc(user.uid).get()
+auth.js	67	Read	P1	return firestore.collection('SuperAdmins').doc(emailKey).get()
+auth.js	71	Read	P1	return firestore.collection('SuperAdmins').where('email', '==', email).limit(1).
+auth.js	76	Read	P1	return firestore.collection('SuperAdmins').where('email', '==', lower).limit(1).
+auth.js	86	Read	P1	return firestore.collection('Platform_Users').doc(user.uid).get()
+auth.js	448	Write	P1	firestore.collection('All_Madrasas').doc(tenantId).set({
+auth.js	801	Read	P1	unsubGlobalSettings = firestore.collection('System_Settings').doc('Subscription'
+auth.js	802	Listener	P1	.onSnapshot(function (doc) {
+auth.js	820	Read	P1	unsubSystemSettings = firestore.collection('System_Settings').doc('System')
+auth.js	821	Listener	P1	.onSnapshot(function (doc) {
+auth.js	1083	Read	P1	firestore.collection('All_Madrasas').doc(uid).get({ source: 'server' })
+auth.js	1323	Read	P1	return firestore.collection('All_Madrasas').doc(ctx.tenantId).get()
+auth.js	1394	Read	P1	unsubMadrasa = firestore.collection('All_Madrasas').doc(user.uid)
+auth.js	1395	Listener	P1	.onSnapshot({ includeMetadataChanges: true }, function (doc) {
+auth.js	1444	Read	P1	unsubMadrasa = firestore.collection('All_Madrasas').doc(ctx.tenantId)
+auth.js	1445	Listener	P1	.onSnapshot({ includeMetadataChanges: true }, function (doc) {
+auth.js	1485	Read	P1	unsubMadrasa = firestore.collection('All_Madrasas').doc(tenantId)
+auth.js	1486	Listener	P1	.onSnapshot({ includeMetadataChanges: true }, function (doc) {
+auth.js	1515	Read	P1	unsubMadrasa = firestore.collection('All_Madrasas').doc(ctx.tenantId)
+auth.js	1516	Listener	P1	.onSnapshot({ includeMetadataChanges: true }, function (doc) {
+auth.js	1749	Write	P1	firestore.collection('All_Madrasas').doc(user.uid).set({
+backup-service.js	95	Listener	P1	function collectRegistrationSnapshot(uid) {
+backup-service.js	99	Read	P1	db.collection('All_Madrasas').doc(uid).collection('Registrations').get(),
+backup-service.js	100	Read	P1	db.collection('All_Madrasas').doc(uid).collection('Rejected').get()
+backup-service.js	119	Read	P1	return db.collection('All_Madrasas').doc(uid).collection('Attendance').get()
+backup-service.js	137	Read	P1	var ref = db.collection('All_Madrasas').doc(uid);
+backup-service.js	139	Read	P1	return ref.collection(cfg.collection).doc(cfg.docId).get({ source: 'server' })
+backup-service.js	146	Read	P1	return ref.collection(cfg.collection).get({ source: 'server' })
+backup-service.js	159	Read	P1	return ref.collection(cfg.collection).get({ source: 'server' })
+backup-service.js	285	Listener	P1	collectRegistrationSnapshot(uid),
+backup-service.js	330	Read	P1	return getDb().collection('All_Madrasas').doc(uid)
+backup-service.js	331	Read	P1	.collection('BackupSnapshots').doc(backupId);
+backup-service.js	352	Read	P1	var ref = backupMetaRef(uid, backupId).collection('modules').doc(key);
+backup-service.js	361	Write	P1	batch.set(backupMetaRef(uid, backupId).collection('modules').doc('_complaints'),
+backup-service.js	369	Write	P1	batch.set(backupMetaRef(uid, backupId).collection('modules').doc('_registration'
+backup-service.js	377	Write	P1	batch.set(backupMetaRef(uid, backupId).collection('modules').doc('_attendance'),
+backup-service.js	410	Read	P1	return db.collection('All_Madrasas').doc(uid).collection('BackupSnapshots')
+backup-service.js	429	Read	P1	return db.collection('All_Madrasas').doc(uid).collection('BackupSnapshots')
+backup-service.js	452	Read	P1	return backupMetaRef(uid, backupId).collection('modules').get()
+backup-service.js	548	Read	P1	db.collection('All_Madrasas').doc(uid).collection('Registrations').doc(u.id),
+backup-service.js	557	Read	P1	db.collection('All_Madrasas').doc(uid).collection('Rejected').doc(u.id),
+backup-service.js	576	Read	P1	db.collection('All_Madrasas').doc(uid).collection('Attendance').doc(item.id),
+backup-service.js	640	Read	P1	var root = db.collection('Platform_Backups').doc(platformId);
+backup-service.js	643	Write	P1	batch.set(root.collection('modules').doc(key), {
+backup-service.js	649	Write	P1	batch.set(root.collection('modules').doc('_complaints'), {
+backup-service.js	654	Write	P1	batch.set(root.collection('modules').doc('_registration'), {
+backup-service.js	659	Write	P1	batch.set(root.collection('modules').doc('_attendance'), {
+complaints-firestore.js	23	Read	P2	return getDb().collection('All_Madrasas').doc(tenantId).collection('Complaints')
+complaints-firestore.js	141	Read	P2	return db.collection('All_Madrasas').doc(tenantId).collection('Complaints')
+dashboard.js	963	Read	P2	var ref = db.collection('All_Madrasas').doc(tid);
+dashboard.js	971	Listener	P2	var un = ref.collection(m.col).onSnapshot(function (snap) {
+department-migration.js	92	Read	P2	var base = db.collection('All_Madrasas').doc(tenantId).collection('Registrations
+department-migration.js	255	Read	P2	var base = db.collection('All_Madrasas').doc(tenantId);
+department-migration.js	265	Read	P2	return base.collection(colName).get().then(function (snap) {
+direct-firestore.js	112	Read	P0	return db.collection('All_Madrasas').doc(tid);
+direct-firestore.js	187	Write	P0	return ref.collection(collection).doc(docId).set({
+direct-firestore.js	207	Read	P0	var docRef = ref.collection(collection).doc(String(id));
+direct-firestore.js	229	Write	P0	batch.set(ref.collection(collection).doc(String(k)), Object.assign({}, obj[k] ||
+direct-firestore.js	297	Read	P0	return ref.collection(cfg.collection).doc(cfg.docId).get({ source: 'server' }).t
+direct-firestore.js	307	Read	P0	return ref.collection(cfg.collection).get({ source: 'server' }).then(function (s
+direct-firestore.js	325	Read	P0	return ref.collection(cfg.collection).get({ source: 'server' }).then(function (s
+direct-firestore.js	361	Read	P0	return db.collection('All_Madrasas').doc(tid).collection('ModuleData').limit(100
+ems-academic-archive.js	127	Read	P2	return db.collection('All_Madrasas').doc(tid).collection('Archive_Meta').get()
+ems-audit.js	44	Read	P2	return db.collection('All_Madrasas').doc(tenantId).collection('EmsAudit')
+ems-dashboard-stats.js	106	Read	P2	state.unsub = db.collection('All_Madrasas').doc(tid)
+ems-dashboard-stats.js	107	Read	P2	.collection('DashboardStats').doc('current')
+ems-dashboard-stats.js	108	Listener	P2	.onSnapshot(function (doc) {
+ems-enterprise-diagnostic.js	163	Read	P2	fsChain = db.collection('All_Madrasas').doc(tenantId).collection('Registrations'
+ems-firebase-read-api.js	188	Read	P2	return db.collection('All_Madrasas').doc(tid).collection(col).doc(id)
+ems-firebase-read-api.js	234	Read	P2	return db.collection('All_Madrasas').doc(tenantId).collection('Registrations')
+ems-import-export.js	397	Read	P2	var ref = db.collection('All_Madrasas').doc(tenantId).collection('Registrations'
+ems-module-summaries.js	115	Read	P2	var finUnsub = db.collection('All_Madrasas').doc(tid)
+ems-module-summaries.js	116	Read	P2	.collection('FinanceSummary').doc('monthly_' + monthKey)
+ems-module-summaries.js	117	Listener	P2	.onSnapshot(function (doc) {
+ems-module-summaries.js	122	Read	P2	var attUnsub = db.collection('All_Madrasas').doc(tid)
+ems-module-summaries.js	123	Read	P2	.collection('AttendanceSummary').doc(monthKey)
+ems-module-summaries.js	124	Listener	P2	.onSnapshot(function (doc) {
+ems-module-summaries.js	134	Read	P2	var examUnsub = db.collection('All_Madrasas').doc(tid).collection('ExaminationSu
+ems-module-summaries.js	135	Listener	P2	.onSnapshot(function (snap) {
+ems-module-summaries.js	142	Read	P2	var curUnsub = db.collection('All_Madrasas').doc(tid).collection('CurriculumSumm
+ems-module-summaries.js	143	Listener	P2	.onSnapshot(function (snap) {
+ems-offline-write.js	94	Read	P0	var root = db.collection('All_Madrasas').doc(row.tenantId);
+ems-offline-write.js	100	Write	P0	return root.collection(d.collection).doc(d.id).delete().catch(function () { retu
+ems-offline-write.js	107	Write	P0	return root.collection(delCol).doc(row.entityId).delete();
+ems-offline-write.js	110	Write	P0	return root.collection('Attendance').doc(row.entityId).set(row.payload || {}, { 
+ems-offline-write.js	113	Write	P0	return root.collection('FeeCollections').doc(row.entityId).set(row.payload || {}
+ems-offline-write.js	117	Write	P0	return root.collection(col).doc(row.entityId).set(row.payload || {}, { merge: !!
+ems-offline-write.js	125	Write	P0	return root.collection(fallbackCol).doc(row.entityId).set(row.payload || {}, {
+ems-pending-sync-queue.js	199	Read	P2	var ref = db.collection('All_Madrasas').doc(tid).collection(colName).doc(row.ent
+ems-photo-storage.js	193	Read	P2	return firestore.collection('All_Madrasas').doc(tenant).collection(col).doc(user
+ems-registration-bootstrap.js	31	Read	P0	return db.collection('All_Madrasas').doc(tenantId).collection('Registrations')
+ems-registration-repository.js	619	Read	P0	return db.collection('All_Madrasas').doc(state.tenantId).collection(collectionNa
+ems-registration-repository.js	941	Listener	P0	state.metaUnsub = col.doc('current').onSnapshot(function (doc) {
+ems-user-access.js	198	Read	P2	var col = db.collection('All_Madrasas').doc(tid).collection('Registrations');
+exams.js	1409	Read	P2	var col = fdb.collection('All_Madrasas').doc(uid).collection('Registrations');
+guest-demo.js	93	Read	P2	return db.collection(fsName).get().then(function (snap) {
+guest-demo.js	150	Read	P2	var ref = db.collection(firestoreCollectionName(col)).doc(item.id);
+guest-demo.js	156	Read	P2	var metaRef = db.collection('Demo_Meta').doc('published');
+identity-gate.js	259	Read	P2	firestore.collection('All_Madrasas').doc(user.uid).get().then(function (doc) {
+ledger.js	587	Read	P0	return db.collection('All_Madrasas').doc(uid).collection('LedgerEntries');
+photo-migration.js	62	Read	P2	var colRef = firestore.collection('All_Madrasas').doc(tenant).collection(colName
+photo-migration.js	142	Read	P2	return firestore.collection('All_Madrasas').doc(tenant).collection(colName).doc(
+photo-migration.js	162	Read	P2	return firestore.collection('All_Madrasas').doc(tenant).collection(colName).doc(
+security-layer.js	364	Read	P2	var ref = db.collection('All_Madrasas').doc(tenantId).collection('SecurityLog');
+security-mfa.js	79	Read	P2	return db.collection('All_Madrasas').doc(tenantId).collection('SecuritySettings'
+security-mfa.js	104	Read	P2	return db.collection('All_Madrasas').doc(tenantId).collection('SecuritySettings'
+superadmin.js	238	Read	P2	firestore.collection('Platform_Config').doc('sa_tenant_metrics').get().then(func
+superadmin.js	291	Read	P2	firestore.collection('System_Settings').doc('System').get().then(function (doc) 
+superadmin.js	323	Write	P2	firestore.collection('System_Settings').doc('System').set(payload, { merge: true
+sync-engine.js	312	Read	P0	return getDb().collection('All_Madrasas').doc(uid)
+sync-engine.js	313	Read	P0	.collection('ModuleData').doc(module + '__' + key);
+sync-engine.js	616	Read	P0	return db.collection('All_Madrasas').doc(uid).collection('Backup').limit(100000)
+sync-engine.js	627	Read	P0	var ref = db.collection('All_Madrasas').doc(uid)
+sync-engine.js	628	Read	P0	.collection('ModuleData').doc(module + '__' + key);
+sync-engine.js	704	Read	P0	var ref = db.collection('All_Madrasas').doc(uid)
+sync-engine.js	705	Read	P0	.collection('ModuleData').doc(module + '__' + docId);
+sync-engine.js	720	Read	P0	var ref = db.collection('All_Madrasas').doc(uid)
+sync-engine.js	721	Read	P0	.collection('ModuleData').doc(module + '__' + docId);
+tenant-context.js	85	Read	P1	return firestore.collection('All_Madrasas').doc(user.uid).get()
+tenant-context.js	142	Read	P1	return db.collection('All_Madrasas').doc(madrasaId).collection('Staff_Links')
+tenant-context.js	161	Read	P1	return db.collection('All_Madrasas').doc(madrasaId).collection('Parent_Links')
+tenant-delivery.js	17	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+tenant-delivery.js	18	Read	P2	.collection('TenantSettings').doc('notificationDelivery').get()
+tenant-delivery.js	37	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+tenant-delivery.js	38	Read	P2	.collection('TenantSettings').doc('notificationDelivery')
+tenant-security.js	68	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+tenant-security.js	69	Read	P2	.collection('TenantSettings').doc('securityPolicy').get()
+tenant-security.js	85	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+tenant-security.js	86	Read	P2	.collection('TenantSettings').doc('securityPolicy')
+tenant-sso.js	17	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+tenant-sso.js	18	Read	P2	.collection('TenantSettings').doc('ssoPolicy').get()
+tenant-sso.js	60	Read	P2	return db.collection('All_Madrasas').doc(madrasaId)
+tenant-sso.js	61	Read	P2	.collection('TenantSettings').doc('ssoPolicy')
+sa\platform-users.js	29	Read	P3	var ref = firestore.collection('Platform_Users').doc(user.uid);
+sa\platform-users.js	67	Read	P3	return firestore.collection('Platform_Users').doc(user.uid).get().then(function 
+sa\sa-admins.js	30	Read	P3	return firestore.collection('Platform_Users').where('email', '==', email).limit(
+sa\sa-admins.js	41	Write	P3	return firestore.collection('Platform_Users').doc(uid).set({
+sa\sa-admins.js	47	Write	P3	return firestore.collection('Platform_Users').doc(uid).set({
+sa\sa-admins.js	68	Read	P3	firestore.collection('SuperAdmins').get().then(function (snap) {
+sa\sa-admins.js	103	Read	P3	firestore.collection('SuperAdmins').where('email', '==', email).limit(1).get().t
+sa\sa-admins.js	110	Write	P3	firestore.collection('SuperAdmins').doc(docId).set({
+sa\sa-admins.js	134	Write	P3	db().collection('SuperAdmins').doc(docId).delete().then(function () {
+sa\sa-audit.js	108	Read	P3	_auditUnsubs.push(firestore.collection('System_AuditLog').orderBy('timestamp', '
+sa\sa-audit.js	109	Listener	P3	.onSnapshot(function (snap) {
+sa\sa-audit.js	114	Read	P3	_auditUnsubs.push(firestore.collection('Platform_AuditLog').orderBy('timestamp',
+sa\sa-audit.js	115	Listener	P3	.onSnapshot(function (snap) {
+sa\sa-audit.js	146	Read	P3	firestore.collection('System_AuditLog').orderBy('timestamp', 'desc').limit(100).
+sa\sa-audit.js	147	Read	P3	firestore.collection('Platform_AuditLog').orderBy('timestamp', 'desc').limit(100
+sa\sa-billing.js	20	Read	P3	return firestore.collection('System_Settings').doc('BillingPlans').get().then(fu
+sa\sa-billing.js	48	Read	P3	return firestore.collection('Platform_Payments')
+sa\sa-billing.js	63	Read	P3	return firestore.collection('Platform_Config').doc('sa_payment_mirror').get()
+sa\sa-billing.js	77	Read	P3	return firestore.collection('Platform_Payments')
+sa\sa-billing.js	82	Read	P3	return firestore.collection('Platform_Payments').limit(100000).get();
+sa\sa-billing.js	131	Read	P3	: (firestore ? firestore.collection('All_Madrasas').orderBy('setupDate', 'desc')
+sa\sa-billing.js	208	Write	P3	firestore.collection('System_Settings').doc('BillingPlans').set({ plans: global.
+sa\sa-billing.js	235	Write	P3	firestore.collection('All_Madrasas').doc(uid).set({
+sa\sa-billing.js	297	Write	P3	return firestore.collection('Platform_Config').doc('sa_payment_mirror').set({
+sa\sa-core.js	84	Read	P3	return firestore.collection('SuperAdmins').doc(user.uid).get()
+sa\sa-core.js	89	Read	P3	return firestore.collection('SuperAdmins').doc(emailKey).get().then(function (em
+sa\sa-core.js	92	Read	P3	return firestore.collection('SuperAdmins')
+sa\sa-core.js	96	Read	P3	return firestore.collection('SuperAdmins')
+sa\sa-core.js	241	Write	P3	return firestore.collection('Platform_Config').doc('sa_tenant_metrics').set({
+sa\sa-core.js	259	Write	P3	return firestore.collection('Platform_Subscriptions').doc(uid).set(payload, { me
+sa\sa-core.js	328	Read	P3	return firestore.collection('System_AuditLog').add(entry).catch(function (err) {
+sa\sa-dashboard.js	63	Read	P3	return firestore.collection('Platform_Users').limit(500).get().then(function (sn
+sa\sa-dashboard.js	92	Read	P3	_statsUnsub = firestore.collection('Platform_Stats').doc('current')
+sa\sa-dashboard.js	93	Listener	P3	.onSnapshot(function (doc) {
+sa\sa-dashboard.js	101	Read	P3	return firestore.collection('Platform_Stats').doc('current').get()
+sa\sa-notifications.js	24	Read	P3	firestore.collection('Platform_Notifications').orderBy('createdAt', 'desc').limi
+sa\sa-notifications.js	26	Read	P3	return firestore.collection('Platform_Notifications').limit(20).get();
+sa\sa-notifications.js	67	Read	P3	var notifPromise = firestore.collection('Platform_Notifications').add(payload);
+sa\sa-notifications.js	68	Write	P3	var systemPromise = firestore.collection('System_Settings').doc('System').set({
+sa\sa-rbac.js	114	Read	P3	firestore.collection('Platform_Users').doc(uid).get()
+sa\sa-rbac.js	142	Write	P3	return firestore.collection('Platform_Users').doc(uid).set({
+sa\sa-security.js	24	Read	P3	firestore.collection('Platform_SecurityEvents').orderBy('timestamp', 'desc').lim
+sa\sa-security.js	50	Read	P3	firestore.collection('LoginAttempts').limit(30).get()
+sa\sa-security.js	69	Read	P3	return firestore.collection('Platform_Config').doc('sa_login_mirror').get().then
+sa\sa-security.js	87	Read	P3	firestore.collection('Platform_Users').where('accountStatus', 'in', ['suspended'
+sa\sa-security.js	211	Read	P3	firestore.collection('Platform_Users').where('email', '==', email).limit(1).get(
+sa\sa-tenants.js	94	Read	P3	return firestore.collection('All_Madrasas').get().then(function (snap) {
+sa\sa-tenants.js	123	Read	P3	firestore.collection('All_Madrasas').limit(500).get().then(function (snap) {
+sa\sa-tenants.js	139	Read	P3	var query = firestore.collection('All_Madrasas').orderBy('setupDate', 'desc').li
+sa\sa-tenants.js	165	Read	P3	firestore.collection('All_Madrasas').limit(_fsPageSize).get().then(function (sna
+sa\sa-tenants.js	199	Read	P3	firestore.collection('System_Settings').doc('Subscription').get().then(function 
+sa\sa-tenants.js	217	Read	P3	_tenantsUnsub = firestore.collection('Platform_Config').doc('sa_tenant_metrics')
+sa\sa-tenants.js	218	Listener	P3	.onSnapshot(function (doc) {
+sa\sa-tenants.js	393	Read	P3	firestore.collection('All_Madrasas').doc(uid).get().then(function (doc) {
+sa\sa-tenants.js	507	Write	P3	firestore.collection('All_Madrasas').doc(uid).set(payload, { merge: true })
+sa\sa-tenants.js	540	Write	P3	firestore.collection('All_Madrasas').doc(uid).set({
+sa\sa-tenants.js	591	Write	P3	batch.set(firestore.collection('All_Madrasas').doc(uid), payload, { merge: true 
+sa\sa-tenants.js	642	Write	P3	var globalPromise = firestore.collection('System_Settings').doc('Subscription').
+sa\sa-tenants.js	657	Write	P3	batch.set(firestore.collection('All_Madrasas').doc(uid), {
+sa\sa-tenants.js	724	Read	P3	firestore.collection('All_Madrasas').get().then(function (snap) {
+sa\sa-users.js	123	Read	P3	firestore.collection('Platform_Users').limit(300).get()
+sa\sa-users.js	145	Write	P3	return firestore.collection('Platform_Users').doc(uid).set({

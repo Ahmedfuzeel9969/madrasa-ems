@@ -1,0 +1,145 @@
+{
+  "name": "madrasa-ems",
+  "version": "1.0.0",
+  "description": "Madrasa EMS — Advanced Educational Management System",
+  "author": "Madrasa EMS",
+  "private": true,
+  "scripts": {
+    "start": "servor --reload",
+    "clean": "node scripts/prepare-hosting.js --clean-only",
+    "build:hosting": "node scripts/prepare-hosting.js",
+    "verify:hosting": "node scripts/prepare-hosting.js --verify",
+    "verify:regression": "node --check ems-mobile-shell.js && vitest run tests/unit/ems-mobile-nav-v2.test.js tests/unit/ems-registration-mobile-s6.test.js tests/unit/ems-p6-rbac-edge.test.js",
+    "backup": "node scripts/backup-workspace.js",
+    "backup:snapshot": "node scripts/backup-production.js --snapshot-only --skip-cloud-checks",
+    "backup:verify": "node scripts/backup-production.js --snapshot-only --verify",
+    "backup:production": "node scripts/backup-production.js --workspace",
+    "backup:full": "node scripts/disaster-recovery-backup.js",
+    "backup:restore": "node scripts/disaster-recovery-restore.js",
+    "backup:verify-dr": "vitest run tests/unit/ems-disaster-recovery.test.js",
+    "backup:verify-production": "node scripts/dr-production-verification.js --offline --students=1000",
+    "backup:tenant-export": "node scripts/tenant-firestore-export.js",
+    "preflight": "node scripts/deploy-preflight.js",
+    "preflight:android": "node scripts/android-asset-preflight.js",
+    "seed:superadmin": "node scripts/seed-super-admin.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:auth": "playwright test tests/e2e/emulator-auth.spec.js tests/e2e/login-auth.spec.js",
+    "test:e2e:emulator": "playwright test tests/e2e/emulator-integration.spec.js",
+    "benchmark": "node scripts/perf-load-sim.js --max=10000 --skip-legacy --json-out=docs/benchmark-latest.json",
+    "benchmark:full": "node scripts/perf-load-sim.js --json-out=docs/benchmark-latest.json",
+    "benchmark:idb": "node scripts/perf-idb-browser-bench.js",
+    "test:e2e:outbox": "playwright test --config=playwright.outbox.config.js",
+    "test:e2e:cursor": "playwright test --config=playwright.cursor.config.js",
+    "test:e2e:sw": "playwright test --config=playwright.sw.config.js",
+    "test:e2e:p5b": "playwright test --config=playwright.p5b.config.js",
+    "test:e2e:p6": "playwright test --config=playwright.p6.config.js",
+    "test:e2e:p6-preprod": "playwright test --config=playwright.p6-preprod.config.js",
+    "build": "npm run build:hosting",
+    "build:production": "npm run build:hosting",
+    "test:e2e:root": "playwright test --config=playwright.root.config.js",
+    "test:e2e:soak": "playwright test tests/e2e/ems-long-session-soak.spec.js --config=playwright.root.config.js",
+    "test:e2e:bench": "playwright test --config=playwright.bench.config.js",
+    "test:e2e:dist": "npm run build:hosting && playwright test --config=playwright.config.js",
+    "seed:emulator": "node scripts/seed-emulator-login.js",
+    "preflight:login": "node scripts/enterprise-login-deploy-check.js",
+    "deploy:login": "npm run preflight:login && node scripts/prepare-hosting.js && firebase deploy --only firestore:rules,firestore:indexes && firebase deploy --only functions:checkTrustedDevice,functions:validateStaffEmailDomain,functions:getLoginSecurityOverview,functions:testSecurityWebhook,functions:getSecurityAlertSummary,functions:validateLoginIpAddress,functions:validateOidcIssuerConfig,functions:getLoginSecurityHealthCheck,functions:validateLoginCountry,functions:probeLoginSecurityBackend,functions:checkTenantLoginAllowed,functions:recordTenantLoginFailure,functions:clearTenantLoginSuccess,functions:getTenantLoginLockouts,functions:unlockTenantLoginLockout,functions:registerLoginSession,functions:getSessionAnomalySummary,functions:listSessionAnomalies,functions:dismissSessionAnomaly,functions:getLoginAuditSummary,functions:exportLoginAudit,functions:bulkImportRegistrations && firebase deploy --only hosting",
+    "postinstall": "playwright install chromium || true",
+    "deploy:hosting": "npm run preflight && firebase deploy --only hosting",
+    "cmi:build": "node scripts/cmi-build.js",
+    "cmi:incremental": "node scripts/cmi-incremental.js",
+    "cmi:status": "node scripts/cmi-status.js status",
+    "cmi:ask": "node scripts/cmi-status.js ask",
+    "cmi:sync-firestore": "node scripts/cmi-sync-firestore.js",
+    "sa-advisor:staging-verify": "node scripts/sa-advisor-live-staging.js",
+    "deploy:safe": "npm run backup:snapshot && npm run preflight && firebase deploy --only hosting",
+    "deploy:firestore": "firebase deploy --only firestore:rules,firestore:indexes",
+    "deploy:storage": "firebase deploy --only storage",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:all": "npm run preflight && firebase deploy",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
+    "desktop:dev": "npm run rebuild:native && electron desktop/main.js",
+    "desktop:dev:local": "npm run rebuild:native && npm run build:hosting && node scripts/desktop-dev-local.js",
+    "desktop:build": "npm run build:hosting && electron-builder --win portable",
+    "desktop:build:installer": "npm run build:hosting && electron-builder --win nsis",
+    "android:sync": "npm run build:hosting && npx cap sync android && node scripts/android-asset-preflight.js --write-sync-manifest",
+    "android:copy": "npm run build:hosting && npx cap copy android && node scripts/android-asset-preflight.js --write-sync-manifest",
+    "android:open": "npx cap open android",
+    "android:build:debug": "npm run android:sync && npm run preflight:android && cd android && .\\gradlew.bat assembleDebug",
+    "android:build:release": "npm run android:sync && npm run preflight:android && cd android && .\\gradlew.bat assembleRelease"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.4.2",
+    "@capacitor/cli": "^7.4.2",
+    "@capacitor/core": "^7.4.2",
+    "@electron/rebuild": "^4.1.0",
+    "@playwright/test": "^1.52.0",
+    "electron": "^35.7.5",
+    "electron-builder": "^25.1.8",
+    "firebase-tools": "^15.20.0",
+    "servor": "^4.0.2",
+    "vitest": "^3.2.4"
+  },
+  "main": "desktop/main.js",
+  "build": {
+    "appId": "com.madrasa.ems.desktop",
+    "productName": "Madrasa EMS",
+    "directories": {
+      "output": "desktop/release",
+      "buildResources": "desktop/build"
+    },
+    "files": [
+      "package.json",
+      "desktop/main.js",
+      "desktop/preload.js",
+      "desktop/native-db.js",
+      "desktop/native-db-sqlite.js",
+      "desktop/config.json",
+      "ems-query-utils.js",
+      "src/shared/utils/ems-query-utils.js",
+      "dist/**/*",
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/bindings/**/*",
+      "node_modules/file-uri-to-path/**/*"
+    ],
+    "npmRebuild": true,
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Madrasa-EMS-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Madrasa-EMS-Portable-${version}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Madrasa-EMS-Setup-${version}.exe"
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@capacitor/status-bar": "^7.0.6",
+    "@capgo/capacitor-social-login": "^7.20.0",
+    "better-sqlite3": "^12.11.1"
+  }
+}

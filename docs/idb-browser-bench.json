@@ -1,0 +1,353 @@
+{
+  "generatedAt": "2026-07-12T03:55:14.027Z",
+  "scales": [
+    {
+      "records": 100,
+      "inserted": 100,
+      "insertMs": 10.9,
+      "indexBuildMs": 0.3,
+      "indexTotalMs": 16.1,
+      "firstChunkMs": 15.7,
+      "indexBuildMode": "incremental-chunks",
+      "tokensPerRow": 29,
+      "estimatedSearchPuts": 2900,
+      "msPerRowIndex": 0.003,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 4.6,
+      "filterMs": 3.8,
+      "searchMs": 8.1,
+      "searchExpectedLoadAll": false,
+      "admissionFirstPageMs": 5.3,
+      "admissionLongTaskMs": 0,
+      "admissionElapsedMs": 5.5,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:ts"
+          ]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "searchIndex:rowDocs"
+          ]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        }
+      },
+      "pageSortTotal": 100,
+      "filterTotal": 85,
+      "searchTotal": 85,
+      "persistCountBeforeReload": 100,
+      "persistence": {
+        "expected": 100,
+        "actual": 100,
+        "ok": true
+      }
+    },
+    {
+      "records": 1000,
+      "inserted": 1000,
+      "insertMs": 162.6,
+      "indexBuildMs": 259.1,
+      "indexTotalMs": 277.9,
+      "firstChunkMs": 18.8,
+      "indexBuildMode": "incremental-chunks",
+      "tokensPerRow": 29,
+      "estimatedSearchPuts": 29000,
+      "msPerRowIndex": 0.259,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 17.3,
+      "filterMs": 16,
+      "searchMs": 48.7,
+      "searchExpectedLoadAll": false,
+      "admissionFirstPageMs": 22.4,
+      "admissionLongTaskMs": 0,
+      "admissionElapsedMs": 22.5,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:ts"
+          ]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "searchIndex:rowDocs"
+          ]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        }
+      },
+      "pageSortTotal": 1000,
+      "filterTotal": 857,
+      "searchTotal": 857,
+      "persistCountBeforeReload": 1000,
+      "persistence": {
+        "expected": 1000,
+        "actual": 1000,
+        "ok": true
+      }
+    },
+    {
+      "records": 2500,
+      "inserted": 2500,
+      "insertMs": 936.5,
+      "indexBuildMs": 1320.4,
+      "indexTotalMs": 1394.3,
+      "firstChunkMs": 73.9,
+      "indexBuildMode": "incremental-chunks",
+      "tokensPerRow": 29,
+      "estimatedSearchPuts": 72500,
+      "msPerRowIndex": 0.528,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 29.2,
+      "filterMs": 34.6,
+      "searchMs": 70.9,
+      "searchExpectedLoadAll": false,
+      "admissionFirstPageMs": 63.2,
+      "admissionLongTaskMs": 0,
+      "admissionElapsedMs": 63.3,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:ts"
+          ]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "searchIndex:rowDocs"
+          ]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        }
+      },
+      "pageSortTotal": 2500,
+      "filterTotal": 2142,
+      "searchTotal": 2142,
+      "persistCountBeforeReload": 2500,
+      "persistence": {
+        "expected": 2500,
+        "actual": 2500,
+        "ok": true
+      }
+    },
+    {
+      "records": 10000,
+      "inserted": 10000,
+      "insertMs": 10987.6,
+      "indexBuildMs": 17403.2,
+      "indexTotalMs": 17672.5,
+      "firstChunkMs": 269.3,
+      "indexBuildMode": "incremental-chunks",
+      "tokensPerRow": 29,
+      "estimatedSearchPuts": 290000,
+      "msPerRowIndex": 1.74,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 98.9,
+      "filterMs": 106.4,
+      "searchMs": 248.2,
+      "searchExpectedLoadAll": false,
+      "admissionFirstPageMs": 207.2,
+      "admissionLongTaskMs": 0,
+      "admissionElapsedMs": 207.3,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:ts"
+          ]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "searchIndex:rowDocs"
+          ]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        }
+      },
+      "pageSortTotal": 10000,
+      "filterTotal": 8571,
+      "searchTotal": 8571,
+      "persistCountBeforeReload": 10000,
+      "persistence": {
+        "expected": 10000,
+        "actual": 10000,
+        "ok": true
+      }
+    },
+    {
+      "records": 50000,
+      "inserted": 50000,
+      "insertMs": 195487.9,
+      "indexBuildMs": 353239,
+      "indexTotalMs": 353506.8,
+      "firstChunkMs": 267.8,
+      "indexBuildMode": "incremental-chunks",
+      "tokensPerRow": 29,
+      "estimatedSearchPuts": 1450000,
+      "msPerRowIndex": 7.065,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 556.9,
+      "filterMs": 570.7,
+      "searchMs": 1336.9,
+      "searchExpectedLoadAll": false,
+      "admissionFirstPageMs": 1151.7,
+      "admissionLongTaskMs": 0,
+      "admissionElapsedMs": 1152,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:ts"
+          ]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "searchIndex:rowDocs"
+          ]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        }
+      },
+      "pageSortTotal": 50000,
+      "filterTotal": 42857,
+      "searchTotal": 42857,
+      "persistCountBeforeReload": 50000,
+      "persistence": {
+        "expected": 50000,
+        "actual": 50000,
+        "ok": true
+      }
+    }
+  ],
+  "checks": {
+    "noLoadAllOnSortedPage": true,
+    "noColAllOnSortedPage": true,
+    "noLoadAllOnSearch": true,
+    "noColAllOnSearch": true,
+    "persistenceOk": true,
+    "legacyArrearsDisabled": true
+  }
+}

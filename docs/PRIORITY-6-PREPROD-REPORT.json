@@ -1,0 +1,312 @@
+{
+  "generatedAt": "2026-07-12T04:06:00.269Z",
+  "phase": "Priority 6 — Pre-production verification",
+  "scales": {
+    "failover": 8000,
+    "stress": 100000,
+    "stressTabs": 10
+  },
+  "findings": {
+    "P6-PRE-1": {
+      "classification": "VERIFIED",
+      "prep": {
+        "tenant": "p6_failover_kill",
+        "collection": "p6_failover_kill__registrations",
+        "partial": {
+          "tabId": "leader",
+          "chunks": 8,
+          "rowsIndexed": 800,
+          "stopped": "maxChunks"
+        },
+        "leaderTabId": "idx_mrh9tpuq_9mwmek",
+        "lockBeforeKill": {
+          "tabId": "idx_mrh9tpuq_9mwmek",
+          "until": 1783829177831,
+          "collection": "p6_failover_kill__registrations"
+        }
+      },
+      "takeover": {
+        "pump": {
+          "tabId": "failover-follower",
+          "chunks": 72,
+          "rowsIndexed": 7200,
+          "complete": true,
+          "last": {
+            "ok": true,
+            "complete": true,
+            "processed": 8000,
+            "total": 500,
+            "chunkRows": 100,
+            "lastPk": "p6_failover_kill__registrations::STU-007999"
+          }
+        },
+        "wait": {
+          "complete": true,
+          "meta": {
+            "version": 3,
+            "complete": true,
+            "collection": "p6_failover_kill__registrations",
+            "processed": 8000,
+            "total": 500,
+            "lastPk": "p6_failover_kill__registrations::STU-007999",
+            "updatedAt": "2026-07-12T04:06:29.720Z"
+          },
+          "elapsedMs": 1
+        },
+        "indexRows": 8000,
+        "repoCount": 8000,
+        "lock": null
+      }
+    },
+    "P6-PRE-2": {
+      "classification": "VERIFIED",
+      "crashPrep": {
+        "tenant": "p6_failover_crash",
+        "collection": "p6_failover_crash__registrations",
+        "partial": {
+          "tabId": "crash-leader",
+          "chunks": 6,
+          "rowsIndexed": 600,
+          "stopped": "maxChunks"
+        },
+        "crash": {
+          "ok": true,
+          "expiredTabId": "idx_mrh9uce4_jlter9"
+        },
+        "leaseExpired": true
+      },
+      "recovery": {
+        "pump": {
+          "tabId": "crash-follower",
+          "chunks": 74,
+          "rowsIndexed": 7400,
+          "complete": true,
+          "last": {
+            "ok": true,
+            "complete": true,
+            "processed": 8000,
+            "total": 500,
+            "chunkRows": 100,
+            "lastPk": "p6_failover_crash__registrations::STU-007999"
+          }
+        },
+        "wait": {
+          "complete": true,
+          "meta": {
+            "version": 3,
+            "complete": true,
+            "collection": "p6_failover_crash__registrations",
+            "processed": 8000,
+            "total": 500,
+            "lastPk": "p6_failover_crash__registrations::STU-007999",
+            "updatedAt": "2026-07-12T04:06:51.015Z"
+          },
+          "elapsedMs": 0
+        },
+        "indexRows": 8000
+      }
+    },
+    "P6-PRE-3": {
+      "classification": "VERIFIED",
+      "metrics": {
+        "records": 100000,
+        "tabs": 10,
+        "repoCount": 100000,
+        "indexRowDocs": 100000,
+        "metaComplete": true,
+        "totalChunkRowsIndexed": 100000,
+        "writeAmplification": 1,
+        "activeLeaders": 1,
+        "tabResults": [
+          {
+            "tabId": "stress-tab-0",
+            "chunks": 500,
+            "rowsIndexed": 100000,
+            "complete": true,
+            "last": {
+              "ok": true,
+              "complete": true,
+              "processed": 100000,
+              "total": 500,
+              "chunkRows": 200,
+              "lastPk": "p6_stress_100k__registrations::STU-099999"
+            }
+          },
+          {
+            "tabId": "stress-tab-1",
+            "chunks": 0,
+            "rowsIndexed": 0,
+            "complete": true,
+            "observed": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "reason": "index_lock_busy",
+              "observing": true
+            }
+          },
+          {
+            "tabId": "stress-tab-2",
+            "chunks": 0,
+            "rowsIndexed": 0,
+            "complete": true,
+            "observed": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "reason": "index_lock_busy",
+              "observing": true
+            }
+          },
+          {
+            "tabId": "stress-tab-3",
+            "chunks": 0,
+            "rowsIndexed": 0,
+            "complete": true,
+            "observed": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "reason": "index_lock_busy",
+              "observing": true
+            }
+          },
+          {
+            "tabId": "stress-tab-4",
+            "chunks": 1,
+            "rowsIndexed": 0,
+            "complete": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "complete": true,
+              "processed": 100000,
+              "total": 500
+            }
+          },
+          {
+            "tabId": "stress-tab-5",
+            "chunks": 0,
+            "rowsIndexed": 0,
+            "complete": true,
+            "observed": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "reason": "index_lock_busy",
+              "observing": true
+            }
+          },
+          {
+            "tabId": "stress-tab-6",
+            "chunks": 0,
+            "rowsIndexed": 0,
+            "complete": true,
+            "observed": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "reason": "index_lock_busy",
+              "observing": true
+            }
+          },
+          {
+            "tabId": "stress-tab-7",
+            "chunks": 1,
+            "rowsIndexed": 0,
+            "complete": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "complete": true,
+              "processed": 100000,
+              "total": 500
+            }
+          },
+          {
+            "tabId": "stress-tab-8",
+            "chunks": 0,
+            "rowsIndexed": 0,
+            "complete": true,
+            "observed": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "reason": "index_lock_busy",
+              "observing": true
+            }
+          },
+          {
+            "tabId": "stress-tab-9",
+            "chunks": 1,
+            "rowsIndexed": 0,
+            "complete": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "complete": true,
+              "processed": 100000,
+              "total": 500
+            }
+          }
+        ]
+      }
+    },
+    "P6-PRE-4": {
+      "classification": "VERIFIED_CHROMIUM_WEBVIEW_SIM",
+      "note": "Real Capacitor APK WebView runtime not executed on host — Chromium mobile UA + asset parity.",
+      "apis": {
+        "tabId": "idx_mrhaiz1y_j1b66s",
+        "webLocks": true,
+        "broadcastChannel": true,
+        "userAgent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.230 Mobile Safari/537.36",
+        "storageQuota": true,
+        "storageClean": true
+      },
+      "lockTest": {
+        "gate": {
+          "acquired": true,
+          "tabId": "idx_mrhaiz1y_j1b66s",
+          "webLock": true
+        },
+        "tabId": "idx_mrhaiz1y_j1b66s"
+      },
+      "follower": {
+        "acquired": false,
+        "reason": "index_lock_busy",
+        "holder": "idx_mrhaiz1y_j1b66s"
+      },
+      "assets": {
+        "androidAssetsPresent": true,
+        "distAssetsPresent": true
+      },
+      "realApkRuntime": "NOT VERIFIED — requires device/emulator APK launch"
+    },
+    "P6-PRE-5": {
+      "classification": "VERIFIED",
+      "metrics": {
+        "status": {
+          "ok": true,
+          "level": "warn",
+          "usagePercent": 88,
+          "usage": 1889791197,
+          "quota": 2147489997,
+          "remaining": 257698800,
+          "usageFormatted": "1.8 GB",
+          "quotaFormatted": "2 GB",
+          "remainingFormatted": "245.8 MB",
+          "persisted": false,
+          "context": "preprod"
+        },
+        "cleaned": {
+          "lsKeys": 0,
+          "collections": 0,
+          "idbKv": 0,
+          "removedTotal": 0
+        },
+        "bannerHasStats": true,
+        "bannerHasCleanBtn": true
+      }
+    }
+  }
+}

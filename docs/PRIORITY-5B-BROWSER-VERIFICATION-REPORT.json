@@ -1,0 +1,109 @@
+{
+  "generatedAt": "2026-07-08T11:30:00.000Z",
+  "phase": "Priority 5B — Browser Verification Completion",
+  "status": "PARTIAL_APPROVAL",
+  "summary": "P5B closed 6 of 7 remaining P5 gaps. Live Firebase sign-off and 100k browser benchmark remain NOT VERIFIED. Do not recommend 50k+ institutions until incremental/background search index is engineered.",
+  "p5AlreadyVerified": {
+    "multiTabOutbox": "VERIFIED",
+    "multiTabCursor": "VERIFIED",
+    "serviceWorkerUpdate": "VERIFIED",
+    "legacyMigration": "VERIFIED",
+    "corruptionWarning": "VERIFIED",
+    "idbBench10k": "VERIFIED",
+    "unitSuite": "431/431 PASS"
+  },
+  "p5bResults": {
+    "multiDeviceSync": {
+      "file": "tests/e2e/ems-multi-device-sync.spec.js",
+      "config": "playwright.p5b.config.js",
+      "result": "2/2 PASS",
+      "classification": "VERIFIED"
+    },
+    "offlineCrudReconnect": {
+      "file": "tests/e2e/ems-offline-crud-reconnect.spec.js",
+      "config": "playwright.p5b.config.js",
+      "result": "2/2 PASS",
+      "fix": "bench/sync-bench.js emsMayPushToCloud respects force/manual opts",
+      "classification": "VERIFIED"
+    },
+    "rbacMatrix": {
+      "file": "tests/e2e/ems-rbac-matrix.spec.js",
+      "config": "playwright.root.config.js",
+      "result": "5/5 PASS",
+      "classification": "VERIFIED"
+    },
+    "longSessionSoak": {
+      "file": "tests/e2e/ems-long-session-soak.spec.js",
+      "config": "playwright.root.config.js",
+      "durationMs": 3602583,
+      "iterations": 60,
+      "firstHeapMb": 10,
+      "lastHeapMb": 10,
+      "log": "test-results/p5b-soak-1h.log",
+      "classification": "VERIFIED"
+    },
+    "idbBench50k": {
+      "command": "EMS_IDB_BENCH_SCALES=50000 npm run test:e2e:bench",
+      "result": "PASS (1.7h)",
+      "log": "test-results/p5b-bench-50k-v2.log",
+      "evidence": "docs/idb-browser-bench-50k-p5b.json",
+      "indexBuildMs": 5787537,
+      "indexBuildMinutes": 96.5,
+      "msPerRowIndex": 115.751,
+      "insertMs": 124836,
+      "pageSortMs": 1211.6,
+      "searchMs": 4086.1,
+      "classification": "VERIFIED"
+    },
+    "idbBench100k": {
+      "status": "NOT STARTED",
+      "extrapolatedIndexMinutes": 193,
+      "playwrightTimeoutHours": 3,
+      "classification": "NOT VERIFIED",
+      "reason": "Linear extrapolation from 50k (~96 min index build) exceeds 3h harness timeout; not feasible without incremental index engineering or dedicated overnight run"
+    },
+    "indexBuildInvestigation": {
+      "doc": "docs/INDEX-BUILD-INVESTIGATION-P5B.md",
+      "rootCause": "emsIdbSearchIndexEnsure full trigram rebuild — ~16 tokens/row × sequential IDB puts",
+      "10kIndexBuildMinutes": 11.3,
+      "50kIndexBuildMinutes": 96.5,
+      "institutionRecommendation": "Do not deploy 50k+ without incremental/background index strategy",
+      "unitTest": "tests/unit/ems-search-index-token-count.test.js"
+    },
+    "distE2eHarness": {
+      "config": "playwright.config.js",
+      "testIgnore": [
+        "ems-idb-scale-bench",
+        "ems-long-session-soak",
+        "ems-multi-device-sync",
+        "ems-offline-crud-reconnect",
+        "ems-rbac-matrix",
+        "ems-outbox-multitab",
+        "ems-sync-cursor-multitab",
+        "ems-sw-update"
+      ],
+      "result": "26 passed, 1 skipped (emulator seed)",
+      "log": "test-results/p5b-dist-e2e.log",
+      "harnessFixes": [
+        "tests/helpers/wait-for-boot.js — landing ready, admission render, cloud boot",
+        "playwright.config.js — exclude long-running P5B/bench suites from dist harness",
+        "bench/sync-bench.js — force/manual push gate",
+        "scripts/prepare-hosting.js — copies bench/ + legacy smoke into dist",
+        "Updated ems-reg-*, login-smoke, emulator-auth, login-auth, perf-load, superadmin, ems-repository-idb"
+      ],
+      "classification": "VERIFIED"
+    },
+    "liveFirebaseSignOff": {
+      "classification": "NOT VERIFIED",
+      "reason": "No production Firebase credentials or Firestore emulator wired in CI/dist harness; rules sign-off requires operational environment"
+    }
+  },
+  "npmScriptsAdded": [
+    "test:e2e:p5b",
+    "test:e2e:root",
+    "test:e2e:soak",
+    "test:e2e:bench",
+    "test:e2e:dist"
+  ],
+  "recommendation": "Priority 5 remains PARTIAL_APPROVAL. Do not start Priority 6 product features until live Firebase sign-off is scheduled and 100k benchmark is either re-scoped (incremental index) or run in a dedicated >3h session."
+}

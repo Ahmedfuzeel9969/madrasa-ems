@@ -1,0 +1,3592 @@
+// ============================================================================
+// ایڈوانسڈ اسمارٹ حاضری سسٹم - مکمل اور حتمی جاوا اسکرپٹ (Firebase Cloud Version)
+// ============================================================================
+
+// --- گلوبل اسٹیٹ ویری ایبلز (اس ماڈیول کے لیے مخصوص) ---
+window.currentAttState = {
+  month: '',
+  type: '',
+  classId: '',
+  period: '',
+  locked: false,
+  records: {},
+};
+window.currentEventParticipants = [];
+
+function attTenantDoc(db, uid) {
+  if (typeof window.emsFirestoreTenantDocRef === 'function') {
+    return window.emsFirestoreTenantDocRef(db, uid);
+  }
+  return db.collection('All_Madrasas').doc(uid);
+}
+
+function attTenantSubCol(db, uid, sub) {
+  if (typeof window.emsFirestoreSubColRef === 'function') {
+    return window.emsFirestoreSubColRef(db, uid, sub);
+  }
+  return attTenantDoc(db, uid).collection(sub);
+}
+
+function attIsEligibleRegistration(u) {
+  if (!u || !attGetUserId(u)) return false;
+  if (typeof window.EmsQueryUtils !== 'undefined' && typeof window.EmsQueryUtils.isActiveRegistrationStatus === 'function') {
+    var s = String(u.status == null ? '' : u.status).trim().toLowerCase();
+    if (s === 'pending') return true;
+    return window.EmsQueryUtils.isActiveRegistrationStatus(u.status);
+  }
+  var s = String(u.status == null ? '' : u.status).trim().toLowerCase();
+  if (!s) return true;
+  if (s === 'rejected' || s === 'suspended' || s === 'withdrawn' || s === 'inactive' || s === 'deleted') {
+    return false;
+  }
+  return true;
+}
+
+function attGetUserId(u) {
+  if (!u) return '';
+  return String(u.id || u.regId || u.uid || u.docId || '').trim();
+}
+window.attGetUserId = attGetUserId;
+
+function attGetUserClass(u) {
+  if (!u) return '';
+  return String(u.class || u.className || u.grade || u.section || '').trim();
+}
+
+function attFilterEligibleUsers(list) {
+  return (list || []).filter(attIsEligibleRegistration);
+}
+
+/** Normalize legacy/cloud rows where type casing or field is missing. */
+function attNormalizeUserType(u) {
+  if (!u) return '';
+  var t = String(u.type || '').trim().toLowerCase();
+  if (t === 'students') return 'student';
+  if (t === 'teachers') return 'teacher';
+  if (t === 'student' || t === 'teacher' || t === 'staff') return t;
+  var id = attGetUserId(u).toUpperCase();
+  if (/^STD[\W_-]?/.test(id) || /^STU[\W_-]?/.test(id)) return 'student';
+  if (/^TCH[\W_-]?/.test(id) || /^TCR[\W_-]?/.test(id)) return 'teacher';
+  if (/^STF[\W_-]?/.test(id)) return 'staff';
+  var cls = attGetUserClass(u);
+  if (cls && cls !== 'نامعلوم') return 'student';
+  return '';
+}
+
+function attUserMatchesType(u, wantType) {
+  return attNormalizeUserType(u) === wantType;
+}
+
+function attIsStaffAttendanceRegister() {
+  var t = window.currentAttState && window.currentAttState.type;
+  return t === 'teachers' || t === 'staff';
+}
+
+function attIsSelfAttendanceEditBlocked(uid) {
+  if (!attIsStaffAttendanceRegister()) return false;
+  if (typeof window.emsAttendanceSelfEditBlocked !== 'function') return false;
+  return !!window.emsAttendanceSelfEditBlocked(uid).blocked;
+}
+
+function attGuardSelfAttendanceEdit(uid, opts) {
+  opts = opts || {};
+  if (!attIsSelfAttendanceEditBlocked(uid)) return false;
+  if (!opts.silent && typeof window.showToast === 'function') {
+    var check = window.emsAttendanceSelfEditBlocked(uid);
+    window.showToast((check && check.message) || 'آپ اپنی حاضری خود درج نہیں کر سکتے۔', 'error');
+  }
+  return true;
+}
+
+function attClassMatches(u, classId) {
+  if (!classId) return true;
+  return attGetUserClass(u) === String(classId || '').trim();
+}
+
+function attMergeUniqueById(list) {
+  var seen = Object.create(null);
+  var out = [];
+  (list || []).forEach(function (u) {
+    var id = attGetUserId(u);
+    if (!id || seen[id]) return;
+    seen[id] = true;
+    out.push(u);
+  });
+  return out;
+}
+
+function attGetFirestoreDb() {
+  if (typeof db !== 'undefined' && db) return db;
+  if (typeof window.getDbOrNull === 'function') return window.getDbOrNull();
+  return null;
+}
+
+function attEnsureAttStateShape() {
+  if (!window.currentAttState) window.currentAttState = {};
+  if (!window.currentAttState.records) window.currentAttState.records = {};
+  if (!window.currentAttState.remarks) window.currentAttState.remarks = {};
+  if (!window.currentAttState.late) window.currentAttState.late = {};
+  if (!window.currentAttState.dailyLocks) window.currentAttState.dailyLocks = {};
+}
+
+function attMarkLocalWrite() {
+  var now = Date.now();
+  _attLastLocalWriteTs = now;
+  if (window.currentAttState) window.currentAttState._localWriteTs = now;
+  return now;
+}
+
+/** Ignore stale Firestore snapshots right after a local lock/unlock save. */
+function attShouldApplyRemoteSnapshot(remoteData) {
+  var localTs = (window.currentAttState && window.currentAttState._localWriteTs) || _attLastLocalWriteTs || 0;
+  if (!localTs) return true;
+  if (Date.now() - localTs < ATT_REMOTE_GRACE_MS) return false;
+  return attRecordTimestamp(remoteData) >= localTs;
+}
+
+function attGetRegisterUsers() {
+  if (window.currentAttState && window.currentAttState.targetUsers && window.currentAttState.targetUsers.length) {
+    return attFilterEligibleUsers(window.currentAttState.targetUsers.slice());
+  }
+  if (typeof window.getFilteredUsers === 'function') return window.getFilteredUsers();
+  return [];
+}
+
+function attQuickRefreshRegister() {
+  if (!window.currentAttState || !window.currentAttState.month) return;
+  buildSmartRegisterImmediate(window.currentAttState.month, attGetRegisterUsers());
+}
+
+function attRefreshLockChrome() {
+  var lockCheck = document.getElementById('att-lock-check');
+  var btnSaveLock = document.getElementById('btn-att-save-lock');
+  var btnEditMode = document.getElementById('btn-att-edit-mode');
+  var locked = !!(window.currentAttState && window.currentAttState.locked);
+  if (lockCheck) lockCheck.checked = locked;
+  if (btnSaveLock) btnSaveLock.style.display = locked ? 'none' : 'inline-flex';
+  if (btnEditMode) btnEditMode.style.display = locked ? 'inline-flex' : 'none';
+}
+
+function attGetUsersRaw() {
+  if (typeof window.emsGetUsersMerged === 'function') {
+    var merged = window.emsGetUsersMerged();
+    if (merged && merged.length) return merged;
+  }
+  if (typeof window.emsGetUsersSync === 'function') {
+    return window.emsGetUsersSync() || [];
+  }
+  return [];
+}
+
+function attApplyDeptFilter(users) {
+  if (!Array.isArray(users) || !users.length) return users || [];
+  if (typeof window.emsFilterByDepartment === 'function') {
+    return window.emsFilterByDepartment(users);
+  }
+  return users;
+}
+
+function attGetUsers() {
+  return attFilterEligibleUsers(attApplyDeptFilter(attGetUsersRaw()));
+}
+
+function attGetUsersWhenReady() {
+  var ready = typeof window.emsEnsureRepositoryReady === 'function'
+    ? window.emsEnsureRepositoryReady()
+    : Promise.resolve();
+  return ready.then(function () {
+    return attGetUsers();
+  });
+}
+window.attGetUsersWhenReady = attGetUsersWhenReady;
+
+var ATT_REGISTER_ROW_PAGE = 50;
+var ATT_REMOTE_GRACE_MS = 5000;
+var _attLastLocalWriteTs = 0;
+var _attDropdownReady = false;
+var _attDropdownCacheGen = -1;
+var _attDropdownRepoCount = -1;
+var _attPeriodSelectBound = false;
+var _buildSmartRegisterScheduled = false;
+var _buildSmartRegisterPending = null;
+var _attDeptRefreshTimer = null;
+var _attDashSaveRenderTimer = null;
+var ATT_DASH_SAVE_RENDER_DEBOUNCE_MS = 650;
+var ATT_SEARCH_MAX = 50;
+var ATT_SEARCH_DEBOUNCE_MS = 150;
+
+function attDebounce(fn, ms) {
+  var timer = null;
+  return function () {
+    var ctx = this;
+    var args = arguments;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(function () {
+      timer = null;
+      fn.apply(ctx, args);
+    }, ms);
+  };
+}
+
+function attScheduleDashboardRefreshFromSave() {
+  if (typeof window.emsInvalidateAttDashboardCache === 'function') {
+    window.emsInvalidateAttDashboardCache();
+  }
+  if (!attPanelIsVisible('att-dashboard-panel')) return;
+  if (_attDashSaveRenderTimer) clearTimeout(_attDashSaveRenderTimer);
+  _attDashSaveRenderTimer = setTimeout(function () {
+    _attDashSaveRenderTimer = null;
+    if (attPanelIsVisible('att-dashboard-panel') && typeof window.renderAttDashboard === 'function') {
+      window.renderAttDashboard();
+    }
+  }, ATT_DASH_SAVE_RENDER_DEBOUNCE_MS);
+}
+
+function attPanelIsVisible(panelId) {
+  if (typeof window.emsAttPanelIsVisible === 'function') return window.emsAttPanelIsVisible(panelId);
+  var el = document.getElementById(panelId);
+  if (!el) return false;
+  return el.classList.contains('active');
+}
+
+/** True when attendance UI should paint (module visible or register session active). */
+function attShouldRenderRegister() {
+  if (typeof window.emsIsAttendanceModuleActive === 'function' && window.emsIsAttendanceModuleActive()) {
+    return true;
+  }
+  var mod = document.getElementById('module-attendance');
+  if (mod && mod.classList.contains('active') && mod.style.display !== 'none') return true;
+  if (window.currentAttState && window.currentAttState.month && window.currentAttState.targetUsers && window.currentAttState.targetUsers.length) {
+    return true;
+  }
+  return false;
+}
+
+function attResolveRosterLimit() {
+  var limit = typeof window.emsResolveFetchLimit === 'function' ? window.emsResolveFetchLimit(5000) : 5000;
+  if (!limit || limit < 1) return 5000;
+  return limit;
+}
+
+function attOnRepositoryDataReady() {
+  if (typeof window.emsIsAttendanceModuleActive === 'function' && !window.emsIsAttendanceModuleActive()) return;
+  loadAttDropdowns(true);
+  if (window.currentAttState && window.currentAttState.month && window.currentAttState.targetUsers && window.currentAttState.targetUsers.length) {
+    buildSmartRegister(window.currentAttState.month, window.getFilteredUsers());
+  } else if (typeof attTryAutoLoadRegister === 'function') {
+    attTryAutoLoadRegister();
+  }
+}
+
+// =========================================================
+// فائر بیس لائیو سنک (حاضری ماڈیول) — tenantId via emsGetTenantId()
+// =========================================================
+function getAttendanceTenantId() {
+  if (typeof window.emsGetTenantId === 'function') {
+    var tid = window.emsGetTenantId();
+    if (tid) return tid;
+  }
+  if (window.CURRENT_MADRASA_TENANT_ID) return window.CURRENT_MADRASA_TENANT_ID;
+  if (typeof window.emsReadPersistedBootTenantId === 'function') {
+    var persisted = window.emsReadPersistedBootTenantId();
+    if (persisted) return persisted;
+  }
+  try {
+    var fb = typeof window !== 'undefined' ? window.firebase : undefined;
+    if (fb && fb.auth && fb.auth().currentUser) {
+      return fb.auth().currentUser.uid;
+    }
+  } catch (e) { /* offline boot */ }
+  return null;
+}
+
+function attSheetKeys(month, type, classId, period) {
+  var uid = getAttendanceTenantId() || 'local';
+  var p = period || 'all';
+  var cloudDocId = typeof window.emsAttCloudDocId === 'function'
+    ? window.emsAttCloudDocId(month, type, classId, p)
+    : 'att_rec_' + month + '_' + type + '_' + classId + '_' + p;
+  var localKey = typeof window.emsAttLocalStorageKey === 'function'
+    ? window.emsAttLocalStorageKey(uid, month, type, classId, p)
+    : cloudDocId;
+  return { cloudDocId: cloudDocId, localKey: localKey, tenantId: uid };
+}
+
+function attLastSessionStorageKey() {
+  var uid = getAttendanceTenantId() || 'local';
+  return 'ems_att_last_session_' + uid;
+}
+
+function attSaveLastSession(month, type, classId, period) {
+  try {
+    localStorage.setItem(attLastSessionStorageKey(), JSON.stringify({
+      month: month,
+      type: type,
+      classId: classId || '',
+      period: period || 'all',
+      ts: Date.now()
+    }));
+  } catch (e) { /* quota */ }
+}
+
+function attRestoreLastSession() {
+  try {
+    var raw = localStorage.getItem(attLastSessionStorageKey());
+    if (!raw) return false;
+    var s = JSON.parse(raw);
+    if (!s || !s.month) return false;
+    var typeSel = document.getElementById('att-reg-type');
+    var clsSel = document.getElementById('att-reg-class');
+    var perSel = document.getElementById('att-reg-period');
+    var monthInput = document.getElementById('att-reg-month');
+    if (typeSel && s.type) typeSel.value = s.type;
+    if (monthInput && s.month) monthInput.value = s.month;
+    if (clsSel && s.classId) clsSel.value = s.classId;
+    if (perSel && s.period) perSel.value = s.period;
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function attIsOfflineMode() {
+  if (window.EMS_NETWORK_OFFLINE_AT_BOOT) return true;
+  if (window.EMS_OFFLINE_ONLY) return true;
+  if (!navigator.onLine) return true;
+  return false;
+}
+
+function attPersistSheetLocal(cloudDocId, localKey, data) {
+  if (!localKey) localKey = cloudDocId;
+  if (typeof window.emsOfflineWriteLocalSync === 'function') {
+    window.emsOfflineWriteLocalSync(localKey, data);
+  } else {
+    try {
+      var str = JSON.stringify(data);
+      if (window._emsOriginalSetItem) {
+        window._emsSuppressSync = true;
+        window._emsOriginalSetItem.call(localStorage, localKey, str);
+        window._emsSuppressSync = false;
+      } else {
+        localStorage.setItem(localKey, str);
+      }
+    } catch (e) {
+      console.warn('[EMS] att local sync write failed', e);
+      return false;
+    }
+  }
+  return true;
+}
+
+var _attCloudPersistTimer = null;
+var _attCloudPersistPending = null;
+var _attSaveToastShown = false;
+
+function attScheduleCloudPersist(cloudDocId, localKey, dataToSave, showToast, cloudPatch) {
+  _attCloudPersistPending = {
+    cloudDocId: cloudDocId,
+    localKey: localKey,
+    dataToSave: dataToSave,
+    cloudPatch: cloudPatch,
+    showToast: !!showToast
+  };
+  if (_attCloudPersistTimer) clearTimeout(_attCloudPersistTimer);
+  _attCloudPersistTimer = setTimeout(function () {
+    _attCloudPersistTimer = null;
+    var p = _attCloudPersistPending;
+    _attCloudPersistPending = null;
+    if (!p || typeof window.emsOfflinePersistAttendance !== 'function') {
+      if (p && typeof window.showToast === 'function') {
+        window.showToast('خرابی: حاضری سنک outbox تیار نہیں — صفحہ دوبارہ لوڈ کریں', 'error');
+      }
+      return;
+    }
+    var persistOpts = { localKey: p.localKey, skipLocalSync: true };
+    if (p.cloudPatch && Object.keys(p.cloudPatch).length) {
+      persistOpts.patch = p.cloudPatch;
+    }
+    window.emsOfflinePersistAttendance(p.cloudDocId, p.dataToSave, persistOpts).then(function (res) {
+      if (!p.showToast || typeof window.showToast !== 'function') return;
+      if (res && res.ok) {
+        if (res.offline && !res.synced && !_attSaveToastShown) {
+          _attSaveToastShown = true;
+          window.showToast('✅ حاضری آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'success');
+        } else if (res.synced) {
+          window.showToast('✅ حاضری محفوظ + کلاؤڈ سنک', 'success');
+        }
+      } else if (res && !res.ok) {
+        window.showToast('حاضری محفوظ ناکام', 'error');
+      }
+    }).catch(function (err) {
+      console.error('[EMS] save attendance', err);
+    });
+  }, 450);
+}
+
+function attReadSheetLocal(localKey) {
+  try {
+    var raw = typeof window.emsSafeLocalGet === 'function'
+      ? window.emsSafeLocalGet(localKey)
+      : localStorage.getItem(localKey);
+    if (!raw) return null;
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
+  } catch (eRead) {
+    return null;
+  }
+}
+
+/** Build Firestore field-path patch (records.uid.day) vs previous persisted sheet. */
+function attComputeSheetCloudPatch(prevData, newData) {
+  prevData = prevData || {};
+  newData = newData || {};
+  var patch = {};
+  var prevRec = prevData.records || {};
+  var newRec = newData.records || {};
+  Object.keys(newRec).forEach(function (uid) {
+    var prevDay = prevRec[uid] || {};
+    var newDay = newRec[uid] || {};
+    Object.keys(newDay).forEach(function (day) {
+      if (prevDay[day] !== newDay[day]) {
+        patch['records.' + uid + '.' + day] = newDay[day];
+      }
+    });
+    Object.keys(prevDay).forEach(function (day) {
+      if (!(day in newDay) && prevDay[day]) {
+        patch['records.' + uid + '.' + day] = null;
+      }
+    });
+  });
+  Object.keys(prevRec).forEach(function (uid) {
+    if (!newRec[uid]) {
+      Object.keys(prevRec[uid] || {}).forEach(function (day) {
+        patch['records.' + uid + '.' + day] = null;
+      });
+    }
+  });
+
+  function diffNested(field) {
+    var a = prevData[field];
+    var b = newData[field];
+    if (JSON.stringify(a || {}) === JSON.stringify(b || {})) return;
+    patch[field] = b || {};
+  }
+  diffNested('dailyLocks');
+  diffNested('remarks');
+  diffNested('late');
+
+  if (prevData.locked !== newData.locked) patch.locked = !!newData.locked;
+  if (prevData.timestamp !== newData.timestamp) patch.timestamp = newData.timestamp;
+  if (newData.departmentId != null && prevData.departmentId !== newData.departmentId) {
+    patch.departmentId = newData.departmentId;
+  }
+  return patch;
+}
+
+function attPauseDictObserver() {
+  if (window.dictObserver) window.dictObserver.disconnect();
+}
+
+function attResumeDictObserver() {
+  if (typeof window.emsStartDictObserver === 'function') window.emsStartDictObserver();
+}
+
+function attRefreshCellUI(uid, day) {
+  var symbols = {};
+  try {
+    symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+  } catch (e) {
+    symbols = { P: 'P', A: 'A', L: 'L' };
+  }
+  var st = (window.currentAttState && window.currentAttState.records[uid])
+    ? (window.currentAttState.records[uid][day] || '') : '';
+  var printEl = document.getElementById('print-txt-' + uid + '-' + day);
+  if (printEl) printEl.textContent = st;
+  if (!printEl) return;
+  var cell = printEl.closest('td');
+  if (!cell) return;
+  cell.classList.remove('att-cell-empty', 'att-cell-p', 'att-cell-a', 'att-cell-l');
+  if (!st) cell.classList.add('att-cell-empty');
+  else if (st === symbols.P) cell.classList.add('att-cell-p');
+  else if (st === symbols.A) cell.classList.add('att-cell-a');
+  else if (st === symbols.L) cell.classList.add('att-cell-l');
+  cell.querySelectorAll('.att-cell-btn.status-p').forEach(function (btn) {
+    btn.classList.toggle('active', st === symbols.P);
+  });
+  cell.querySelectorAll('.att-cell-btn.status-a').forEach(function (btn) {
+    btn.classList.toggle('active', st === symbols.A);
+  });
+  cell.querySelectorAll('.att-cell-btn.status-l').forEach(function (btn) {
+    btn.classList.toggle('active', st === symbols.L);
+  });
+  cell.querySelectorAll('.att-cell-btn.status-clear').forEach(function (btn) {
+    btn.classList.toggle('active', !st);
+  });
+  cell.querySelectorAll('.att-cell-btn.status-custom').forEach(function (btn) {
+    var remark = (window.currentAttState.remarks[uid] && window.currentAttState.remarks[uid][day]) || '';
+    var late = (window.currentAttState.late[uid] && window.currentAttState.late[uid][day]) || '';
+    btn.classList.toggle('active', !!(remark || late));
+  });
+}
+
+var attConfigUnsub = null;
+let currentAttListener = null;
+
+function stopAttendanceFirestoreSync() {
+  if (attConfigUnsub) {
+    attConfigUnsub();
+    attConfigUnsub = null;
+  }
+  if (currentAttListener) {
+    currentAttListener();
+    currentAttListener = null;
+  }
+}
+
+window.emsStartAttendanceSync = function () {
+  if (typeof db === 'undefined' || !db) return;
+  var tenantId = getAttendanceTenantId();
+  if (!tenantId) return;
+  stopAttendanceFirestoreSync();
+
+  attConfigUnsub = attTenantSubCol(db, tenantId, 'Attendance_Config')
+    .doc('periods').onSnapshot(function (doc) {
+      if (doc.exists) {
+        var listStr = JSON.stringify(doc.data().list || []);
+        if (window._emsOriginalSetItem) {
+          window._emsSuppressSync = true;
+          window._emsOriginalSetItem.call(localStorage, 'ems_att_periods', listStr);
+          window._emsSuppressSync = false;
+        } else {
+          localStorage.setItem('ems_att_periods', listStr);
+        }
+        if (document.getElementById('settings-period-tbody')) window.loadPeriods();
+      }
+    });
+
+  if (window.currentAttState && window.currentAttState.dbKey && !attIsOfflineMode()) {
+    setupLiveAttendanceListener(tenantId, window.currentAttState.dbKey);
+  }
+};
+
+window.emsStopAttendanceSync = stopAttendanceFirestoreSync;
+
+(function attBindFirebaseAuthListener() {
+  try {
+    var fb = typeof window !== 'undefined' ? window.firebase : undefined;
+    if (!fb || typeof fb.auth !== 'function') return;
+    fb.auth().onAuthStateChanged(function (user) {
+      if (!user) stopAttendanceFirestoreSync();
+    });
+  } catch (e) { /* offline — Firebase SDK not loaded */ }
+})();
+
+// --- Phase B0: local-first attendance sheet helpers ---
+function attEmptyAttendanceRecord() {
+  return { locked: false, records: {}, dailyLocks: {}, remarks: {}, late: {} };
+}
+
+function attRecordTimestamp(rec) {
+  if (!rec) return 0;
+  if (rec.timestamp) return Number(rec.timestamp) || 0;
+  if (rec.updatedAt) {
+    var t = rec.updatedAt;
+    if (typeof t === 'number') return t;
+    if (t && typeof t.toMillis === 'function') return t.toMillis();
+    if (typeof t === 'string') return Date.parse(t) || 0;
+  }
+  return 0;
+}
+
+function attNormalizeRecord(data) {
+  var base = attEmptyAttendanceRecord();
+  if (!data || typeof data !== 'object') return base;
+  return {
+    locked: !!data.locked,
+    records: data.records || {},
+    dailyLocks: data.dailyLocks || {},
+    remarks: data.remarks || {},
+    late: data.late || {},
+    timestamp: attRecordTimestamp(data)
+  };
+}
+
+function attReconcileAttendanceRecord(localRec, remoteRec) {
+  if (!localRec || !localRec.records || !Object.keys(localRec.records).length) {
+    return attNormalizeRecord(remoteRec || localRec);
+  }
+  if (!remoteRec) return attNormalizeRecord(localRec);
+  if (attRecordTimestamp(remoteRec) > attRecordTimestamp(localRec)) {
+    return attNormalizeRecord(remoteRec);
+  }
+  return attNormalizeRecord(localRec);
+}
+
+function attApplyAttendanceState(month, type, classId, period, keys, savedRecord, targets) {
+  var cloudDocId = typeof keys === 'string' ? keys : keys.cloudDocId;
+  var localKey = typeof keys === 'string' ? keys : keys.localKey;
+  var rec = attNormalizeRecord(savedRecord);
+  window.currentAttState = {
+    month: month,
+    type: type,
+    classId: classId,
+    period: period,
+    dbKey: cloudDocId,
+    localKey: localKey,
+    locked: rec.locked,
+    records: rec.records || {},
+    dailyLocks: rec.dailyLocks || {},
+    remarks: rec.remarks || {},
+    late: rec.late || {},
+    targetUsers: targets || [],
+    registerRowPage: 1
+  };
+}
+
+function attCacheAttendanceFromRemote(cloudDocId, data, localKey) {
+  localKey = localKey || (window.currentAttState && window.currentAttState.localKey) || cloudDocId;
+  if (typeof window.emsOfflineCacheAttendanceFromRemote === 'function') {
+    return window.emsOfflineCacheAttendanceFromRemote(cloudDocId, data, { localKey: localKey });
+  }
+  return Promise.resolve(false);
+}
+
+function attFetchAttendanceSheet(uid, keys) {
+  var cloudDocId = typeof keys === 'string' ? keys : keys.cloudDocId;
+  var localKey = typeof keys === 'string' ? keys : keys.localKey;
+  var empty = attEmptyAttendanceRecord();
+  var cacheFn = typeof window.emsOfflineGetCachedAttendance === 'function'
+    ? window.emsOfflineGetCachedAttendance(cloudDocId, { localKey: localKey })
+    : Promise.resolve(null);
+  return cacheFn.then(function (cached) {
+    if (cached) return attNormalizeRecord(cached);
+    if (attIsOfflineMode()) return empty;
+    var fsDb = attGetFirestoreDb();
+    if (!fsDb) return empty;
+    return attTenantSubCol(fsDb, uid, 'Attendance').doc(cloudDocId)
+      .get({ source: 'default' })
+      .then(function (doc) {
+        var data = doc.exists ? attNormalizeRecord(doc.data()) : empty;
+        if (doc.exists) attCacheAttendanceFromRemote(cloudDocId, data, localKey);
+        return data;
+      })
+      .catch(function () { return empty; });
+  });
+}
+
+function attBackgroundReconcile(uid, keys, localRec) {
+  if (attIsOfflineMode()) return;
+  var cloudDocId = typeof keys === 'string' ? keys : keys.cloudDocId;
+  var localKey = typeof keys === 'string' ? keys : keys.localKey;
+  var fsDb = attGetFirestoreDb();
+  if (!fsDb) return;
+  if (localRec && localRec.records && Object.keys(localRec.records).length) {
+    var localTs = attRecordTimestamp(localRec);
+    if (localTs > 0) { /* keep local when offline-written */ }
+  }
+  attTenantSubCol(fsDb, uid, 'Attendance').doc(cloudDocId)
+    .get({ source: 'default' })
+    .then(function (doc) {
+      if (!window.currentAttState || window.currentAttState.dbKey !== cloudDocId) return;
+      if (!doc.exists) return;
+      var remote = doc.data();
+      if (!remote || !remote.records || !Object.keys(remote.records).length) return;
+      var localTs = attRecordTimestamp(localRec);
+      var remoteTs = attRecordTimestamp(remote);
+      if (remoteTs <= localTs) return;
+      var merged = attReconcileAttendanceRecord(localRec, remote);
+      attCacheAttendanceFromRemote(cloudDocId, merged, localKey);
+      attApplyAttendanceState(
+        window.currentAttState.month,
+        window.currentAttState.type,
+        window.currentAttState.classId,
+        window.currentAttState.period,
+        { cloudDocId: cloudDocId, localKey: localKey },
+        merged,
+        window.currentAttState.targetUsers
+      );
+      buildSmartRegister(window.currentAttState.month, window.getFilteredUsers());
+      window.showToast('کلاؤڈ سے تازہ حاضری لاگو کر دی گئی', 'info');
+    })
+    .catch(function () { /* optional background sync */ });
+}
+
+function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period) {
+  var keys = attSheetKeys(month, type, classId, period);
+  attSaveLastSession(month, type, classId, period);
+
+  function openRegister(savedRecord, toastMsg, toastType) {
+    attApplyAttendanceState(month, type, classId, period, keys, savedRecord, targets);
+    buildSmartRegisterImmediate(month, targets);
+    if (!attIsOfflineMode()) {
+      setupLiveAttendanceListener(uid, keys.cloudDocId);
+    }
+    if (toastMsg && typeof window.showToast === 'function') {
+      window.showToast(toastMsg, toastType || 'success');
+    }
+  }
+
+  function fetchFromCloud(localRec) {
+    var fsDb = attGetFirestoreDb();
+    if (attIsOfflineMode() || !fsDb) {
+      if (localRec) {
+        openRegister(localRec, '📴 آف لائن — لوکل ڈیٹا', 'warning');
+        return;
+      }
+      openRegister(attEmptyAttendanceRecord(), 'آف لائن — خالی رجسٹر', 'warning');
+      return;
+    }
+    if (!localRec) {
+      window.showToast('حاضری کا رجسٹر کلاؤڈ سے لوڈ ہو رہا ہے...', 'warning');
+    }
+    attTenantSubCol(fsDb, uid, 'Attendance').doc(keys.cloudDocId)
+      .get({ source: 'default' })
+      .then(function (doc) {
+        var remote = doc.exists ? doc.data() : null;
+        var merged = attReconcileAttendanceRecord(localRec, remote);
+        attCacheAttendanceFromRemote(keys.cloudDocId, merged, keys.localKey);
+        var msg = localRec
+          ? (attRecordTimestamp(remote) > attRecordTimestamp(localRec) ? 'لوکل + کلاؤڈ ہم آہنگ' : 'لوکل کیش سے لوڈ')
+          : (remote ? 'کلاؤڈ سے لوڈ ہو گیا' : 'نیا خالی رجسٹر');
+        var typ = localRec ? 'success' : (remote ? 'info' : 'warning');
+        openRegister(merged, msg, typ);
+      })
+      .catch(function (err) {
+        if (localRec) {
+          openRegister(localRec, '📴 آف لائن — لوکل ڈیٹا', 'warning');
+        } else {
+          window.showToast('ڈیٹا لوڈ کرنے میں مسئلہ: ' + err.message, 'error');
+        }
+      });
+  }
+
+  var cachePromise = typeof window.emsOfflineGetCachedAttendance === 'function'
+    ? window.emsOfflineGetCachedAttendance(keys.cloudDocId, { localKey: keys.localKey })
+    : Promise.resolve(null);
+
+  cachePromise.then(function (localData) {
+    var localRec = localData ? attNormalizeRecord(localData) : null;
+    if (localRec && (Object.keys(localRec.records || {}).length || localRec.locked)) {
+      openRegister(localRec, 'حاضری کا رجسٹر لوکل کیش سے لوڈ ہو گیا', 'success');
+      attBackgroundReconcile(uid, keys, localRec);
+      return;
+    }
+    fetchFromCloud(localRec);
+  });
+}
+
+function attCollectTargetsFromRepoRelaxed(type, classId) {
+  var wantType = type === 'students' ? 'student' : type === 'teachers' ? 'teacher' : 'staff';
+  var targets = [];
+  if (typeof window.emsRegRepoForEach !== 'function') return targets;
+  window.emsRegRepoForEach(function (u) {
+    if (!u || !attGetUserId(u)) return;
+    if (type === 'students' && classId) {
+      if (!attClassMatches(u, classId)) return;
+    } else if (!attUserMatchesType(u, wantType)) {
+      return;
+    }
+    targets.push(u);
+  });
+  return attFilterEligibleUsers(attMergeUniqueById(targets));
+}
+
+function attCollectTargetsFromRepo(type, classId) {
+  var wantType = type === 'students' ? 'student' : type === 'teachers' ? 'teacher' : 'staff';
+  var targets = [];
+  var repoCount = typeof window.emsRegRepoGetCount === 'function' ? window.emsRegRepoGetCount() : 0;
+
+  if (repoCount > 0 && typeof window.emsRegRepoForEach === 'function') {
+    window.emsRegRepoForEach(function (u) {
+      if (!u || !attGetUserId(u) || !attUserMatchesType(u, wantType)) return;
+      if (type === 'students' && classId && !attClassMatches(u, classId)) return;
+      targets.push(u);
+    });
+    targets = attApplyDeptFilter(targets);
+  } else {
+    var users = attGetUsers();
+    targets = users.filter(function (u) { return attUserMatchesType(u, wantType); });
+    if (type === 'students' && classId) {
+      targets = targets.filter(function (u) { return attClassMatches(u, classId); });
+    }
+  }
+
+  if (!targets.length && type === 'students' && classId) {
+    targets = attCollectTargetsFromRepoRelaxed(type, classId);
+  }
+
+  targets = attFilterEligibleUsers(attMergeUniqueById(targets));
+  var limit = attResolveRosterLimit();
+  if (limit > 0 && targets.length > limit) targets = targets.slice(0, limit);
+  return targets;
+}
+
+function attResolveTargetUsers(type, classId) {
+  var resolve = function () {
+    var targets = attCollectTargetsFromRepo(type, classId);
+    if (targets.length) return Promise.resolve(targets);
+
+    if (type === 'students' && classId && typeof window.emsFetchStudentsLocalFirst === 'function') {
+      return window.emsFetchStudentsLocalFirst(classId).then(function (rows) {
+        rows = attFilterEligibleUsers(attMergeUniqueById(rows || []));
+        if (rows.length) return rows;
+        if (typeof window.emsRegRepoFetchClassRoster === 'function') {
+          return window.emsRegRepoFetchClassRoster(classId, { limit: attResolveRosterLimit() }).then(function (remoteRows) {
+            remoteRows = attFilterEligibleUsers(attMergeUniqueById(remoteRows || []));
+            return remoteRows.length ? remoteRows : attCollectTargetsFromRepoRelaxed(type, classId);
+          });
+        }
+        return attCollectTargetsFromRepoRelaxed(type, classId);
+      });
+    }
+    if (type === 'teachers' && typeof window.emsFetchStaffLocalFirst === 'function') {
+      return window.emsFetchStaffLocalFirst('teacher').then(function (rows) {
+        rows = attFilterEligibleUsers(attMergeUniqueById(rows || []));
+        return rows.length ? rows : attCollectTargetsFromRepoRelaxed(type, classId);
+      });
+    }
+    if (type === 'staff' && typeof window.emsFetchStaffLocalFirst === 'function') {
+      return window.emsFetchStaffLocalFirst('staff').then(function (rows) {
+        rows = attFilterEligibleUsers(attMergeUniqueById(rows || []));
+        return rows.length ? rows : attCollectTargetsFromRepoRelaxed(type, classId);
+      });
+    }
+    return Promise.resolve(attCollectTargetsFromRepoRelaxed(type, classId));
+  };
+  if (typeof window.emsEnsureRepositoryReady === 'function') {
+    return window.emsEnsureRepositoryReady().then(function () { return resolve(); }).catch(function () { return resolve(); });
+  }
+  return resolve();
+}
+
+function setupLiveAttendanceListener(uid, cloudDocId) {
+    if (currentAttListener) {
+      currentAttListener();
+      currentAttListener = null;
+    }
+    if (attIsOfflineMode()) return;
+    var fsDb = attGetFirestoreDb();
+    if (!fsDb || !uid || !cloudDocId) return;
+
+    currentAttListener = attTenantDoc(fsDb, uid)
+      .collection('Attendance').doc(cloudDocId).onSnapshot((doc) => {
+        if(doc.exists) {
+            let data = doc.data();
+            if (!window.currentAttState || window.currentAttState.dbKey !== cloudDocId) return;
+            if (!attShouldApplyRemoteSnapshot(data)) {
+              attRefreshLockChrome();
+              return;
+            }
+            var lk = window.currentAttState.localKey || cloudDocId;
+            attCacheAttendanceFromRemote(cloudDocId, data, lk);
+            let normalized = attNormalizeRecord(data);
+            window.currentAttState.locked = normalized.locked;
+            window.currentAttState.records = normalized.records;
+            window.currentAttState.dailyLocks = normalized.dailyLocks;
+            window.currentAttState.remarks = normalized.remarks;
+            window.currentAttState.late = normalized.late;
+            
+            if(document.getElementById('smart-register-tbody') && document.getElementById('smart-register-tbody').innerHTML !== '') {
+                attQuickRefreshRegister();
+            }
+        }
+    });
+}
+
+function attHasValidRegisterSession() {
+  var typeSel = document.getElementById('att-reg-type');
+  var monthInput = document.getElementById('att-reg-month');
+  var clsSel = document.getElementById('att-reg-class');
+  if (!monthInput || !monthInput.value) return false;
+  var type = typeSel ? typeSel.value : 'students';
+  if (type === 'students') {
+    return !!(clsSel && clsSel.value);
+  }
+  return true;
+}
+
+function attTryAutoLoadRegister() {
+  if (!attPanelIsVisible('att-smart-register')) return;
+  if (!attHasValidRegisterSession()) return;
+  var tbody = document.getElementById('smart-register-tbody');
+  if (tbody && tbody.innerHTML.trim() !== '' && window.currentAttState && window.currentAttState.month) {
+    return;
+  }
+  var loadBtn = document.getElementById('btn-load-smart-register');
+  if (loadBtn) loadBtn.click();
+}
+window.attTryAutoLoadRegister = attTryAutoLoadRegister;
+
+function attReplayCurrentTabBoot() {
+  var tabId = window._attCurrentTabId;
+  if (!tabId) return;
+  if (typeof window.emsReplayAttTabBoot === 'function') {
+    window.emsReplayAttTabBoot(tabId);
+  }
+}
+
+// ================== 1. نیویگیشن اور انیشلائزیشن ==================
+function attRegisterTabBootHandlers() {
+  if (typeof window.emsRegisterAttTabBoot !== 'function') return;
+  window.emsRegisterAttTabBoot('att-dashboard-panel', function () {
+    if (typeof window.renderAttDashboard === 'function') window.renderAttDashboard();
+  });
+  window.emsRegisterAttTabBoot('att-smart-register', function () {
+    var afterReady = function () {
+      loadAttDropdowns(false);
+      attTryAutoLoadRegister();
+    };
+    if (typeof window.emsEnsureRepositoryReady === 'function') {
+      window.emsEnsureRepositoryReady().then(afterReady).catch(afterReady);
+    } else {
+      afterReady();
+    }
+  });
+  window.emsRegisterAttTabBoot('att-master-settings', function () {
+    loadSettingsData();
+    loadPeriods();
+  });
+  window.emsRegisterAttTabBoot('att-holiday-management', function () {
+    loadHolidays();
+  });
+  window.emsRegisterAttTabBoot('att-event-register', function () {
+    evtEnsureParticipantSearchBound();
+    if (typeof window.renderSavedEvents === 'function') window.renderSavedEvents();
+  });
+  window.emsRegisterAttTabBoot('att-timetable', function () {
+    if (!_attDropdownReady) loadAttDropdowns();
+    if (typeof loadSettingsData === 'function') loadSettingsData();
+    if (typeof window.renderTimetable === 'function') window.renderTimetable();
+  });
+  window.emsRegisterAttTabBoot('att-reports-panel', function () {
+    var toEl = document.getElementById('rep-att-to');
+    var fromEl = document.getElementById('rep-att-from');
+    var today = new Date().toISOString().split('T')[0];
+    if (toEl && !toEl.value) toEl.value = today;
+    if (fromEl && !fromEl.value) {
+      var d = new Date();
+      d.setDate(d.getDate() - 30);
+      fromEl.value = d.toISOString().split('T')[0];
+    }
+  });
+  window.emsRegisterAttTabBoot('att-audit-recycle', function () {
+    loadAttAudit();
+    loadRecycleBin();
+  });
+}
+attRegisterTabBootHandlers();
+attReplayCurrentTabBoot();
+
+// حاضری ماڈیول کھلتے ہی ڈیفالٹ ڈیش بورڈ
+window.emsOpenAttendance = function () {
+  if (typeof window.emsStartAttendanceSync === 'function') {
+    window.emsStartAttendanceSync();
+  }
+  if (typeof window.emsCloseAllModals === 'function') window.emsCloseAllModals();
+
+  var dashBtn = document.querySelector('#att-ribbon-menu [onclick*="att-dashboard-panel"]');
+  if (typeof window.switchAttTab === 'function') {
+    window.switchAttTab('att-dashboard-panel', dashBtn);
+  }
+
+  var boot = function () {
+    if (typeof window.emsDeferModuleWork === 'function') {
+      window.emsDeferModuleWork(function () {
+        loadAttDropdowns(true);
+        attRestoreLastSession();
+        setTimeout(attTryAutoLoadRegister, 250);
+      }, { idle: true, timeout: 200 });
+    } else {
+      loadAttDropdowns(true);
+    }
+  };
+  if (typeof window.emsEnsureRepositoryReady === 'function') {
+    window.emsEnsureRepositoryReady().then(boot).catch(boot);
+  } else {
+    boot();
+  }
+};
+
+function loadAttDropdowns(force) {
+  var cacheGen = typeof window.emsRegRepoGetCacheGeneration === 'function'
+    ? window.emsRegRepoGetCacheGeneration()
+    : 0;
+  var repoCount = typeof window.emsRegRepoGetCount === 'function' ? window.emsRegRepoGetCount() : 0;
+
+  if (!force && _attDropdownReady && _attDropdownCacheGen === cacheGen && _attDropdownRepoCount === repoCount) return;
+
+  var classes = [];
+  if (typeof window.emsRegRepoCollectClasses === 'function') {
+    classes = window.emsRegRepoCollectClasses();
+  }
+  if (!classes.length && repoCount > 0 && typeof window.emsRegRepoForEach === 'function') {
+    var seen = Object.create(null);
+    window.emsRegRepoForEach(function (u) {
+      if (!u || !attUserMatchesType(u, 'student')) return;
+      var c = attGetUserClass(u);
+      if (!c || c === 'نامعلوم' || seen[c]) return;
+      seen[c] = true;
+      classes.push(c);
+    });
+    classes.sort();
+  }
+  if (!classes.length) {
+    let users = attGetUsers();
+    if (typeof window.emsFilterByDepartment === 'function') {
+      users = window.emsFilterByDepartment(users);
+    }
+    classes = [
+      ...new Set(users.filter(function (u) { return attUserMatchesType(u, 'student'); }).map(function (u) { return attGetUserClass(u); }).filter(function (c) { return c && c !== 'نامعلوم'; })),
+    ];
+  }
+
+  const classSelect = document.getElementById('att-reg-class');
+  const modalClassSelect = document.getElementById('new-period-class');
+
+  let classOptions = '<option value="">درجہ منتخب کریں...</option>' + classes.map((c) => `<option value="${c}">${c}</option>`).join('');
+  if (classSelect) { let curr = classSelect.value; classSelect.innerHTML = classOptions; classSelect.value = curr; }
+  if (modalClassSelect) { let curr2 = modalClassSelect.value; modalClassSelect.innerHTML = classOptions; modalClassSelect.value = curr2; }
+
+  const periodSelect = document.getElementById('att-reg-period');
+  if (periodSelect) {
+    const periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+    periodSelect.innerHTML = '<option value="all">تمام دن / اجمالی حاضری</option>' + 
+      periods.map((p) => `<option value="${p.id}" data-class="${p.className || ''}">[${p.teacherName}] - ${p.className || ''} - ${p.bookName || ''} (${p.name})</option>`).join('');
+
+    if (!_attPeriodSelectBound) {
+      _attPeriodSelectBound = true;
+      periodSelect.addEventListener('change', function() {
+        let selectedOpt = this.options[this.selectedIndex];
+        let autoClass = selectedOpt.getAttribute('data-class');
+        if(autoClass && classSelect) classSelect.value = autoClass;
+      });
+    }
+  }
+
+  const monthInput = document.getElementById('att-reg-month');
+  if (monthInput && !monthInput.value) monthInput.value = new Date().toISOString().substring(0, 7);
+
+  _attDropdownReady = true;
+  _attDropdownCacheGen = cacheGen;
+  _attDropdownRepoCount = repoCount;
+}
+
+// ================== 2. ماسٹر سیٹنگز (ادارہ اور پیریڈز) ==================
+document
+  .getElementById('btn-save-basic-settings')
+  ?.addEventListener('click', () => {
+    const settings = {
+      name: document.getElementById('set-madrasa-name').value,
+      branch: document.getElementById('set-branch-name').value,
+      year: document.getElementById('set-academic-year').value,
+      footer: document.getElementById('set-print-footer').value,
+    };
+    attPersistConfigBlob(ATT_SETTINGS_KEY, settings).then(function () {
+      window.showToast('بنیادی معلومات محفوظ کر لی گئیں!', 'success');
+      logAttAudit('سیٹنگز اپڈیٹ', 'مدرسہ کی بنیادی معلومات تبدیل کی گئیں');
+    }).catch(function () {
+      window.showToast('بنیادی معلومات محفوظ (آف لائن)', 'warning');
+    });
+  });
+
+window.saveSymbols = function () {
+  const symbols = {
+    P: document.getElementById('sym-p').value || 'P',
+    A: document.getElementById('sym-a').value || 'A',
+    L: document.getElementById('sym-l').value || 'L',
+  };
+  attPersistConfigBlob('ems_att_symbols', symbols).then(function () {
+    window.showToast('حاضری کی علامات محفوظ ہو گئیں!', 'success');
+  }).catch(function () {
+    window.showToast('علامات محفوظ ہو گئیں (آف لائن)', 'warning');
+  });
+};
+
+function loadSettingsData() {
+  const settings = JSON.parse(localStorage.getItem('ems_att_settings')) || {};
+  if (settings.name)
+    document.getElementById('set-madrasa-name').value = settings.name;
+  if (settings.branch)
+    document.getElementById('set-branch-name').value = settings.branch;
+  if (settings.year)
+    document.getElementById('set-academic-year').value = settings.year;
+  if (settings.footer)
+    document.getElementById('set-print-footer').value = settings.footer;
+
+  const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || {
+    P: 'P',
+    A: 'A',
+    L: 'L',
+  };
+  document.getElementById('sym-p').value = symbols.P;
+  document.getElementById('sym-a').value = symbols.A;
+  document.getElementById('sym-l').value = symbols.L;
+
+  // Load Teachers for Period Modal
+  const users = attGetUsers();
+  const teachers = users.filter((u) => u.type === 'teacher');
+  const tSelect = document.getElementById('new-period-teacher');
+  if (tSelect) {
+    tSelect.innerHTML =
+      '<option value="">استاد منتخب کریں...</option>' +
+      teachers
+        .map((t) => `<option value="${t.id}">${t.name}</option>`)
+        .join('');
+  }
+}
+
+var ATT_DAYS_SHORT = ['اتوار', 'پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ'];
+function attDaysLabel(days) {
+  if (!days || !days.length) return '<span style="color:#94a3b8;">روزانہ</span>';
+  if (days.length === 7) return 'روزانہ';
+  return days.slice().sort((a, b) => a - b).map((d) => ATT_DAYS_SHORT[d]).join('، ');
+}
+
+function loadPeriods() {
+  const periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  const tbody = document.getElementById('settings-period-tbody');
+  if (!tbody) return;
+  if (!periods.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">ابھی کوئی سبق درج نہیں</td></tr>';
+    return;
+  }
+  tbody.innerHTML = periods
+    .map(function (p) {
+      var pid = String(p.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      var book = p.bookName && p.bookName !== '-' ? p.bookName : '—';
+      var start = p.start && p.start !== '-' ? p.start : '—';
+      var end = p.end && p.end !== '-' ? p.end : '—';
+      var clsNote = p.className && p.className !== '-' ? '<br><small style="color:var(--accent);">' + p.className + '</small>' : '';
+      return (
+        '<tr>' +
+        '<td><strong>' + p.name + '</strong>' + clsNote + '</td>' +
+        '<td>' + book + '</td>' +
+        '<td>' + start + '</td>' +
+        '<td>' + end + '</td>' +
+        '<td>' + (p.teacherName || '—') + '</td>' +
+        '<td style="white-space:nowrap;">' +
+        '<button class="icon-btn" onclick="editTimetablePeriod(\'' + pid + '\')" title="ترمیم"><i class="fas fa-pencil-alt"></i></button> ' +
+        '<button class="icon-btn delete" onclick="deletePeriod(\'' + pid + '\')" title="حذف"><i class="fas fa-trash"></i></button>' +
+        '</td></tr>'
+      );
+    })
+    .join('');
+}
+
+window._attEditingPeriodId = null;
+
+function attFormatBookName(bookName) {
+  if (!bookName || bookName === '-') return '';
+  return bookName;
+}
+
+function attResetPeriodForm() {
+  ['new-period-name', 'new-period-book', 'new-period-location', 'custom-teacher-name'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  var cls = document.getElementById('new-period-class');
+  if (cls) cls.value = '';
+  ['new-period-start', 'new-period-end'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.querySelectorAll('#new-period-days input').forEach(function (cb) {
+    cb.checked = false;
+  });
+  var customArea = document.getElementById('custom-teacher-input-area');
+  if (customArea) customArea.style.display = 'none';
+  var delBtn = document.getElementById('btn-del-custom-teacher');
+  if (delBtn) delBtn.style.display = 'none';
+}
+
+function attUpdatePeriodModalChrome() {
+  var titleEl = document.getElementById('add-period-modal-title');
+  var btnSave = document.getElementById('btn-save-period');
+  var isEdit = !!window._attEditingPeriodId;
+  if (titleEl) {
+    titleEl.textContent = isEdit ? 'گھنٹہ ترمیم' : 'نیا گھنٹہ / پیریڈ شامل کریں';
+  }
+  if (btnSave) {
+    btnSave.innerHTML = isEdit
+      ? '<i class="fas fa-save"></i> ترمیم محفوظ کریں'
+      : '<i class="fas fa-save"></i> محفوظ کر کے بند کریں';
+  }
+}
+
+function attFillPeriodForm(p) {
+  if (!p) return;
+  var setVal = function (id, val) {
+    var el = document.getElementById(id);
+    if (el) el.value = val || '';
+  };
+  setVal('new-period-name', p.name);
+  setVal('new-period-class', p.className && p.className !== '-' ? p.className : '');
+  setVal('new-period-book', attFormatBookName(p.bookName));
+  setVal('new-period-location', p.location || '');
+  setVal('new-period-start', p.start && p.start !== '-' ? p.start : '');
+  setVal('new-period-end', p.end && p.end !== '-' ? p.end : '');
+  var tSelect = document.getElementById('new-period-teacher');
+  if (tSelect && p.teacherId) tSelect.value = p.teacherId;
+  if (typeof window.checkCustomTeacherSelect === 'function') window.checkCustomTeacherSelect();
+  document.querySelectorAll('#new-period-days input').forEach(function (cb) {
+    cb.checked = Array.isArray(p.days) && p.days.indexOf(parseInt(cb.value, 10)) >= 0;
+  });
+}
+
+function attRefreshPeriodUiAfterSave(editedId) {
+  if (typeof loadPeriods === 'function') loadPeriods();
+  if (typeof window.renderTimetable === 'function') window.renderTimetable();
+  if (typeof loadAttDropdowns === 'function') loadAttDropdowns(true);
+  var perSel = document.getElementById('att-reg-period');
+  if (editedId && perSel && perSel.value === editedId && typeof window.setupPrintHeader === 'function') {
+    window.setupPrintHeader();
+  }
+}
+
+function attSavePeriodFromModal(opts) {
+  opts = opts || {};
+  var closeAfter = !!opts.closeAfter;
+  var addMore = !!opts.addMore;
+
+  var name = document.getElementById('new-period-name')?.value.trim();
+  var className = document.getElementById('new-period-class')?.value || '-';
+  var bookName = document.getElementById('new-period-book')?.value.trim() || '-';
+  var location = document.getElementById('new-period-location')?.value.trim() || '';
+  var start = document.getElementById('new-period-start')?.value || '-';
+  var end = document.getElementById('new-period-end')?.value || '-';
+  var days = Array.from(document.querySelectorAll('#new-period-days input:checked')).map(function (c) {
+    return parseInt(c.value, 10);
+  });
+  var tSelect = document.getElementById('new-period-teacher');
+  var teacherId = tSelect ? tSelect.value : '';
+  var teacherName = tSelect && tSelect.selectedIndex >= 0 ? tSelect.options[tSelect.selectedIndex].text : '-';
+
+  if (!name) {
+    if (typeof window.showToast === 'function') window.showToast('گھنٹے کا نام درج کرنا لازمی ہے!', 'error');
+    return false;
+  }
+
+  if (teacherId === 'ADD_NEW') {
+    var customName = document.getElementById('custom-teacher-name')?.value.trim();
+    if (!customName) {
+      if (typeof window.showToast === 'function') window.showToast('نئے استاد کا نام درج کریں!', 'error');
+      return false;
+    }
+    teacherId = window.generateID ? window.generateID('CTCH') : 'CTCH-' + Math.floor(Math.random() * 90000);
+    teacherName = customName;
+    var customTeachers = JSON.parse(localStorage.getItem('ems_att_custom_teachers')) || [];
+    customTeachers.push({ id: teacherId, name: teacherName });
+    localStorage.setItem('ems_att_custom_teachers', JSON.stringify(customTeachers));
+  } else if (teacherId && teacherId !== '') {
+    teacherName = teacherName.replace(/\[.*?\]\s*/, '');
+  }
+
+  var periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  var periodObj = {
+    name: name,
+    className: className,
+    bookName: bookName,
+    location: location,
+    start: start,
+    end: end,
+    days: days,
+    teacherId: teacherId,
+    teacherName: teacherName,
+  };
+  var editedId = window._attEditingPeriodId;
+  var isEdit = !!editedId;
+
+  if (isEdit) {
+    var idx = periods.findIndex(function (p) { return p.id === editedId; });
+    if (idx < 0) {
+      if (typeof window.showToast === 'function') window.showToast('گھنٹہ نہیں ملا — دوبارہ کوشش کریں', 'error');
+      return false;
+    }
+    periodObj.id = editedId;
+    periods[idx] = periodObj;
+  } else {
+    periodObj.id = window.generateID ? window.generateID('PRD') : 'PRD-' + Math.floor(Math.random() * 90000);
+    periods.push(periodObj);
+  }
+
+  attPersistConfigBlob(ATT_PERIODS_KEY, periods).then(function () {
+    attRefreshPeriodUiAfterSave(isEdit ? editedId : null);
+  }).catch(function () {
+    attRefreshPeriodUiAfterSave(isEdit ? editedId : null);
+  });
+
+  if (typeof window.showToast === 'function') {
+    window.showToast(
+      isEdit ? 'گھنٹہ (' + name + ') کامیابی سے اپڈیٹ ہو گیا!' : 'گھنٹہ (' + name + ') کامیابی سے محفوظ کر لیا گیا!',
+      'success'
+    );
+  }
+  if (typeof logAttAudit === 'function') {
+    logAttAudit(isEdit ? 'گھنٹہ ترمیم' : 'نیا گھنٹہ', (isEdit ? 'ترمیم: ' : '') + name);
+  }
+
+  if (addMore) {
+    document.getElementById('new-period-name').value = '';
+    document.getElementById('new-period-book').value = '';
+    document.getElementById('new-period-class').value = '';
+    if (document.getElementById('new-period-location')) document.getElementById('new-period-location').value = '';
+    window._attEditingPeriodId = null;
+    attUpdatePeriodModalChrome();
+  } else if (closeAfter) {
+    attResetPeriodForm();
+    window._attEditingPeriodId = null;
+    attUpdatePeriodModalChrome();
+    if (typeof window.closeModal === 'function') window.closeModal('add-period-modal');
+  }
+
+  return true;
+}
+
+function attRemovePeriodById(periodId) {
+  var periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  var toDelete = periods.find(function (p) { return p.id === periodId; });
+  if (!toDelete) {
+    if (typeof window.showToast === 'function') window.showToast('گھنٹہ نہیں ملا', 'error');
+    return false;
+  }
+  var label = toDelete.name || periodId;
+  if (!confirm('کیا آپ واقعی "' + label + '" حذف کرنا چاہتے ہیں؟')) return false;
+  moveToRecycleBin('Period', toDelete);
+  var nextPeriods = periods.filter(function (p) { return p.id !== periodId; });
+  attPersistConfigBlob(ATT_PERIODS_KEY, nextPeriods).then(function () {
+    attRefreshPeriodUiAfterSave(null);
+  }).catch(function () {
+    attRefreshPeriodUiAfterSave(null);
+  });
+  var perSel = document.getElementById('att-reg-period');
+  if (perSel && perSel.value === periodId) perSel.value = 'all';
+  attRefreshPeriodUiAfterSave(null);
+  if (typeof window.setupPrintHeader === 'function') window.setupPrintHeader();
+  if (typeof logAttAudit === 'function') logAttAudit('گھنٹہ حذف', label);
+  if (typeof window.showToast === 'function') window.showToast('گھنٹہ حذف کر دیا گیا', 'success');
+  return true;
+}
+
+window.attOpenNewPeriodModal = function () {
+  window._attEditingPeriodId = null;
+  attResetPeriodForm();
+  attUpdatePeriodModalChrome();
+  if (typeof window.loadPeriodTeachers === 'function') window.loadPeriodTeachers();
+  if (typeof window.openModal === 'function') window.openModal('add-period-modal');
+};
+
+window.attClosePeriodModal = function () {
+  window._attEditingPeriodId = null;
+  attUpdatePeriodModalChrome();
+  if (typeof window.closeModal === 'function') window.closeModal('add-period-modal');
+};
+
+// ============================================================================
+// نظام الاوقات (Timetable) — استاد وار / درجہ وار + چھانٹی  (مرحلہ 4)
+// ============================================================================
+window._ttView = 'teacher';
+
+window.ttSetView = function (view) {
+  window._ttView = view;
+  document.getElementById('tt-view-teacher')?.classList.toggle('active', view === 'teacher');
+  document.getElementById('tt-view-class')?.classList.toggle('active', view === 'class');
+  window.renderTimetable();
+};
+
+window.ttClearFilters = function () {
+  ['tt-filter-teacher', 'tt-filter-class', 'tt-filter-book', 'tt-filter-day', 'tt-filter-search'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  window.renderTimetable();
+};
+
+function ttPopulateFilters() {
+  const periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  const fill = (id, values, label) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const cur = el.value;
+    el.innerHTML = `<option value="">${label}</option>` +
+      [...new Set(values.filter(Boolean))].sort().map((v) => `<option value="${v}">${v}</option>`).join('');
+    el.value = cur;
+  };
+  fill('tt-filter-teacher', periods.map((p) => p.teacherName), 'تمام اساتذہ');
+  fill('tt-filter-class', periods.map((p) => p.className).filter((c) => c && c !== '-'), 'تمام درجات');
+  fill('tt-filter-book', periods.map((p) => p.bookName).filter((b) => b && b !== '-'), 'تمام کتب');
+}
+
+function ttFilteredPeriods() {
+  let periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  const fT = document.getElementById('tt-filter-teacher')?.value || '';
+  const fC = document.getElementById('tt-filter-class')?.value || '';
+  const fB = document.getElementById('tt-filter-book')?.value || '';
+  const fD = document.getElementById('tt-filter-day')?.value || '';
+  const fS = (document.getElementById('tt-filter-search')?.value || '').trim().toLowerCase();
+
+  return periods.filter((p) => {
+    if (fT && p.teacherName !== fT) return false;
+    if (fC && p.className !== fC) return false;
+    if (fB && p.bookName !== fB) return false;
+    if (fD !== '' && p.days && p.days.length && p.days.indexOf(parseInt(fD, 10)) < 0) return false;
+    if (fS) {
+      const hay = `${p.teacherName} ${p.className} ${p.bookName} ${p.name} ${p.location || ''}`.toLowerCase();
+      if (hay.indexOf(fS) < 0) return false;
+    }
+    return true;
+  });
+}
+
+function ttPeriodCard(p) {
+  const loc = p.location ? `<span class="tt-chip"><i class="fas fa-map-marker-alt"></i> ${p.location}</span>` : '';
+  const time = p.start && p.start !== '-' ? `<span class="tt-chip"><i class="fas fa-clock"></i> ${p.start} - ${p.end}</span>` : '';
+  const book = attFormatBookName(p.bookName) ? `<span class="tt-chip"><i class="fas fa-book"></i> ${attFormatBookName(p.bookName)}</span>` : '';
+  const pid = String(p.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return `
+    <div class="tt-period">
+        <div class="tt-period-main">
+            <div class="tt-period-name">${p.name}</div>
+            <div class="tt-period-meta">${book}${time}${loc}<span class="tt-chip tt-chip-day">${attDaysLabel(p.days)}</span></div>
+        </div>
+        <div class="tt-period-actions">
+            <button class="btn btn-success btn-sm" onclick="ttTakeAttendance('${pid}')"><i class="fas fa-clipboard-check"></i> حاضری لیں</button>
+            <button class="btn btn-outline btn-sm tt-btn-edit" onclick="editTimetablePeriod('${pid}')" title="ترمیم"><i class="fas fa-pencil-alt"></i> ترمیم</button>
+            <button class="btn btn-danger btn-sm tt-btn-del" onclick="deleteTimetablePeriod('${pid}')" title="حذف"><i class="fas fa-trash-alt"></i> حذف</button>
+        </div>
+    </div>`;
+}
+
+window.editTimetablePeriod = function (periodId) {
+  var periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  var p = periods.find(function (x) { return x.id === periodId; });
+  if (!p) {
+    if (typeof window.showToast === 'function') window.showToast('گھنٹہ نہیں ملا', 'error');
+    return;
+  }
+  window._attEditingPeriodId = periodId;
+  if (typeof window.loadPeriodTeachers === 'function') window.loadPeriodTeachers();
+  attFillPeriodForm(p);
+  attUpdatePeriodModalChrome();
+  if (typeof window.openModal === 'function') window.openModal('add-period-modal');
+};
+
+window.deleteTimetablePeriod = function (periodId) {
+  attRemovePeriodById(periodId);
+};
+
+window.renderTimetable = function () {
+  const box = document.getElementById('tt-result');
+  if (!box) return;
+  ttPopulateFilters();
+  const periods = ttFilteredPeriods();
+
+  if (!periods.length) {
+    box.innerHTML = '<div class="tt-empty"><i class="fas fa-table"></i><p>کوئی سبق موجود نہیں۔ "نیا سبق" سے اساتذہ کے اوقات درج کریں۔</p></div>';
+    return;
+  }
+
+  // گروپ بندی — استاد وار یا درجہ وار
+  const groupKey = window._ttView === 'class' ? 'className' : 'teacherName';
+  const groups = {};
+  periods.forEach((p) => {
+    const k = (window._ttView === 'class' ? (p.className && p.className !== '-' ? p.className : 'متفرق') : (p.teacherName || 'نامعلوم'));
+    (groups[k] = groups[k] || []).push(p);
+  });
+
+  const icon = window._ttView === 'class' ? 'fa-layer-group' : 'fa-chalkboard-teacher';
+  box.innerHTML = Object.keys(groups).sort().map((g) => {
+    const items = groups[g].slice().sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+    const sub = window._ttView === 'class'
+      ? `${[...new Set(items.map((i) => i.teacherName))].length} اساتذہ • ${items.length} اسباق`
+      : `${[...new Set(items.map((i) => i.className).filter((c) => c && c !== '-'))].length} درجات • ${items.length} اسباق`;
+    return `
+      <div class="tt-group">
+        <div class="tt-group-head"><span><i class="fas ${icon}"></i> ${g}</span><small>${sub}</small></div>
+        <div class="tt-group-body">${items.map(ttPeriodCard).join('')}</div>
+      </div>`;
+  }).join('');
+};
+
+// نظام الاوقات سے براہِ راست حاضری لینا — اسمارٹ رجسٹر پر منتقلی
+window.ttTakeAttendance = function (periodId) {
+  const periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  const p = periods.find((x) => x.id === periodId);
+  if (!p) return;
+
+  const stuBtn = document.querySelector('#att-ribbon-menu [onclick*="att-smart-register"]');
+  window.switchAttTab('att-smart-register', stuBtn);
+
+  setTimeout(() => {
+    const typeSel = document.getElementById('att-reg-type');
+    const clsSel = document.getElementById('att-reg-class');
+    const perSel = document.getElementById('att-reg-period');
+    const monthInput = document.getElementById('att-reg-month');
+    if (typeSel) typeSel.value = 'students';
+    if (monthInput && !monthInput.value) monthInput.value = new Date().toISOString().substring(0, 7);
+    if (clsSel && p.className && p.className !== '-') clsSel.value = p.className;
+    if (perSel) perSel.value = p.id;
+    document.getElementById('btn-load-smart-register')?.click();
+    window.showToast(`"${p.teacherName}" کا سبق "${p.name}" — حاضری کے لیے تیار`, 'info');
+  }, 150);
+};
+
+window.deletePeriod = function (id) {
+  attRemovePeriodById(id);
+};
+
+// ================== 3. اسمارٹ حاضری رجسٹر (Phase B0 — local-first load) ==================
+document.getElementById('btn-load-smart-register')?.addEventListener('click', () => {
+    let uid = getAttendanceTenantId();
+    if (!uid) return window.showToast("خرابی: پہلے جی میل سے لاگ ان کریں!", "error");
+
+    const type = document.getElementById('att-reg-type').value;
+    const classId = document.getElementById('att-reg-class').value;
+    const month = document.getElementById('att-reg-month').value;
+    let period = document.getElementById('att-reg-period').value;
+    if (!period) period = 'all';
+
+    if (!month) return window.showToast('مہینہ منتخب کریں!', 'error');
+    if (type === 'students' && !classId) return window.showToast('درجہ منتخب کرنا لازمی ہے!', 'error');
+
+    var loadRegister = function () {
+      attResolveTargetUsers(type, classId).then(function (targets) {
+        targets = attFilterEligibleUsers(attMergeUniqueById(targets));
+        if (targets.length === 0) {
+          var repoCount = typeof window.emsRegRepoGetCount === 'function' ? window.emsRegRepoGetCount() : 0;
+          console.warn('[EMS attendance] zero roster targets', { type: type, classId: classId, repoCount: repoCount });
+          return window.showToast('اس کرائیٹیریا کے مطابق کوئی ریکارڈ نہیں ملا!', 'error');
+        }
+        attLoadRegisterLocalFirst(uid, targets, month, type, classId, period);
+      }).catch(function (err) {
+        console.error('[EMS attendance] load register failed', err);
+        window.showToast('رجسٹر لوڈ ناکام — دوبارہ کوشش کریں', 'error');
+      });
+    };
+    if (typeof window.emsEnsureRepositoryReady === 'function') {
+      window.emsEnsureRepositoryReady().then(loadRegister).catch(loadRegister);
+    } else {
+      loadRegister();
+    }
+});
+
+window.toggleAttViewMode = function () {
+  if (window.currentAttState && window.currentAttState.month && window.currentAttState.targetUsers && window.currentAttState.targetUsers.length) {
+    buildSmartRegisterImmediate(window.currentAttState.month, window.getFilteredUsers());
+  }
+};
+
+window.buildSmartRegister = function (monthStr, usersList) {
+  var forceRender = !!(monthStr && Array.isArray(usersList) && usersList.length);
+  if (!forceRender && !attShouldRenderRegister()) return;
+  _buildSmartRegisterPending = { monthStr: monthStr, usersList: usersList, forceRender: forceRender };
+  if (_buildSmartRegisterScheduled) return;
+  _buildSmartRegisterScheduled = true;
+  var run = function () {
+    _buildSmartRegisterScheduled = false;
+    var pending = _buildSmartRegisterPending;
+    _buildSmartRegisterPending = null;
+    if (!pending || (!pending.forceRender && !attShouldRenderRegister())) return;
+    buildSmartRegisterImmediate(pending.monthStr, pending.usersList);
+    if (_buildSmartRegisterPending) {
+      window.buildSmartRegister(_buildSmartRegisterPending.monthStr, _buildSmartRegisterPending.usersList);
+    }
+  };
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(run);
+  } else {
+    setTimeout(run, 0);
+  }
+};
+
+function buildSmartRegisterImmediate(monthStr, usersList) {
+  const thead = document.getElementById('smart-register-thead');
+  const tbody = document.getElementById('smart-register-tbody');
+  if (!thead || !tbody) return;
+
+  attPauseDictObserver();
+  try {
+  attEnsureAttStateShape();
+
+  const holidays = JSON.parse(localStorage.getItem('ems_att_holidays')) || [];
+  const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || {
+    P: 'P',
+    A: 'A',
+    L: 'L',
+  };
+  const [year, month] = monthStr.split('-');
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const daysUrdu = ['اتوار', 'پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ'];
+
+  const viewModeEl = document.querySelector('input[name="att_view_mode"]:checked');
+  const isSingleDay = viewModeEl && viewModeEl.value === 'day';
+  const todayDateNum = new Date().getDate();
+
+  let startDay = isSingleDay ? todayDateNum : 1;
+  let endDay = isSingleDay ? todayDateNum : daysInMonth;
+
+  if (!window.currentAttState.registerRowPage) window.currentAttState.registerRowPage = 1;
+  const rowPage = window.currentAttState.registerRowPage;
+  const rowPageSize = ATT_REGISTER_ROW_PAGE;
+
+  const sortedUsers = (usersList || []).slice().sort(function (a, b) {
+    return String(attGetUserId(a)).localeCompare(String(attGetUserId(b)));
+  });
+  const totalUsers = sortedUsers.length;
+  const totalRowPages = Math.max(1, Math.ceil(totalUsers / rowPageSize));
+  if (rowPage > totalRowPages) window.currentAttState.registerRowPage = totalRowPages;
+  const safeRowPage = window.currentAttState.registerRowPage || 1;
+  const rowStart = (safeRowPage - 1) * rowPageSize;
+  const pageUsers = sortedUsers.slice(rowStart, rowStart + rowPageSize);
+
+  if (!window.currentAttState.dailyLocks) window.currentAttState.dailyLocks = {};
+
+  let headHTML = `<tr><th style="position:sticky; right:0; top:0; background:var(--secondary); z-index:15; min-width:200px; border-right: 1px solid #cbd5e1;">طالب علم کا نام / ID</th>`;
+
+  for (let d = startDay; d <= endDay; d++) {
+    let currentFullDate = `${year}-${month}-${d < 10 ? '0' + d : d}`;
+    let dateObj = new Date(currentFullDate);
+    let dayName = daysUrdu[dateObj.getDay()];
+    let isFriday = dateObj.getDay() === 5;
+    let isHoliday = holidays.some(
+      (h) => currentFullDate >= h.start && currentFullDate <= h.end
+    );
+
+    let colClass = isFriday || isHoliday ? 'col-holiday-header' : '';
+    let displayDay = isHoliday ? 'تعطیل' : dayName;
+    let isDailyLocked = window.currentAttState.dailyLocks[d] || false;
+    let dailyLockIcon = isDailyLocked ? 'fa-lock' : 'fa-unlock';
+    let dailyLockClass = isDailyLocked ? 'locked' : 'unlocked';
+
+    headHTML += `
+            <th class="${colClass}" style="min-width: 90px; text-align: center; position:sticky; top:0; z-index:10;">
+                ${
+                  !(isFriday || isHoliday) && !window.currentAttState.locked
+                    ? `
+                <div class="daily-lock-btn ${dailyLockClass}" data-att-day="${d}" onclick="toggleDailyLock(${d})" title="اس دن کو لاک / ان لاک کریں">
+                    <i class="fas ${dailyLockIcon}"></i>
+                </div>`
+                    : ''
+                }
+                <div style="font-size:16px;">${d}</div>
+                <div style="font-size:11px; font-weight:normal; margin-bottom:5px;">${displayDay}</div>
+                ${
+                  !(isFriday || isHoliday) &&
+                  !window.currentAttState.locked &&
+                  !isDailyLocked
+                    ? `
+                <div class="att-cell-controls">
+                    <button class="att-cell-btn" style="color:green; border-color:green;" onclick="masterToggle('${symbols.P}', ${d})">${symbols.P}</button>
+                    <button class="att-cell-btn" style="color:red; border-color:red;" onclick="masterToggle('${symbols.A}', ${d})">${symbols.A}</button>
+                    <button class="att-cell-btn" style="color:orange; border-color:orange;" onclick="masterToggle('${symbols.L}', ${d})">${symbols.L}</button>
+                    <button class="att-cell-btn status-clear" onclick="masterClearColumn(${d})" title="تمام کو صاف / خالی">×</button>
+                </div>`
+                    : ''
+                }
+            </th>`;
+  }
+  thead.innerHTML = headHTML + '</tr>';
+
+  const frag = document.createDocumentFragment();
+  if (!pageUsers.length) {
+    tbody.innerHTML = '<tr><td colspan="' + Math.max(2, endDay - startDay + 2) + '" style="text-align:center;color:#94a3b8;padding:24px;">کوئی طالب علم نہیں — درجہ اور مہینہ منتخب کر کے «رجسٹر لوڈ کریں» دبائیں</td></tr>';
+    var emptyPager = document.getElementById('att-register-row-pager');
+    if (emptyPager) emptyPager.style.display = 'none';
+  } else {
+
+  pageUsers.forEach((u) => {
+      var uid = attGetUserId(u);
+      if (!uid) return;
+      if (!window.currentAttState.records[uid])
+        window.currentAttState.records[uid] = {};
+      if (!window.currentAttState.remarks[uid])
+        window.currentAttState.remarks[uid] = {};
+      if (!window.currentAttState.late[uid])
+        window.currentAttState.late[uid] = {};
+
+      let uRecords = window.currentAttState.records[uid];
+      let uRemarks = window.currentAttState.remarks[uid];
+      let uLate = window.currentAttState.late[uid];
+
+      const tr = document.createElement('tr');
+      let rowHtml = `<td style="position:sticky; right:0; background:#f8fafc; z-index:5; border-right: 1px solid #cbd5e1;"><strong>${u.name || ''}</strong><br><small style="color:var(--accent);">${uid}</small></td>`;
+
+      for (let d = startDay; d <= endDay; d++) {
+        let currentFullDate = `${year}-${month}-${d < 10 ? '0' + d : d}`;
+        let dateObj = new Date(currentFullDate);
+        let isFriday = dateObj.getDay() === 5;
+        let isHoliday = holidays.some(
+          (h) => currentFullDate >= h.start && currentFullDate <= h.end
+        );
+
+        let st = uRecords[d] || '';
+        let remark = uRemarks[d] || '';
+        let lateTime = uLate[d] || '';
+        let isGlobalLocked = window.currentAttState.locked;
+        let isDailyLocked = window.currentAttState.dailyLocks[d] || false;
+
+        let cellClass =
+          isFriday || isHoliday
+            ? 'col-holiday'
+            : isGlobalLocked || isDailyLocked
+            ? 'col-locked'
+            : 'att-cell-clickable';
+        if (remark !== '') cellClass += ' has-hidden-remark';
+        if (!isFriday && !isHoliday && !isGlobalLocked && !isDailyLocked) {
+          if (!st) cellClass += ' att-cell-empty';
+          else if (st === symbols.P) cellClass += ' att-cell-p';
+          else if (st === symbols.A) cellClass += ' att-cell-a';
+          else if (st === symbols.L) cellClass += ' att-cell-l';
+        }
+
+        if (isFriday || isHoliday) {
+          rowHtml += `<td class="${cellClass}">تعطیل</td>`;
+        } else {
+          rowHtml += `
+                <td class="${cellClass}" onclick="cycleCellStatus(event, '${uid}', ${d})" title="کلک: حاضر → غائب → رخصت → صاف">
+                    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:40px;">
+                        <span class="print-status-text" id="print-txt-${uid}-${d}">${st}</span>
+                        ${lateTime ? `<div style="font-size:10px; color:#e67e22; font-weight:bold; background:#fffaf0; padding:2px 5px; border-radius:4px; margin-top:2px;">${lateTime}</div>` : ''}
+                    </div>
+                    <div class="att-cell-controls">
+                        <button class="att-cell-btn status-p ${st === symbols.P ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.P}')">${symbols.P}</button>
+                        <button class="att-cell-btn status-a ${st === symbols.A ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.A}')">${symbols.A}</button>
+                        <button class="att-cell-btn status-l ${st === symbols.L ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.L}')">${symbols.L}</button>
+                        <button class="att-cell-btn status-clear ${!st ? 'active' : ''}" onclick="event.stopPropagation(); clearCellStatus('${uid}', ${d})" title="صاف / خالی">×</button>
+                        <button class="att-cell-btn status-custom ${lateTime || remark ? 'active' : ''}" onclick="event.stopPropagation(); openCustomStatusModal('${uid}', '${(u.name || '').replace(/'/g, "\\'")}', ${d})" title="تفصیل / تاخیر">+</button>
+                    </div>
+                </td>`;
+        }
+      }
+      tr.innerHTML = rowHtml;
+      frag.appendChild(tr);
+  });
+  tbody.innerHTML = '';
+  tbody.appendChild(frag);
+
+  var pagerHost = document.getElementById('att-register-row-pager');
+  if (!pagerHost) {
+    pagerHost = document.createElement('div');
+    pagerHost.id = 'att-register-row-pager';
+    pagerHost.style.cssText = 'margin:10px 0;text-align:center;font-size:13px;';
+    tbody.parentElement.parentElement.insertBefore(pagerHost, tbody.parentElement);
+  }
+  if (totalUsers > rowPageSize) {
+    pagerHost.innerHTML = `<span>صفحہ ${safeRowPage} / ${totalRowPages} · ${totalUsers} طلباء</span>
+      <button type="button" class="btn btn-sm btn-secondary" style="margin:0 6px;" ${safeRowPage <= 1 ? 'disabled' : ''} onclick="window.attRegisterRowPage(${safeRowPage - 1})">پچھلا</button>
+      <button type="button" class="btn btn-sm btn-secondary" ${safeRowPage >= totalRowPages ? 'disabled' : ''} onclick="window.attRegisterRowPage(${safeRowPage + 1})">اگلا</button>`;
+    pagerHost.style.display = 'block';
+  } else {
+    pagerHost.style.display = 'none';
+  }
+
+  }
+
+  attRefreshLockChrome();
+
+  setupPrintHeader();
+  } finally {
+    attResumeDictObserver();
+  }
+}
+
+window.attRegisterRowPage = function (page) {
+  window.currentAttState.registerRowPage = Math.max(1, page || 1);
+  attQuickRefreshRegister();
+};
+
+window.toggleDailyLock = function (day) {
+  if (!window.currentAttState) return;
+  if (window.currentAttState.locked)
+    return window.showToast('پہلے «لاک کھولیں / ترمیم کریں» سے ماہانہ لاک کھولیں!', 'error');
+  attEnsureAttStateShape();
+  var prev = !!window.currentAttState.dailyLocks[day];
+  window.currentAttState.dailyLocks[day] = !prev;
+  if (!saveAttState(window.currentAttState.locked)) {
+    window.currentAttState.dailyLocks[day] = prev;
+    return;
+  }
+  attQuickRefreshRegister();
+  window.showToast(
+    window.currentAttState.dailyLocks[day]
+      ? `${day} تاریخ لاک کر دی گئی ہے`
+      : `${day} تاریخ ان لاک ہو گئی ہے`,
+    window.currentAttState.dailyLocks[day] ? 'error' : 'warning'
+  );
+};
+
+function attForEachFilteredRosterUser(fn) {
+  attEnsureAttStateShape();
+  var users = typeof getFilteredUsers === 'function' ? getFilteredUsers() : attGetRegisterUsers();
+  if (!users || !users.length) return 0;
+  var count = 0;
+  users.forEach(function (u) {
+    var uid = attGetUserId(u);
+    if (!uid) return;
+    if (!window.currentAttState.records[uid]) window.currentAttState.records[uid] = {};
+    if (!window.currentAttState.remarks[uid]) window.currentAttState.remarks[uid] = {};
+    if (!window.currentAttState.late[uid]) window.currentAttState.late[uid] = {};
+    fn(uid);
+    count++;
+  });
+  return count;
+}
+
+window.masterToggle = function (status, day) {
+  if (!window.currentAttState) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day]) return;
+  var selfSkipped = false;
+  attForEachFilteredRosterUser(function (uid) {
+    if (attIsSelfAttendanceEditBlocked(uid)) { selfSkipped = true; return; }
+    window.currentAttState.records[uid][day] = status;
+    window.currentAttState.remarks[uid][day] = '';
+    window.currentAttState.late[uid][day] = '';
+  });
+  if (selfSkipped && typeof window.showToast === 'function') {
+    window.showToast('آپ اپنی حاضری خود درج نہیں کر سکتے۔', 'error');
+  }
+  saveAttState(false);
+  buildSmartRegister(window.currentAttState.month, getFilteredUsers());
+};
+
+window.masterClearColumn = function (day) {
+  if (!window.currentAttState) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day]) return;
+  if (!confirm('اس دن کی تمام حاضری خالی کریں؟')) return;
+  var selfSkipped = false;
+  attForEachFilteredRosterUser(function (uid) {
+    if (attIsSelfAttendanceEditBlocked(uid)) { selfSkipped = true; return; }
+    if (window.currentAttState.records[uid]) delete window.currentAttState.records[uid][day];
+    if (window.currentAttState.remarks[uid]) delete window.currentAttState.remarks[uid][day];
+    if (window.currentAttState.late[uid]) delete window.currentAttState.late[uid][day];
+  });
+  if (selfSkipped && typeof window.showToast === 'function') {
+    window.showToast('آپ اپنی حاضری خود درج نہیں کر سکتے۔', 'error');
+  }
+  saveAttState(false);
+  buildSmartRegister(window.currentAttState.month, getFilteredUsers());
+};
+
+window.setCellStatus = function (uid, day, status) {
+  if (!window.currentAttState) return;
+  if (attGuardSelfAttendanceEdit(uid)) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day])
+    return window.showToast('یہ انٹری لاک ہے!', 'warning');
+  if (!window.currentAttState.records[uid]) window.currentAttState.records[uid] = {};
+  window.currentAttState.records[uid][day] = status;
+  attRefreshCellUI(uid, day);
+  saveAttState(false, { quiet: true });
+};
+
+window.clearCellStatus = function (uid, day) {
+  if (!window.currentAttState) return;
+  if (attGuardSelfAttendanceEdit(uid)) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day])
+    return window.showToast('یہ انٹری لاک ہے!', 'warning');
+  if (window.currentAttState.records[uid]) delete window.currentAttState.records[uid][day];
+  if (window.currentAttState.remarks[uid]) delete window.currentAttState.remarks[uid][day];
+  if (window.currentAttState.late[uid]) delete window.currentAttState.late[uid][day];
+  attRefreshCellUI(uid, day);
+  saveAttState(false, { quiet: true });
+};
+
+window.cycleCellStatus = function (ev, uid, day) {
+  if (ev && ev.target && ev.target.closest && ev.target.closest('.att-cell-btn, .att-cell-controls')) return;
+  if (!window.currentAttState) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day]) return;
+  var symbols = {};
+  try {
+    symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+  } catch (eSym) {
+    symbols = { P: 'P', A: 'A', L: 'L' };
+  }
+  var st = (window.currentAttState.records[uid] && window.currentAttState.records[uid][day]) || '';
+  if (!st) window.setCellStatus(uid, day, symbols.P);
+  else if (st === symbols.P) window.setCellStatus(uid, day, symbols.A);
+  else if (st === symbols.A) window.setCellStatus(uid, day, symbols.L);
+  else if (st === symbols.L) window.clearCellStatus(uid, day);
+  else window.setCellStatus(uid, day, symbols.P);
+};
+
+let tempCustomTarget = {};
+window.openCustomStatusModal = function (uid, name, day) {
+  if (attGuardSelfAttendanceEdit(uid)) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day])
+    return window.showToast('یہ دن لاک ہے!', 'warning');
+  tempCustomTarget = { uid, day };
+  document.getElementById('custom-status-student-name').innerText = name;
+
+  let currentLate = window.currentAttState.late[uid] ? window.currentAttState.late[uid][day] || '' : '';
+  let currentRemark = window.currentAttState.remarks[uid] ? window.currentAttState.remarks[uid][day] || '' : '';
+
+  document.getElementById('custom-late-input').value = currentLate;
+  document.getElementById('custom-reason-input').value = currentRemark;
+  window.openModal('add-custom-status-modal');
+};
+
+document.getElementById('btn-apply-custom-status')?.addEventListener('click', () => {
+    let lateText = document.getElementById('custom-late-input').value.trim();
+    let reasonText = document.getElementById('custom-reason-input').value.trim();
+
+    if (tempCustomTarget.uid) {
+      if (attGuardSelfAttendanceEdit(tempCustomTarget.uid)) return;
+      if (!window.currentAttState.late[tempCustomTarget.uid])
+        window.currentAttState.late[tempCustomTarget.uid] = {};
+      window.currentAttState.late[tempCustomTarget.uid][tempCustomTarget.day] = lateText;
+
+      if (!window.currentAttState.remarks[tempCustomTarget.uid])
+        window.currentAttState.remarks[tempCustomTarget.uid] = {};
+      window.currentAttState.remarks[tempCustomTarget.uid][tempCustomTarget.day] = reasonText;
+
+      saveAttState(window.currentAttState.locked);
+      buildSmartRegister(window.currentAttState.month, getFilteredUsers());
+      window.closeModal('add-custom-status-modal');
+    }
+  });
+
+function saveAttState(isLocked, opts) {
+    opts = opts || {};
+    if (typeof window.emsRequireStaffAction === 'function') {
+        if (!window.emsRequireStaffAction('attendance', 'edit')) return false;
+    }
+    var uid = getAttendanceTenantId() || 'local';
+    if (!window.currentAttState || !window.currentAttState.dbKey) {
+      if (typeof window.showToast === 'function') {
+        window.showToast('پہلے رجسٹر لوڈ کریں', 'error');
+      }
+      return false;
+    }
+
+    attEnsureAttStateShape();
+    window.currentAttState.locked = !!isLocked;
+    var now = attMarkLocalWrite();
+
+    var dataToSave = {
+        locked: !!isLocked,
+        records: window.currentAttState.records,
+        dailyLocks: window.currentAttState.dailyLocks,
+        remarks: window.currentAttState.remarks,
+        late: window.currentAttState.late,
+        timestamp: now
+    };
+    if (typeof window.emsStampDepartment === 'function') {
+        window.emsStampDepartment(dataToSave);
+    }
+
+    var cloudDocId = window.currentAttState.dbKey;
+    var localKey = window.currentAttState.localKey || cloudDocId;
+    var prevSheet = attReadSheetLocal(localKey);
+    var cloudPatch = attComputeSheetCloudPatch(prevSheet, dataToSave);
+    attSaveLastSession(
+      window.currentAttState.month,
+      window.currentAttState.type,
+      window.currentAttState.classId,
+      window.currentAttState.period
+    );
+
+    var localOk = attPersistSheetLocal(cloudDocId, localKey, dataToSave);
+    if (!localOk) {
+      if (typeof window.showToast === 'function') {
+        window.showToast('حاضری لوکل محفوظ ناکام', 'error');
+      }
+      return false;
+    }
+
+    if (typeof window.emsIsAttendanceModuleActive === 'function' && window.emsIsAttendanceModuleActive()) {
+      attScheduleDashboardRefreshFromSave();
+    }
+
+    if (typeof window.emsOfflinePersistAttendance === 'function') {
+        attScheduleCloudPersist(cloudDocId, localKey, dataToSave, !opts.quiet, cloudPatch);
+    } else if (typeof window.showToast === 'function') {
+        window.showToast('خرابی: حاضری سنک outbox تیار نہیں — مقامی محفوظ ہو گیا', 'warning');
+    }
+
+    if (typeof window.emsLogAudit === 'function') {
+        window.emsLogAudit('attendance', isLocked ? 'lock' : 'save', cloudDocId || '', {
+            month: window.currentAttState.month,
+            classId: window.currentAttState.classId
+        });
+    }
+    return true;
+}
+
+document.getElementById('btn-att-save-lock')?.addEventListener('click', () => {
+  if (!saveAttState(true)) return;
+  window.showToast('رجسٹر محفوظ کر کے لاک کر دیا گیا ہے!', 'success');
+  logAttAudit(
+    'رجسٹر لاک',
+    `مہینہ: ${window.currentAttState.month}, کلاس: ${window.currentAttState.classId}`
+  );
+  attQuickRefreshRegister();
+});
+
+document.getElementById('btn-att-edit-mode')?.addEventListener('click', () => {
+  if (!saveAttState(false)) return;
+  window.showToast(
+    'ایڈٹ موڈ آن کر دیا گیا ہے۔ اب آپ ترمیم کر سکتے ہیں۔',
+    'warning'
+  );
+  logAttAudit(
+    'ایڈٹ موڈ',
+    `رجسٹر ان لاک کیا گیا: ${window.currentAttState.month}`
+  );
+  attQuickRefreshRegister();
+});
+
+document.getElementById('att-lock-check')?.addEventListener('change', function (e) {
+  var wantLock = !!e.target.checked;
+  if (!window.currentAttState) return;
+  if (wantLock && !window.currentAttState.locked) {
+    e.target.checked = false;
+    if (typeof window.showToast === 'function') {
+      window.showToast('لاک کے لیے «محفوظ کریں» بٹن استعمال کریں', 'info');
+    }
+    return;
+  }
+  if (!wantLock && window.currentAttState.locked) {
+    e.target.checked = true;
+    if (typeof window.showToast === 'function') {
+      window.showToast('لاک کھولنے کے لیے «لاک کھولیں / ترمیم کریں» دبائیں', 'warning');
+    }
+  }
+});
+
+window.getFilteredUsers = function() {
+  if (window.currentAttState && window.currentAttState.targetUsers && window.currentAttState.targetUsers.length) {
+    return attFilterEligibleUsers(window.currentAttState.targetUsers.slice());
+  }
+  let users = attGetUsers();
+  if (typeof window.emsFilterByDepartment === 'function') {
+    users = window.emsFilterByDepartment(users);
+  }
+  var wantType = window.currentAttState.type === 'students'
+    ? 'student'
+    : window.currentAttState.type === 'teachers'
+    ? 'teacher'
+    : 'staff';
+  let targets = users.filter(function (u) { return attUserMatchesType(u, wantType); });
+  if (window.currentAttState.type === 'students') {
+    targets = targets.filter(function (u) { return attClassMatches(u, window.currentAttState.classId); });
+  }
+  return attFilterEligibleUsers(targets);
+}
+
+window.setupPrintHeader = function () {
+  const settings = JSON.parse(localStorage.getItem('ems_att_settings')) || {};
+  const periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+
+  let elMadrasa = document.getElementById('reg-hdr-madrasa');
+  if (elMadrasa)
+    elMadrasa.innerText = settings.name || 'نام مدرسہ (سیٹنگز سے درج کریں)';
+
+  let elBranch = document.getElementById('reg-hdr-branch');
+  if (elBranch) elBranch.innerText = settings.branch || '';
+
+  let elYear = document.getElementById('reg-hdr-year');
+  if (elYear) elYear.innerText = settings.year || '-';
+
+  let elClass = document.getElementById('reg-hdr-class');
+  if (elClass) elClass.innerText = window.currentAttState.classId || 'تمام';
+
+  let elMonth = document.getElementById('reg-hdr-month');
+  if (elMonth) elMonth.innerText = window.currentAttState.month;
+
+  let periodSelect = document.getElementById('att-reg-period');
+  let periodId = periodSelect ? periodSelect.value : null;
+
+  let elPeriod = document.getElementById('reg-hdr-period');
+  let elTeacher = document.getElementById('reg-hdr-teacher');
+  let elTime = document.getElementById('reg-hdr-time');
+
+  if (periodId === 'all' || !periodId) {
+    if (elPeriod) elPeriod.innerText = 'اجمالی حاضری / تمام دن';
+    if (elTeacher) elTeacher.innerText = '-';
+    if (elTime) elTime.innerText = '';
+  } else {
+    let currentPeriod = periods.find((p) => p.id === periodId);
+    if (currentPeriod) {
+      var bookLabel = attFormatBookName(currentPeriod.bookName);
+      if (elPeriod) elPeriod.innerText = bookLabel ? bookLabel + ' — ' + currentPeriod.name : currentPeriod.name;
+      if (elTeacher) elTeacher.innerText = currentPeriod.teacherName || '-';
+      if (elTime)
+        elTime.innerText = `(${currentPeriod.start} تا ${currentPeriod.end})`;
+    }
+  }
+
+  let hdr = document.getElementById('att-on-screen-header');
+  if (hdr) {
+    hdr.style.display = 'block';
+    hdr.style.position = 'sticky';
+    // مدرسہ کا لوگو (مرکزی برانڈنگ سے) — اوپر دائیں
+    const b = window.EmsBranding ? window.EmsBranding.get() : null;
+    let logoEl = document.getElementById('att-hdr-logo');
+    if (b && b.logo) {
+      if (!logoEl) {
+        logoEl = document.createElement('img');
+        logoEl.id = 'att-hdr-logo';
+        logoEl.style.cssText = 'position:absolute; top:12px; right:16px; width:64px; height:64px; object-fit:contain;';
+        hdr.appendChild(logoEl);
+      }
+      logoEl.src = b.logo;
+    } else if (logoEl) {
+      logoEl.remove();
+    }
+    if (b && b.madrasaName && elMadrasa && !settings.name) elMadrasa.innerText = b.madrasaName;
+  }
+
+  let tbl = document.getElementById('smart-register-table');
+  if (tbl) {
+    tbl.style.borderTop = 'none';
+    tbl.style.borderTopLeftRadius = '0';
+    tbl.style.borderTopRightRadius = '0';
+  }
+};
+
+// ============================================================================
+// برانڈڈ پرنٹ (لوگو + نام + مہر + دستخط)  (مرحلہ 6)
+// ============================================================================
+window.attBrandHeaderHTML = function () {
+  const B = window.EmsBranding;
+  const s = JSON.parse(localStorage.getItem('ems_att_settings')) || {};
+  if (B && typeof B.has === 'function' && B.has() && typeof B.letterHeaderHTML === 'function') {
+    return B.letterHeaderHTML();
+  }
+  return `
+    <div style="text-align:center; border-bottom:3px double #2c3e50; padding-bottom:10px; margin-bottom:14px;">
+        <h1 style="font-family:'Noto Nastaliq Urdu',serif; margin:0; color:#2c3e50; font-size:30px;">${s.name || 'نام مدرسہ'}</h1>
+        <div style="color:#555;">${s.branch || ''}${s.year ? ' • تعلیمی سال: ' + s.year : ''}</div>
+    </div>`;
+};
+
+window.attSignFooterHTML = function () {
+  const B = window.EmsBranding;
+  const s = JSON.parse(localStorage.getItem('ems_att_settings')) || {};
+  if (B && typeof B.has === 'function' && B.has() && typeof B.signatureBlock === 'function') {
+    return '<div style="display:flex; justify-content:space-between; align-items:flex-end; margin-top:45px; gap:20px;">' +
+      B.signatureBlock('دستخط ناظمِ تعلیمات', 'sigNazimTaleem') +
+      (typeof B.sealHTML === 'function' ? B.sealHTML(85) : '') +
+      B.signatureBlock('دستخط مہتمم', 'sigMohtamim') +
+      '</div>';
+  }
+  return `
+    <div style="display:flex; justify-content:space-between; margin-top:55px; font-weight:bold; color:#2c3e50;">
+        <div style="border-top:1px solid #2c3e50; padding-top:6px; width:30%; text-align:center;">دستخط ناظمِ تعلیمات</div>
+        <div style="border-top:1px solid #2c3e50; padding-top:6px; width:30%; text-align:center;">مہر</div>
+        <div style="border-top:1px solid #2c3e50; padding-top:6px; width:30%; text-align:center;">${s.footer || 'دستخط مہتمم'}</div>
+    </div>`;
+};
+
+// عارضی برانڈڈ ریپر بنا کر پرنٹ — صفحے کا CSS برقرار رہتا ہے
+function attPrintWithBranding(innerHTML, title) {
+  const wrap = document.createElement('div');
+  wrap.id = 'att-print-wrap-temp';
+  wrap.style.cssText = 'background:#fff; padding:10px;';
+  wrap.innerHTML =
+    window.attBrandHeaderHTML() +
+    (title ? `<h2 style="text-align:center; font-family:'Noto Nastaliq Urdu',serif; margin:8px 0 14px;">${title}</h2>` : '') +
+    innerHTML +
+    window.attSignFooterHTML();
+  document.body.appendChild(wrap);
+  if (typeof window.printDiv === 'function') window.printDiv('att-print-wrap-temp');
+  setTimeout(() => { const t = document.getElementById('att-print-wrap-temp'); if (t) t.remove(); }, 100);
+}
+
+window.attPrintRegister = function () {
+  const area = document.getElementById('att-register-print-area');
+  if (!area) return;
+  const st = window.currentAttState || {};
+  const info = `
+    <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; font-weight:bold; background:#f8fafc; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:10px;">
+        <span>درجہ/شعبہ: ${st.classId || 'تمام'}</span>
+        <span>مہینہ: ${st.month || '-'}</span>
+        <span>قسم: ${st.type || '-'}</span>
+    </div>`;
+  attPrintWithBranding(info + area.innerHTML, 'حاضری رجسٹر');
+};
+
+window.attPrintReport = function () {
+  var cache = window._attReportRowHtmlCache || [];
+  var tbody = document.getElementById('att-report-tbody');
+  var scrollWrap = document.getElementById('att-report-scroll-wrap') || attEnsureReportScrollWrap();
+  if (tbody && cache.length) {
+    tbody.innerHTML = cache.join('');
+  }
+  const area = document.getElementById('att-report-print-area');
+  if (!area) return;
+  attPrintWithBranding(area.innerHTML, '');
+  if (tbody && cache.length) {
+    attRenderChunkedRows({
+      tbody: tbody,
+      scrollEl: scrollWrap,
+      rows: cache,
+      footId: 'att-report-chunk-foot',
+      disposeKey: 'report'
+    });
+  }
+};
+
+// مرکزی برانڈنگ مینجمنٹ کھولیں (رجسٹریشن ماڈیول)
+window.attOpenBranding = function () {
+  const tab = document.getElementById('tab-admission');
+  if (tab) tab.click();
+  setTimeout(() => {
+    const bbtn = document.querySelector('#reg-ribbon-menu [onclick*="reg-branding-panel"]');
+    if (typeof window.switchRegTab === 'function') window.switchRegTab('reg-branding-panel', bbtn);
+  }, 250);
+};
+
+// ================== 4. تعطیلات (Holiday Management) ==================
+var ATT_SYMBOLS_KEY = 'ems_att_symbols';
+var ATT_HOLIDAYS_KEY = 'ems_att_holidays';
+var ATT_SETTINGS_KEY = 'ems_att_settings';
+var ATT_PERIODS_KEY = 'ems_att_periods';
+
+function attEnqueueSyncModuleBlob(key, value) {
+  if (typeof window.emsOfflineEnqueueSyncModule !== 'function') {
+    return Promise.resolve({ ok: true, synced: false, offline: true });
+  }
+  var jsonStr = typeof value === 'string' ? value : JSON.stringify(value);
+  return window.emsOfflineEnqueueSyncModule(key, jsonStr, { module: 'Attendance' }).then(function () {
+    return { ok: true, synced: false, offline: true };
+  });
+}
+
+/** Local persist + Firestore outbox for attendance config blobs (symbols, holidays, etc.). */
+function attPersistConfigBlob(key, value) {
+  if (!key) return Promise.resolve({ ok: false, reason: 'no_key' });
+  if (typeof window.emsOfflineWriteLocalSync === 'function') {
+    window.emsOfflineWriteLocalSync(key, value);
+  } else {
+    try {
+      localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+    } catch (eWrite) {
+      return Promise.resolve({ ok: false, reason: 'local_write_failed' });
+    }
+  }
+  return attEnqueueSyncModuleBlob(key, value);
+}
+
+function attReadHolidaysDb() {
+  try {
+    if (typeof window.emsSafeLocalGet === 'function') {
+      var viaSafe = window.emsSafeLocalGet(ATT_HOLIDAYS_KEY);
+      if (viaSafe) {
+        var parsedSafe = typeof viaSafe === 'string' ? JSON.parse(viaSafe) : viaSafe;
+        return Array.isArray(parsedSafe) ? parsedSafe : [];
+      }
+    }
+    var raw = localStorage.getItem(ATT_HOLIDAYS_KEY);
+    if (!raw) return [];
+    var parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (eRead) {
+    return [];
+  }
+}
+
+document.getElementById('btn-add-holiday')?.addEventListener('click', () => {
+  const title = document.getElementById('hol-title').value.trim();
+  const start = document.getElementById('hol-start-date').value;
+  const end = document.getElementById('hol-end-date').value;
+
+  if (!title || !start || !end)
+    return window.showToast('تمام خانے پُر کریں!', 'error');
+
+  let holidays = attReadHolidaysDb();
+  holidays.push({ id: window.generateID ? window.generateID('HOL') : 'HOL-'+Math.floor(Math.random()*9000), title, start, end });
+  attPersistConfigBlob(ATT_HOLIDAYS_KEY, holidays).then(function () {
+    document.getElementById('hol-title').value = '';
+    loadHolidays();
+    window.showToast('تعطیل محفوظ ہو گئی!', 'success');
+    logAttAudit('تعطیل درج', `عنوان: ${title}`);
+  }).catch(function () {
+    window.showToast('تعطیل محفوظ (آف لائن)', 'warning');
+    loadHolidays();
+  });
+});
+
+function loadHolidays() {
+  const holidays = attReadHolidaysDb();
+  const tbody = document.getElementById('holiday-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = holidays
+    .map((h) => {
+      let days = Math.round((new Date(h.end) - new Date(h.start)) / (1000 * 60 * 60 * 24)) + 1;
+      return `<tr>
+            <td><strong>${h.title}</strong></td><td>${h.start}</td><td>${h.end}</td><td>${days} دن</td>
+            <td><button class="icon-btn delete" onclick="deleteHoliday('${h.id}')"><i class="fas fa-trash"></i></button></td>
+        </tr>`;
+    })
+    .join('');
+}
+
+window.deleteHoliday = function (id) {
+  if (!confirm('حذف کریں؟')) return;
+  let holidays = attReadHolidaysDb();
+  let toDelete = holidays.find((h) => h.id === id);
+  if (toDelete) moveToRecycleBin('Holiday', toDelete);
+  holidays = holidays.filter((h) => h.id !== id);
+  attPersistConfigBlob(ATT_HOLIDAYS_KEY, holidays).then(function () {
+    loadHolidays();
+  });
+};
+
+// ================== 5. آڈٹ لاگ اور ریسائیکل بن ==================
+function logAttAudit(action, details) {
+  let logs = JSON.parse(localStorage.getItem('ems_att_audit')) || [];
+  logs.unshift({ time: new Date().toLocaleString('ur-PK'), action, details });
+  if (logs.length > 50) logs.pop();
+  localStorage.setItem('ems_att_audit', JSON.stringify(logs));
+}
+
+function loadAttAudit() {
+  let logs = JSON.parse(localStorage.getItem('ems_att_audit')) || [];
+  const tbody = document.getElementById('att-audit-tbody');
+  if (tbody)
+    tbody.innerHTML = logs
+      .map((l) => `<tr><td>${l.time}</td><td><strong>${l.action}</strong></td><td>${l.details}</td></tr>`)
+      .join('');
+}
+
+function moveToRecycleBin(type, data) {
+  let bin = JSON.parse(localStorage.getItem('ems_att_recycle')) || [];
+  bin.unshift({
+    id: window.generateID ? window.generateID('BIN') : 'BIN-'+Math.floor(Math.random()*9000),
+    deleteDate: new Date().toLocaleString('ur-PK'),
+    type,
+    data,
+  });
+  localStorage.setItem('ems_att_recycle', JSON.stringify(bin));
+}
+
+function loadRecycleBin() {
+  let bin = JSON.parse(localStorage.getItem('ems_att_recycle')) || [];
+  const tbody = document.getElementById('att-recycle-tbody');
+  if (tbody)
+    tbody.innerHTML = bin
+      .map(
+        (b) => `
+        <tr>
+            <td>${b.deleteDate}</td><td><span class="badge" style="background:#e74c3c; color:white; padding:3px 8px; border-radius:4px;">${b.type}</span></td>
+            <td>${JSON.stringify(b.data).substring(0, 50)}...</td>
+            <td>
+                <button class="btn btn-outline btn-icon-only" style="padding:5px;" onclick="restoreRecycle('${b.id}')" title="بحال کریں"><i class="fas fa-undo"></i></button>
+            </td>
+        </tr>`
+      )
+      .join('');
+}
+
+window.restoreRecycle = function (id) {
+  let bin = JSON.parse(localStorage.getItem('ems_att_recycle')) || [];
+  let item = bin.find((b) => b.id === id);
+  if (!item) return;
+
+  if (item.type === 'Holiday') {
+    let hols = attReadHolidaysDb();
+    hols.push(item.data);
+    attPersistConfigBlob(ATT_HOLIDAYS_KEY, hols);
+  } else if (item.type === 'Period') {
+    let per = JSON.parse(localStorage.getItem(ATT_PERIODS_KEY)) || [];
+    per.push(item.data);
+    attPersistConfigBlob(ATT_PERIODS_KEY, per);
+  }
+
+  localStorage.setItem(
+    'ems_att_recycle',
+    JSON.stringify(bin.filter((b) => b.id !== id))
+  );
+  loadRecycleBin();
+  window.showToast('ریکارڈ کامیابی سے بحال کر دیا گیا!', 'success');
+};
+
+window.emptyRecycleBin = function () {
+  if (
+    confirm(
+      'کیا آپ واقعی ریسائیکل بن مکمل خالی کرنا چاہتے ہیں؟ یہ عمل ناقابل واپسی ہے۔'
+    )
+  ) {
+    localStorage.setItem('ems_att_recycle', JSON.stringify([]));
+    loadRecycleBin();
+    window.showToast('ریسائیکل بن خالی کر دیا گیا!', 'error');
+  }
+};
+
+function attRunWhenDomReady(fn) {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', fn, { once: true });
+  } else {
+    fn();
+  }
+}
+
+function attBindModuleLifecycle() {
+  if (window._attModuleLifecycleBound) return;
+  window._attModuleLifecycleBound = true;
+
+  window.addEventListener('ems:repository-ready', attOnRepositoryDataReady);
+  window.addEventListener('ems:users-changed', function () {
+    if (typeof window.emsIsAttendanceModuleActive === 'function' && !window.emsIsAttendanceModuleActive()) return;
+    _attDropdownCacheGen = -1;
+    loadAttDropdowns(true);
+  });
+
+  attRunWhenDomReady(function () {
+    document.getElementById('tab-attendance')?.addEventListener('click', () => {
+      var afterReady = function () {
+        loadAttDropdowns(true);
+        logAttAudit('سسٹم اوپن', 'حاضری ماڈیول کھولا گیا');
+      };
+      if (typeof window.emsEnsureRepositoryReady === 'function') {
+        window.emsEnsureRepositoryReady().then(afterReady).catch(afterReady);
+      } else {
+        afterReady();
+      }
+    });
+
+    var applyMainDashAtt = function () {
+      if (document.getElementById('dash-att-rate') && typeof window.emsApplyDashboardAttendance === 'function') {
+        var users = attGetUsers();
+        var totalStudents = users.filter(function (u) { return attUserMatchesType(u, 'student'); }).length;
+        window.emsApplyDashboardAttendance(totalStudents);
+      }
+    };
+    if (typeof window.emsEnsureRepositoryReady === 'function') {
+      window.emsEnsureRepositoryReady().then(applyMainDashAtt).catch(applyMainDashAtt);
+    } else {
+      applyMainDashAtt();
+    }
+  });
+}
+
+attBindModuleLifecycle();
+
+// ============================================================================
+// حصہ 6: خصوصی تقریبات کا رجسٹر (Event Register Logic)
+// ============================================================================
+var EVT_EVENTS_DB_KEY = 'ems_att_events_db';
+
+function evtReadEventsDb() {
+  try {
+    if (typeof window.emsSafeLocalGet === 'function') {
+      var viaSafe = window.emsSafeLocalGet(EVT_EVENTS_DB_KEY);
+      if (viaSafe) {
+        var parsedSafe = typeof viaSafe === 'string' ? JSON.parse(viaSafe) : viaSafe;
+        return Array.isArray(parsedSafe) ? parsedSafe : [];
+      }
+    }
+    var raw = localStorage.getItem(EVT_EVENTS_DB_KEY);
+    if (!raw) return [];
+    var parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (eRead) {
+    return [];
+  }
+}
+
+function evtWriteEventsDbLocal(events) {
+  events = Array.isArray(events) ? events : [];
+  if (typeof window.emsOfflineWriteLocalSync === 'function') {
+    window.emsOfflineWriteLocalSync(EVT_EVENTS_DB_KEY, events);
+    return true;
+  }
+  try {
+    localStorage.setItem(EVT_EVENTS_DB_KEY, JSON.stringify(events));
+    return true;
+  } catch (eWrite) {
+    console.warn('[EMS] evt local write failed', eWrite);
+    return false;
+  }
+}
+
+function attEventCloudDocId(eventId) {
+  return 'att_evt_' + String(eventId || '').trim();
+}
+
+function attComputeEventCloudPatch(prev, next) {
+  prev = prev || {};
+  next = next || {};
+  var patch = {};
+  ['name', 'type', 'date', 'time', 'timestamp'].forEach(function (field) {
+    if (next[field] !== undefined && next[field] !== prev[field]) {
+      patch[field] = next[field];
+    }
+  });
+  var prevParts = JSON.stringify(prev.participants || []);
+  var nextParts = JSON.stringify(next.participants || []);
+  if (prevParts !== nextParts) {
+    patch.participants = next.participants || [];
+  }
+  return patch;
+}
+
+function attEnqueueEventsDbSync(eventsDb) {
+  return attEnqueueSyncModuleBlob(EVT_EVENTS_DB_KEY, eventsDb);
+}
+
+/** Persist one event locally + unified outbox (blob + per-event attendance doc patch). */
+window.attSaveEventAttendance = function (eventRecord, opts) {
+  opts = opts || {};
+  if (!eventRecord || !eventRecord.id) {
+    return Promise.resolve({ ok: false, reason: 'invalid_event' });
+  }
+
+  var events = evtReadEventsDb();
+  var prev = null;
+  var idx = events.findIndex(function (e) { return e && e.id === eventRecord.id; });
+  var stamped = Object.assign({}, eventRecord, {
+    timestamp: eventRecord.timestamp || Date.now()
+  });
+
+  if (idx >= 0) {
+    prev = events[idx];
+    events[idx] = Object.assign({}, events[idx], stamped);
+    stamped = events[idx];
+  } else {
+    events.push(stamped);
+  }
+
+  if (!evtWriteEventsDbLocal(events)) {
+    return Promise.resolve({ ok: false, reason: 'local_write_failed' });
+  }
+
+  var cloudDocId = attEventCloudDocId(stamped.id);
+  var cloudPatch = attComputeEventCloudPatch(prev, stamped);
+  var chain = attEnqueueEventsDbSync(events);
+
+  if (typeof window.emsOfflinePersistAttendance === 'function') {
+    chain = chain.then(function () {
+      var persistOpts = { skipLocalSync: true };
+      if (prev && cloudPatch && Object.keys(cloudPatch).length) {
+        persistOpts.patch = cloudPatch;
+      }
+      return window.emsOfflinePersistAttendance(cloudDocId, stamped, persistOpts);
+    });
+  }
+
+  return chain.then(function (syncRes) {
+    return {
+      ok: true,
+      local: true,
+      synced: !!(syncRes && syncRes.synced),
+      offline: !!(syncRes && syncRes.offline) || !(syncRes && syncRes.synced),
+      id: stamped.id
+    };
+  }).catch(function (err) {
+    console.error('[EMS] attSaveEventAttendance', err);
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  });
+};
+
+/** Remove event from local blob + outbox sync (blob replace; cloud doc merge with tombstone). */
+window.attDeleteEventAttendance = function (eventId) {
+  if (!eventId) return Promise.resolve({ ok: false, reason: 'invalid_id' });
+  var events = evtReadEventsDb();
+  var removed = events.find(function (e) { return e && e.id === eventId; });
+  events = events.filter(function (e) { return !e || e.id !== eventId; });
+  if (!evtWriteEventsDbLocal(events)) {
+    return Promise.resolve({ ok: false, reason: 'local_write_failed' });
+  }
+
+  var chain = attEnqueueEventsDbSync(events);
+  if (removed && typeof window.emsOfflinePersistAttendance === 'function') {
+    chain = chain.then(function () {
+      var tombstone = Object.assign({}, removed, {
+        deleted: true,
+        deletedAt: Date.now()
+      });
+      return window.emsOfflinePersistAttendance(attEventCloudDocId(eventId), tombstone, {
+        skipLocalSync: true,
+        patch: { deleted: true, deletedAt: tombstone.deletedAt }
+      });
+    });
+  }
+
+  return chain.then(function (syncRes) {
+    return {
+      ok: true,
+      local: true,
+      synced: !!(syncRes && syncRes.synced),
+      offline: !!(syncRes && syncRes.offline) || !(syncRes && syncRes.synced)
+    };
+  });
+};
+
+function evtGetUsers() {
+  return attGetUsers();
+}
+window.currentEventParticipants = window.currentEventParticipants || [];
+window._evtEditId = null;
+
+function evtToParticipant(u) {
+  return {
+    id: u.id, name: u.name, type: u.type,
+    role: u.class || u.dept || u.appointed || 'اسٹاف',
+    cls: u.class || '', status: 'P',
+  };
+}
+
+var EVT_SEARCH_MAX = ATT_SEARCH_MAX;
+var _evtSearchUsersCache = null;
+var _evtSearchDebounce = null;
+
+function evtParticipantLabel(u) {
+  if (!u) return '';
+  return u.name + ' (' + (u.type === 'student' ? 'طالب علم: ' + (u.class || '') : 'اسٹاف') + ')';
+}
+
+function evtInitParticipantSearch() {
+  _evtSearchUsersCache = evtGetUsers();
+  var input = document.getElementById('evt-participant-search');
+  var results = document.getElementById('evt-participant-results');
+  if (input) {
+    input.value = '';
+    input.removeAttribute('data-selected-uid');
+  }
+  if (results) {
+    results.innerHTML = '';
+    results.style.display = 'none';
+  }
+}
+
+function evtFilterUsersForSearch(q) {
+  q = String(q || '').trim().toLowerCase();
+  var users = _evtSearchUsersCache || evtGetUsers();
+  var already = Object.create(null);
+  (window.currentEventParticipants || []).forEach(function (p) {
+    if (p && p.id) already[p.id] = true;
+  });
+  var filtered = users.filter(function (u) {
+    if (!u || !u.id || already[u.id]) return false;
+    if (!q) return false;
+    var hay = [u.id, u.name, u.class, u.type, u.dept].join(' ').toLowerCase();
+    return hay.indexOf(q) >= 0;
+  });
+  return filtered.slice(0, EVT_SEARCH_MAX);
+}
+
+function evtRenderParticipantSearchResults(q) {
+  var box = document.getElementById('evt-participant-results');
+  var input = document.getElementById('evt-participant-search');
+  if (!box || !input) return;
+  var matches = evtFilterUsersForSearch(q);
+  if (!q) {
+    box.innerHTML = '';
+    box.style.display = 'none';
+    return;
+  }
+  if (!matches.length) {
+    box.innerHTML = '<div style="padding:10px 12px;color:#94a3b8;font-size:13px;">کوئی نتیجہ نہیں</div>';
+    box.style.display = 'block';
+    return;
+  }
+  box.innerHTML = matches.map(function (u) {
+    return '<button type="button" class="evt-search-item" data-uid="' + u.id + '" style="display:block;width:100%;text-align:right;padding:8px 12px;border:none;border-bottom:1px solid #eef2f6;background:#fff;cursor:pointer;">' + evtParticipantLabel(u) + '</button>';
+  }).join('');
+  box.style.display = 'block';
+}
+
+function evtResolveSelectedParticipantUid() {
+  var input = document.getElementById('evt-participant-search');
+  if (!input) return '';
+  var uid = input.getAttribute('data-selected-uid') || '';
+  if (uid) return uid;
+  var q = String(input.value || '').trim().toLowerCase();
+  if (!q) return '';
+  var users = _evtSearchUsersCache || evtGetUsers();
+  var exact = users.find(function (u) {
+    if (!u || !u.id) return false;
+    return String(u.id).toLowerCase() === q || String(u.name || '').toLowerCase() === q;
+  });
+  return exact ? exact.id : '';
+}
+
+function evtEnsureParticipantSearchBound() {
+  if (window._evtParticipantSearchBound) return;
+  var input = document.getElementById('evt-participant-search');
+  var results = document.getElementById('evt-participant-results');
+  if (!input || !results) return;
+  window._evtParticipantSearchBound = true;
+  _evtSearchDebounce = attDebounce(function () {
+    evtRenderParticipantSearchResults(input.value);
+  }, ATT_SEARCH_DEBOUNCE_MS);
+
+  input.addEventListener('input', function () {
+    input.removeAttribute('data-selected-uid');
+    _evtSearchDebounce();
+  });
+
+  input.addEventListener('focus', function () {
+    if (input.value) _evtSearchDebounce();
+  });
+
+  results.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.evt-search-item') : null;
+    if (!btn) return;
+    var pickUid = btn.getAttribute('data-uid');
+    if (!pickUid) return;
+    input.setAttribute('data-selected-uid', pickUid);
+    input.value = btn.textContent || pickUid;
+    results.style.display = 'none';
+  });
+
+  document.addEventListener('click', function (ev) {
+    if (!results.contains(ev.target) && ev.target !== input) {
+      results.style.display = 'none';
+    }
+  });
+}
+
+function evtPopulateExcludeClass() {
+  const sel = document.getElementById('evt-exclude-class');
+  if (!sel) return;
+  const groups = [...new Set(window.currentEventParticipants.map((p) => p.cls).filter(Boolean))].sort();
+  sel.innerHTML = '<option value="">پورا درجہ/شعبہ خارج کریں...</option>' +
+    groups.map((c) => `<option value="${c}">${c}</option>`).join('');
+}
+
+document.getElementById('btn-create-event')?.addEventListener('click', () => {
+  const name = document.getElementById('evt-name').value.trim();
+  const date = document.getElementById('evt-date').value;
+
+  if (!name || !date) return window.showToast('تقریب کا نام اور تاریخ درج کرنا لازمی ہے!', 'error');
+
+  window._evtEditId = null;
+  window.currentEventParticipants = [];
+  document.getElementById('evt-attendance-tbody').innerHTML = '';
+
+  evtEnsureParticipantSearchBound();
+  evtInitParticipantSearch();
+
+  document.getElementById('evt-participants-panel').style.display = 'block';
+  renderEventParticipants();
+  window.showToast('نیا رجسٹر تیار ہے۔ "فوری انتخاب" سے سب شامل کریں، پھر ضرورت کے مطابق خارج کریں۔', 'success');
+});
+
+// فوری اجتماعی انتخاب — سب منتخب کریں
+window.evtBulkSelect = function (group) {
+  if (group === 'clear') {
+    window.currentEventParticipants = [];
+  } else {
+    const users = evtGetUsers();
+    const filtered = group === 'all' ? users : users.filter((u) => u.type === group);
+    window.currentEventParticipants = filtered.map(evtToParticipant);
+  }
+  evtPopulateExcludeClass();
+  renderEventParticipants();
+  window.showToast(`${window.currentEventParticipants.length} افراد منتخب ہو گئے`, 'info');
+};
+
+// پورا درجہ/شعبہ خارج کریں
+document.getElementById('evt-exclude-class')?.addEventListener('change', function () {
+  const cls = this.value;
+  if (!cls) return;
+  const before = window.currentEventParticipants.length;
+  window.currentEventParticipants = window.currentEventParticipants.filter((p) => p.cls !== cls);
+  this.value = '';
+  evtPopulateExcludeClass();
+  renderEventParticipants();
+  window.showToast(`"${cls}" کے ${before - window.currentEventParticipants.length} افراد خارج کر دیے گئے`, 'warning');
+});
+
+// تمام شرکاء کی حالت یکمشت مقرر کریں
+window.evtMarkAll = function (key) {
+  const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+  const val = symbols[key] || key;
+  window.currentEventParticipants.forEach((p) => (p.status = val));
+  renderEventParticipants();
+};
+
+window.evtCancelEdit = function () {
+  window._evtEditId = null;
+  window.currentEventParticipants = [];
+  document.getElementById('evt-participants-panel').style.display = 'none';
+};
+
+document.getElementById('btn-add-participant')?.addEventListener('click', () => {
+    const uid = evtResolveSelectedParticipantUid();
+    if (!uid) return window.showToast('براہ کرم تلاش کر کے فرد منتخب کریں!', 'warning');
+
+    if (window.currentEventParticipants.find((p) => p.id === uid)) {
+      return window.showToast('یہ شخص پہلے ہی فہرست میں شامل ہے!', 'warning');
+    }
+
+    const user = evtGetUsers().find((u) => u.id === uid);
+    if (!user) return;
+
+    window.currentEventParticipants.push(evtToParticipant(user));
+    evtPopulateExcludeClass();
+    evtInitParticipantSearch();
+    renderEventParticipants();
+  });
+
+function renderEventParticipants() {
+  const tbody = document.getElementById('evt-attendance-tbody');
+  if (!tbody) return;
+  attEnsureEvtStatusDelegation();
+  const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+
+  const badge = document.getElementById('evt-count-badge');
+  if (badge) badge.textContent = `کل شرکاء: ${window.currentEventParticipants.length}`;
+
+  var scrollEl = tbody.closest('table') && tbody.closest('table').parentElement;
+  if (scrollEl && !scrollEl.style.maxHeight) {
+    scrollEl.style.maxHeight = '48vh';
+    scrollEl.style.overflowY = 'auto';
+  }
+
+  if (window.currentEventParticipants.length === 0) {
+    attDisposeChunked('evt');
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94a3b8;">"فوری انتخاب" سے سب شامل کریں یا انفرادی شریک تلاش کریں</td></tr>';
+    var evtFoot = document.getElementById('evt-chunk-foot');
+    if (evtFoot) evtFoot.textContent = '';
+    return;
+  }
+
+  var rowHtml = window.currentEventParticipants.map(function (p) {
+    return attBuildEventParticipantRow(p, symbols);
+  });
+
+  attRenderChunkedRows({
+    tbody: tbody,
+    scrollEl: scrollEl,
+    rows: rowHtml,
+    footId: 'evt-chunk-foot',
+    emptyHtml: '<tr><td colspan="4" style="text-align:center; color:#94a3b8;">کوئی شریک نہیں</td></tr>',
+    disposeKey: 'evt'
+  });
+}
+
+window.removeEventParticipant = function (uid) {
+  window.currentEventParticipants = window.currentEventParticipants.filter((p) => p.id !== uid);
+  evtPopulateExcludeClass();
+  renderEventParticipants();
+};
+
+function evtSyncStatusesFromUI() {
+  document.querySelectorAll('.evt-status-select').forEach((sel) => {
+    let participant = window.currentEventParticipants.find((x) => x.id === sel.getAttribute('data-uid'));
+    if (participant) participant.status = sel.value;
+  });
+}
+
+document.getElementById('btn-save-event-att')?.addEventListener('click', () => {
+  if (window.currentEventParticipants.length === 0) return window.showToast('فہرست میں کوئی شریک موجود نہیں!', 'error');
+
+  evtSyncStatusesFromUI();
+
+  const payload = {
+    name: document.getElementById('evt-name').value.trim(),
+    type: document.getElementById('evt-type').value,
+    date: document.getElementById('evt-date').value,
+    time: document.getElementById('evt-time').value,
+    participants: window.currentEventParticipants,
+    timestamp: new Date().getTime(),
+  };
+
+  const isEdit = !!window._evtEditId;
+  if (isEdit) {
+    payload.id = window._evtEditId;
+  } else {
+    payload.id = window.generateID ? window.generateID('EVT') : 'EVT-' + Math.floor(Math.random() * 9000);
+  }
+
+  const btn = document.getElementById('btn-save-event-att');
+  if (btn) {
+    btn.disabled = true;
+  }
+
+  Promise.resolve(window.attSaveEventAttendance(payload, { isEdit: isEdit })).then(function (res) {
+    if (!res || !res.ok) {
+      window.showToast('تقریب محفوظ نہیں ہو سکی', 'error');
+      return;
+    }
+    if (isEdit) {
+      window.showToast('تقریباتی رجسٹر میں ترمیم محفوظ ہو گئی!', 'success');
+      if (typeof logAttAudit === 'function') logAttAudit('تقریب ترمیم', `تقریب: ${payload.name}`);
+    } else {
+      window.showToast('تقریب کی مکمل حاضری کامیابی سے محفوظ کر لی گئی!', 'success');
+      if (typeof logAttAudit === 'function') logAttAudit('تقریب حاضری', `تقریب: ${payload.name} | شرکاء: ${payload.participants.length}`);
+    }
+    if (res.offline && !res.synced) {
+      window.showToast('آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'info');
+    }
+    window._evtEditId = null;
+    window.currentEventParticipants = [];
+    document.getElementById('evt-participants-panel').style.display = 'none';
+    renderSavedEvents();
+  }).catch(function (err) {
+    console.error('[EMS] btn-save-event-att', err);
+    window.showToast('تقریب محفوظ نہیں ہو سکی', 'error');
+  }).finally(function () {
+    if (btn) btn.disabled = false;
+  });
+});
+
+// محفوظ شدہ تقریبات کی فہرست (CRUD)
+window.renderSavedEvents = function () {
+  const tbody = document.getElementById('evt-saved-tbody');
+  if (!tbody) return;
+  const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+  const events = evtReadEventsDb();
+
+  if (events.length === 0) {
+    attDisposeChunked('evt-saved');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">ابھی کوئی تقریب محفوظ نہیں</td></tr>';
+    var emptyFoot = document.getElementById('evt-saved-chunk-foot');
+    if (emptyFoot) emptyFoot.textContent = '';
+    return;
+  }
+
+  var rowHtml = events
+    .slice()
+    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+    .map(function (e) {
+      const present = (e.participants || []).filter((p) => p.status === symbols.P).length;
+      const absent = (e.participants || []).filter((p) => p.status === symbols.A).length;
+      var eid = String(e.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      return (
+        '<td><strong>' + (e.name || '-') + '</strong>' + (e.time ? '<br><small style="color:#7f8c8d;">' + e.time + '</small>' : '') + '</td>' +
+        '<td><span class="evt-type-tag">' + (e.type || '-') + '</span></td>' +
+        '<td>' + (e.date || '-') + '</td>' +
+        '<td style="text-align:center; font-weight:bold;">' + (e.participants || []).length + '</td>' +
+        '<td style="text-align:center;"><span style="color:var(--success);font-weight:bold;">' + present + '</span> / <span style="color:var(--danger);font-weight:bold;">' + absent + '</span></td>' +
+        '<td>' +
+        '<button class="icon-btn" style="color:var(--accent);" title="ترمیم" onclick="editEvent(\'' + eid + '\')"><i class="fas fa-edit"></i></button> ' +
+        '<button class="icon-btn delete" title="حذف" onclick="deleteEvent(\'' + eid + '\')"><i class="fas fa-trash"></i></button>' +
+        '</td>'
+      );
+    });
+
+  var scrollEl = tbody.closest('table') && tbody.closest('table').parentElement;
+  if (scrollEl && !scrollEl.style.maxHeight) {
+    scrollEl.style.maxHeight = '48vh';
+    scrollEl.style.overflowY = 'auto';
+  }
+
+  attRenderChunkedRows({
+    tbody: tbody,
+    scrollEl: scrollEl,
+    rows: rowHtml,
+    footId: 'evt-saved-chunk-foot',
+    emptyHtml: '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">ابھی کوئی تقریب محفوظ نہیں</td></tr>',
+    disposeKey: 'evt-saved'
+  });
+};
+
+window.editEvent = function (id) {
+  const events = evtReadEventsDb();
+  const e = events.find((x) => x.id === id);
+  if (!e) return;
+
+  window._evtEditId = id;
+  window.currentEventParticipants = JSON.parse(JSON.stringify(e.participants || []));
+  document.getElementById('evt-name').value = e.name || '';
+  document.getElementById('evt-type').value = e.type || 'اجلاس';
+  document.getElementById('evt-date').value = e.date || '';
+  document.getElementById('evt-time').value = e.time || '';
+
+  evtEnsureParticipantSearchBound();
+  evtInitParticipantSearch();
+
+  evtPopulateExcludeClass();
+  document.getElementById('evt-participants-panel').style.display = 'block';
+  renderEventParticipants();
+  document.getElementById('evt-participants-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  window.showToast('ترمیم کے لیے رجسٹر کھل گیا', 'info');
+};
+
+window.deleteEvent = function (id) {
+  if (!confirm('کیا آپ واقعی یہ تقریباتی رجسٹر حذف کرنا چاہتے ہیں؟')) return;
+  const events = evtReadEventsDb();
+  const ev = events.find((x) => x.id === id);
+  Promise.resolve(window.attDeleteEventAttendance(id)).then(function (res) {
+    if (!res || !res.ok) {
+      window.showToast('تقریب حذف نہیں ہو سکی', 'error');
+      return;
+    }
+    if (typeof moveToRecycleBin === 'function' && ev) moveToRecycleBin('تقریباتی رجسٹر', ev);
+    if (typeof logAttAudit === 'function') logAttAudit('تقریب حذف', `تقریب: ${ev ? ev.name : id}`);
+    renderSavedEvents();
+    window.showToast('تقریباتی رجسٹر حذف کر دیا گیا', 'error');
+  });
+};
+
+// ============================================================================
+// حصہ 7: خودکار رپورٹنگ، فیصد اور خلاصہ (Reports Logic)
+// ============================================================================
+var ATT_CHUNK_PAGE_SIZE = 50;
+var ATT_CHUNK_DOM_MAX = 200;
+window._attChunkDisposers = window._attChunkDisposers || Object.create(null);
+
+function attEnsureReportScrollWrap() {
+  var table = document.getElementById('att-report-table');
+  if (!table) return null;
+  var wrap = document.getElementById('att-report-scroll-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'att-report-scroll-wrap';
+    wrap.style.cssText = 'max-height:60vh;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;';
+    table.parentNode.insertBefore(wrap, table);
+    wrap.appendChild(table);
+  }
+  return wrap;
+}
+
+function attDisposeChunked(disposeKey) {
+  if (!disposeKey || !window._attChunkDisposers[disposeKey]) return;
+  try { window._attChunkDisposers[disposeKey](); } catch (eDisp) { /* ignore */ }
+  delete window._attChunkDisposers[disposeKey];
+}
+
+/** Chunked tbody renderer — 50 rows/page on scroll; DOM capped (dashboard pattern). */
+function attRenderChunkedRows(cfg) {
+  cfg = cfg || {};
+  var tbody = cfg.tbody;
+  var scrollEl = cfg.scrollEl;
+  var rows = cfg.rows || [];
+  var footId = cfg.footId;
+  var emptyHtml = cfg.emptyHtml;
+  var pageSize = cfg.pageSize || ATT_CHUNK_PAGE_SIZE;
+  var domMax = cfg.domMax || ATT_CHUNK_DOM_MAX;
+  var disposeKey = cfg.disposeKey;
+
+  if (disposeKey) attDisposeChunked(disposeKey);
+  if (!tbody) return;
+
+  var foot = footId ? document.getElementById(footId) : null;
+  if (!foot && footId) {
+    foot = document.createElement('div');
+    foot.id = footId;
+    foot.style.cssText = 'font-size:12px;color:#94a3b8;text-align:center;padding:8px 4px;';
+    var anchor = scrollEl || tbody.closest('table');
+    if (anchor && anchor.parentNode) anchor.parentNode.insertBefore(foot, anchor.nextSibling);
+  }
+
+  var state = { offset: 0, loading: false, done: false, loaded: 0, total: rows.length };
+
+  function updateFooter() {
+    if (!foot) return;
+    foot.textContent = 'دکھائے گئے: ' + state.loaded.toLocaleString() + ' / ' + state.total.toLocaleString();
+  }
+
+  function evictOverflowRows() {
+    while (tbody.children.length > domMax) {
+      var first = tbody.firstElementChild;
+      if (!first) break;
+      var rowH = first.offsetHeight || 0;
+      tbody.removeChild(first);
+      if (rowH > 0 && scrollEl && scrollEl.scrollTop > 0) {
+        scrollEl.scrollTop = Math.max(0, scrollEl.scrollTop - rowH);
+      }
+    }
+  }
+
+  function appendBatch(batch) {
+    batch = batch || [];
+    if (!batch.length && state.loaded === 0) {
+      tbody.innerHTML = emptyHtml || '<tr><td colspan="8" style="text-align:center;">کوئی ریکارڈ نہیں</td></tr>';
+      if (foot) foot.textContent = '0 / 0';
+      state.done = true;
+      return;
+    }
+    if (state.loaded === 0) tbody.innerHTML = '';
+    batch.forEach(function (html) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = html;
+      tbody.appendChild(tr);
+    });
+    state.loaded += batch.length;
+    evictOverflowRows();
+    updateFooter();
+  }
+
+  function loadMore() {
+    if (state.loading || state.done) return;
+    state.loading = true;
+    var batch = rows.slice(state.offset, state.offset + pageSize);
+    appendBatch(batch);
+    state.offset += batch.length;
+    state.loading = false;
+    if (!batch.length || batch.length < pageSize || state.offset >= rows.length) {
+      state.done = true;
+      updateFooter();
+    }
+  }
+
+  var onScroll = function () {
+    if (state.done || state.loading || !scrollEl) return;
+    if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 48) loadMore();
+  };
+
+  if (scrollEl) {
+    if (scrollEl._attChunkScroll) scrollEl.removeEventListener('scroll', scrollEl._attChunkScroll);
+    scrollEl._attChunkScroll = onScroll;
+    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+  }
+
+  if (disposeKey) {
+    window._attChunkDisposers[disposeKey] = function () {
+      if (scrollEl && scrollEl._attChunkScroll) {
+        scrollEl.removeEventListener('scroll', scrollEl._attChunkScroll);
+        scrollEl._attChunkScroll = null;
+      }
+    };
+  }
+
+  loadMore();
+}
+
+function attBuildEventParticipantRow(p, symbols) {
+  var uid = String(p.id || '').replace(/'/g, "\\'");
+  return '<tr>' +
+    '<td><small>' + (p.id || '') + '</small></td>' +
+    '<td><strong>' + (p.name || '') + '</strong><br><small style="color:var(--accent);">' + (p.role || '') + '</small></td>' +
+    '<td>' +
+    '<select class="input-control evt-status-select" data-uid="' + (p.id || '') + '" style="width: 150px; font-weight:bold; padding:5px;">' +
+    '<option value="' + symbols.P + '" ' + (p.status === symbols.P ? 'selected' : '') + '>حاضر (' + symbols.P + ')</option>' +
+    '<option value="' + symbols.A + '" ' + (p.status === symbols.A ? 'selected' : '') + '>غیر حاضر (' + symbols.A + ')</option>' +
+    '<option value="' + symbols.L + '" ' + (p.status === symbols.L ? 'selected' : '') + '>رخصت (' + symbols.L + ')</option>' +
+    '</select></td>' +
+    '<td><button class="icon-btn delete" onclick="removeEventParticipant(\'' + uid + '\')"><i class="fas fa-trash"></i></button></td>' +
+    '</tr>';
+}
+
+function attEnsureEvtStatusDelegation() {
+  if (window._evtStatusDelegationBound) return;
+  var tbody = document.getElementById('evt-attendance-tbody');
+  if (!tbody) return;
+  window._evtStatusDelegationBound = true;
+  tbody.addEventListener('change', function (ev) {
+    var sel = ev.target;
+    if (!sel || !sel.classList || !sel.classList.contains('evt-status-select')) return;
+    var uid = sel.getAttribute('data-uid');
+    var participant = window.currentEventParticipants.find(function (x) { return x.id === uid; });
+    if (participant) participant.status = sel.value;
+  });
+}
+
+function attReportStatusKind(status, symbols) {
+  var st = String(status == null ? '' : status).trim();
+  if (!st) return '';
+  if (st === symbols.P || st === 'P' || st === 'حاضر' || st === 'ح') return 'present';
+  if (st === symbols.A || st === 'A' || st === 'غائب' || st === 'غ' || st === 'غیر حاضر') return 'absent';
+  if (st === symbols.L || st === 'L' || st === 'رخصت' || st === 'ر' || st === 'Leave') return 'leave';
+  return 'other';
+}
+
+function attReportFindUserRecord(records, user) {
+  if (!records || !user) return null;
+  var ids = [attGetUserId(user), user.id, user.regId, user.uid, user.docId].filter(Boolean);
+  var seen = Object.create(null);
+  for (var i = 0; i < ids.length; i++) {
+    var id = String(ids[i]).trim();
+    if (!id || seen[id]) continue;
+    seen[id] = true;
+    if (records[id]) return records[id];
+  }
+  return null;
+}
+
+function attBuildReportRowHtml(user, allRecords, fromDate, toDate, symbols) {
+  var totalDays = 0, present = 0, absent = 0, leave = 0;
+  var reasons = [];
+
+  allRecords.forEach(function (sheet) {
+    var userRecord = attReportFindUserRecord(sheet.records, user);
+    var userRemarks = attReportFindUserRecord(sheet.remarks, user);
+    if (!userRecord) return;
+
+    Object.keys(userRecord).forEach(function (dayKey) {
+      var dayNum = parseInt(dayKey, 10);
+      if (!dayNum || dayNum < 1 || dayNum > 31) return;
+      var fullDate = sheet.month + '-' + (dayNum < 10 ? '0' + dayNum : String(dayNum));
+      if (fullDate < fromDate || fullDate > toDate) return;
+      var status = userRecord[dayKey];
+      var kind = attReportStatusKind(status, symbols);
+      if (!kind) return;
+      totalDays++;
+      if (kind === 'present') present++;
+      else if (kind === 'absent') absent++;
+      else if (kind === 'leave') leave++;
+
+      if (userRemarks && userRemarks[dayKey]) {
+        reasons.push(fullDate + ': ' + userRemarks[dayKey]);
+      }
+    });
+  });
+
+  if (totalDays <= 0) return null;
+
+  var percentage = Math.round((present / totalDays) * 100);
+  var pctColor = percentage >= 75 ? 'var(--success)' : percentage >= 50 ? 'var(--warning)' : 'var(--danger)';
+  var remarksText = reasons.length > 0 ? reasons.join(' | ') : '';
+  var uid = attGetUserId(user);
+  return '<tr>' +
+    '<td><strong>' + (user.name || uid) + '</strong><br><small style="color:#7f8c8d;">' + uid + '</small></td>' +
+    '<td>' + (attGetUserClass(user) || user.type || '—') + '</td>' +
+    '<td style="font-weight:bold;">' + totalDays + '</td>' +
+    '<td style="color:var(--success); font-weight:bold;">' + present + '</td>' +
+    '<td style="color:var(--danger); font-weight:bold;">' + absent + '</td>' +
+    '<td style="color:var(--warning); font-weight:bold;">' + leave + '</td>' +
+    '<td style="color:' + pctColor + '; font-weight:bold; font-size:16px;">' + percentage + '%</td>' +
+    '<td><input type="text" class="input-control" value="' + remarksText.replace(/"/g, '&quot;') + '" placeholder="تبصرہ / کیفیت..." style="border:none; border-bottom:1px solid #ccc; width:100%; border-radius:0; background:transparent;"></td>' +
+    '</tr>';
+}
+
+var _repSearchUsersCache = null;
+var _repSearchDebounce = null;
+
+function repInitIndividualSearch() {
+  _repSearchUsersCache = attGetUsers();
+  var input = document.getElementById('rep-att-individual-search');
+  var hidden = document.getElementById('rep-att-specific');
+  var results = document.getElementById('rep-att-individual-results');
+  if (input) {
+    input.value = '';
+    input.removeAttribute('data-selected-uid');
+  }
+  if (hidden) hidden.value = '';
+  if (results) {
+    results.innerHTML = '';
+    results.style.display = 'none';
+  }
+}
+
+function repFilterUsersForSearch(q) {
+  q = String(q || '').trim().toLowerCase();
+  var users = _repSearchUsersCache || attGetUsers();
+  if (!q) return [];
+  return users.filter(function (u) {
+    if (!u || !attGetUserId(u)) return false;
+    var hay = [attGetUserId(u), u.name, u.class, u.type, u.dept].join(' ').toLowerCase();
+    return hay.indexOf(q) >= 0;
+  }).slice(0, ATT_SEARCH_MAX);
+}
+
+function repRenderIndividualSearchResults(q) {
+  var box = document.getElementById('rep-att-individual-results');
+  var input = document.getElementById('rep-att-individual-search');
+  var hidden = document.getElementById('rep-att-specific');
+  if (!box || !input) return;
+  var matches = repFilterUsersForSearch(q);
+  if (!q) {
+    box.innerHTML = '';
+    box.style.display = 'none';
+    if (hidden) hidden.value = '';
+    return;
+  }
+  if (!matches.length) {
+    box.innerHTML = '<div style="padding:10px 12px;color:#94a3b8;font-size:13px;">کوئی نتیجہ نہیں</div>';
+    box.style.display = 'block';
+    if (hidden) hidden.value = '';
+    return;
+  }
+  box.innerHTML = matches.map(function (u) {
+    var uid = attGetUserId(u);
+    return '<button type="button" class="rep-search-item" data-uid="' + uid + '" style="display:block;width:100%;text-align:right;padding:8px 12px;border:none;border-bottom:1px solid #eef2f6;background:#fff;cursor:pointer;">' + evtParticipantLabel(u) + '</button>';
+  }).join('');
+  box.style.display = 'block';
+}
+
+function repResolveSelectedIndividualUid() {
+  var hidden = document.getElementById('rep-att-specific');
+  if (hidden && hidden.value) return hidden.value;
+  var input = document.getElementById('rep-att-individual-search');
+  if (!input) return '';
+  var uid = input.getAttribute('data-selected-uid') || '';
+  if (uid) return uid;
+  var q = String(input.value || '').trim().toLowerCase();
+  if (!q) return '';
+  var users = _repSearchUsersCache || attGetUsers();
+  var exact = users.find(function (u) {
+    if (!u || !attGetUserId(u)) return false;
+    return String(attGetUserId(u)).toLowerCase() === q || String(u.name || '').toLowerCase() === q;
+  });
+  return exact ? attGetUserId(exact) : '';
+}
+
+function repEnsureIndividualSearchBound() {
+  if (window._repIndividualSearchBound) return;
+  var input = document.getElementById('rep-att-individual-search');
+  var results = document.getElementById('rep-att-individual-results');
+  var hidden = document.getElementById('rep-att-specific');
+  if (!input || !results) return;
+  window._repIndividualSearchBound = true;
+
+  _repSearchDebounce = attDebounce(function () {
+    repRenderIndividualSearchResults(input.value);
+  }, ATT_SEARCH_DEBOUNCE_MS);
+
+  input.addEventListener('input', function () {
+    input.removeAttribute('data-selected-uid');
+    if (hidden) hidden.value = '';
+    _repSearchDebounce();
+  });
+
+  input.addEventListener('focus', function () {
+    if (input.value) _repSearchDebounce();
+  });
+
+  results.addEventListener('click', function (ev) {
+    var btn = ev.target && ev.target.closest ? ev.target.closest('.rep-search-item') : null;
+    if (!btn) return;
+    var pickUid = btn.getAttribute('data-uid');
+    if (!pickUid) return;
+    input.setAttribute('data-selected-uid', pickUid);
+    input.value = btn.textContent || pickUid;
+    if (hidden) hidden.value = pickUid;
+    results.style.display = 'none';
+  });
+
+  document.addEventListener('click', function (ev) {
+    if (!results.contains(ev.target) && ev.target !== input) {
+      results.style.display = 'none';
+    }
+  });
+}
+
+window.generateAttReport = function () {
+  var fromDate = document.getElementById('rep-att-from') && document.getElementById('rep-att-from').value;
+  var toDate = document.getElementById('rep-att-to') && document.getElementById('rep-att-to').value;
+  var targetType = document.getElementById('rep-att-target') && document.getElementById('rep-att-target').value;
+  var specificVal = '';
+  if (targetType === 'class') {
+    var classSel = document.getElementById('rep-att-specific-class');
+    specificVal = classSel ? classSel.value : '';
+  } else if (targetType === 'individual') {
+    specificVal = repResolveSelectedIndividualUid();
+  }
+
+  if (!fromDate || !toDate) {
+    if (typeof window.showToast === 'function') window.showToast('رپورٹ کے لیے شروع اور اختتامی تاریخ کا انتخاب لازمی ہے!', 'error');
+    return Promise.resolve();
+  }
+  if (fromDate > toDate) {
+    if (typeof window.showToast === 'function') window.showToast('شروع کی تاریخ اختتام سے بعد نہیں ہو سکتی!', 'error');
+    return Promise.resolve();
+  }
+  if (targetType !== 'all' && !specificVal) {
+    if (typeof window.showToast === 'function') window.showToast('رپورٹ کا ہدف منتخب کریں!', 'error');
+    return Promise.resolve();
+  }
+
+  var users = attGetUsers();
+  var targetUsers = [];
+  if (targetType === 'all') targetUsers = users;
+  else if (targetType === 'class') {
+    targetUsers = users.filter(function (u) {
+      return attGetUserClass(u) === specificVal || String(u.class || '') === specificVal;
+    });
+  } else if (targetType === 'individual') {
+    targetUsers = users.filter(function (u) {
+      return attGetUserId(u) === specificVal || String(u.id || '') === specificVal;
+    });
+  }
+
+  if (!targetUsers.length) {
+    if (typeof window.showToast === 'function') window.showToast('اس کرائیٹیریا پر کوئی فرد موجود نہیں!', 'error');
+    return Promise.resolve();
+  }
+
+  var tbody = document.getElementById('att-report-tbody');
+  var printArea = document.getElementById('att-report-print-area');
+  var btn = document.getElementById('btn-generate-att-report');
+  if (!tbody) return Promise.resolve();
+
+  attDisposeChunked('report');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;"><i class="fas fa-spinner fa-spin"></i> رپورٹ تیار ہو رہی ہے...</td></tr>';
+  if (btn) {
+    btn.disabled = true;
+    if (!btn.dataset.prevHtml) btn.dataset.prevHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> لوڈ ہو رہا ہے...';
+  }
+
+  var symbols = {};
+  try {
+    symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+  } catch (eSym) {
+    symbols = { P: 'P', A: 'A', L: 'L' };
+  }
+
+  var collectFn = typeof window.emsAttCollectReportSheetsAsync === 'function'
+    ? window.emsAttCollectReportSheetsAsync
+    : function () { return Promise.resolve([]); };
+
+  return collectFn(fromDate, toDate).then(function (allRecords) {
+    var rowHtmlList = [];
+    targetUsers.forEach(function (user) {
+      var row = attBuildReportRowHtml(user, allRecords, fromDate, toDate, symbols);
+      if (row) rowHtmlList.push(row);
+    });
+
+    window._attReportRowHtmlCache = rowHtmlList.slice();
+
+    if (!rowHtmlList.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;">مطلوبہ تاریخوں (' + fromDate + ' تا ' + toDate + ') کے دوران ان افراد کا کوئی حاضری ریکارڈ موجود نہیں ہے۔<br><small style="color:#94a3b8;">پہلے اسمارٹ رجسٹر میں حاضری درج کریں۔</small></td></tr>';
+      window._attReportRowHtmlCache = [];
+      var emptyFoot = document.getElementById('att-report-chunk-foot');
+      if (emptyFoot) emptyFoot.textContent = '';
+      if (typeof window.showToast === 'function') {
+        window.showToast('اس تاریخ کی حد میں کوئی حاضری ڈیٹا نہیں ملا', 'warning');
+      }
+    } else {
+      var scrollWrap = attEnsureReportScrollWrap();
+      attRenderChunkedRows({
+        tbody: tbody,
+        scrollEl: scrollWrap,
+        rows: rowHtmlList,
+        footId: 'att-report-chunk-foot',
+        disposeKey: 'report'
+      });
+      if (typeof window.showToast === 'function') {
+        window.showToast('رپورٹ کامیابی کے ساتھ تیار ہو گئی ہے!', 'success');
+      }
+    }
+
+    var repTitle = document.getElementById('rep-print-title');
+    if (repTitle) repTitle.innerText = 'حاضری کا تفصیلی خلاصہ (' + fromDate + ' تا ' + toDate + ')';
+
+    if (printArea) {
+      printArea.style.display = 'block';
+      printArea.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }).catch(function (err) {
+    console.error('[EMS] generateAttReport', err);
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--danger);">رپورٹ لوڈ نہیں ہو سکی۔ دوبارہ کوشش کریں۔</td></tr>';
+    if (typeof window.showToast === 'function') window.showToast('رپورٹ تیار کرنے میں خرابی', 'error');
+  }).finally(function () {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = btn.dataset.prevHtml || '<i class="fas fa-search"></i> رپورٹ تیار کریں';
+    }
+  });
+};
+
+document.getElementById('rep-att-target')?.addEventListener('change', function () {
+    const val = this.value;
+    const dynamicDiv = document.getElementById('rep-att-dynamic-target');
+    const classSelect = document.getElementById('rep-att-specific-class');
+    const individualWrap = document.getElementById('rep-att-individual-wrap');
+
+    if (val === 'all') {
+      dynamicDiv.style.display = 'none';
+    } else {
+      dynamicDiv.style.display = 'block';
+      const users = attGetUsers();
+
+      if (val === 'class') {
+        if (classSelect) {
+          classSelect.style.display = 'block';
+          const classes = [...new Set(users.map((u) => u.class).filter((c) => c && c !== 'نامعلوم'))];
+          classSelect.innerHTML = '<option value="">مخصوص درجہ منتخب کریں...</option>' + classes.map((c) => `<option value="${c}">${c}</option>`).join('');
+        }
+        if (individualWrap) individualWrap.style.display = 'none';
+        repInitIndividualSearch();
+      } else if (val === 'individual') {
+        if (classSelect) classSelect.style.display = 'none';
+        if (individualWrap) individualWrap.style.display = 'block';
+        repEnsureIndividualSearchBound();
+        repInitIndividualSearch();
+      }
+    }
+  });
+
+document.getElementById('btn-generate-att-report')?.addEventListener('click', function () {
+  Promise.resolve(window.generateAttReport()).catch(function (e) {
+    console.error('[EMS] btn-generate-att-report', e);
+  });
+});
+
+// ============================================================================
+// ایڈوانسڈ کسٹم ٹیچر لاجک
+// ============================================================================
+window.loadPeriodTeachers = function () {
+  const users = attGetUsers();
+  const registeredTeachers = users.filter((u) => u.type === 'teacher');
+  const customTeachers = JSON.parse(localStorage.getItem('ems_att_custom_teachers')) || [];
+
+  const tSelect = document.getElementById('new-period-teacher');
+  if (!tSelect) return;
+
+  let html = '<option value="">استاد منتخب کریں...</option>';
+  html += '<option value="ADD_NEW" style="color: blue; font-weight: bold;">+ نیا استاد شامل کریں...</option>';
+
+  registeredTeachers.forEach((t) => { html += `<option value="${t.id}" class="registered-teacher-option" data-type="registered">[رجسٹرڈ] ${t.name}</option>`; });
+  customTeachers.forEach((t) => { html += `<option value="${t.id}" class="custom-teacher-option" data-type="custom">[عارضی/کسٹم] ${t.name}</option>`; });
+
+  tSelect.innerHTML = html;
+};
+
+window.checkCustomTeacherSelect = function () {
+  const tSelect = document.getElementById('new-period-teacher');
+  const customInputArea = document.getElementById('custom-teacher-input-area');
+  const delBtn = document.getElementById('btn-del-custom-teacher');
+
+  if (tSelect.value === 'ADD_NEW') {
+    if (customInputArea) customInputArea.style.display = 'block';
+    if (delBtn) delBtn.style.display = 'none';
+  } else {
+    if (customInputArea) customInputArea.style.display = 'none';
+    const selectedOption = tSelect.options[tSelect.selectedIndex];
+    if (selectedOption && selectedOption.getAttribute('data-type') === 'custom') {
+      if (delBtn) delBtn.style.display = 'inline-flex';
+    } else {
+      if (delBtn) delBtn.style.display = 'none';
+    }
+  }
+};
+
+window.deleteCustomTeacher = function () {
+  const tSelect = document.getElementById('new-period-teacher');
+  const idToDelete = tSelect.value;
+  if (!idToDelete || !confirm('کیا آپ واقعی اس کسٹم استاد کو مستقل حذف کرنا چاہتے ہیں؟')) return;
+
+  let customTeachers = JSON.parse(localStorage.getItem('ems_att_custom_teachers')) || [];
+  customTeachers = customTeachers.filter((t) => t.id !== idToDelete);
+  localStorage.setItem('ems_att_custom_teachers', JSON.stringify(customTeachers));
+
+  window.showToast('کسٹم استاد حذف کر دیا گیا', 'success');
+  loadPeriodTeachers();
+  checkCustomTeacherSelect();
+};
+
+document.querySelector('[onclick="switchAttTab(\'att-master-settings\', this)"]')?.addEventListener('click', loadPeriodTeachers);
+
+// ============================================================================
+// پیریڈ سیو / ترمیم (یک مرکزی ہینڈلر)
+// ============================================================================
+document.addEventListener('click', function (e) {
+  var btnSaveClose = e.target.closest('#btn-save-period');
+  var btnSaveMore = e.target.closest('#btn-save-add-more');
+
+  if (btnSaveClose || btnSaveMore) {
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+    attSavePeriodFromModal({ closeAfter: !!btnSaveClose, addMore: !!btnSaveMore });
+  }
+}, true);
+
+if (typeof window.emsRegisterDepartmentRefresh === 'function') {
+  window.emsRegisterDepartmentRefresh('attendance', function () {
+    if (typeof window.emsIsAttendanceModuleActive === 'function' && !window.emsIsAttendanceModuleActive()) return;
+    if (typeof window.emsInvalidateAttDashboardCache === 'function') {
+      window.emsInvalidateAttDashboardCache();
+    }
+    _attDropdownCacheGen = -1;
+    clearTimeout(_attDeptRefreshTimer);
+    _attDeptRefreshTimer = setTimeout(function () {
+      if (typeof loadAttDropdowns === 'function') loadAttDropdowns(true);
+      if (attPanelIsVisible('att-dashboard-panel') && typeof window.renderAttDashboard === 'function') {
+        window.renderAttDashboard();
+      }
+      if (attPanelIsVisible('att-smart-register')
+          && window.currentAttState
+          && window.currentAttState.month
+          && typeof buildSmartRegister === 'function') {
+        buildSmartRegister(window.currentAttState.month, window.getFilteredUsers());
+      }
+    }, 180);
+  });
+}

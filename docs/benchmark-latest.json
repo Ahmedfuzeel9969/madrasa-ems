@@ -1,0 +1,124 @@
+{
+  "generatedAt": "2026-07-08T05:08:56.113Z",
+  "node": "v24.16.0",
+  "skipLegacy": true,
+  "scales": [
+    400,
+    1000,
+    10000
+  ],
+  "release": "20260621-perf5",
+  "rows": [
+    {
+      "students": 400,
+      "records": 420,
+      "usersJsonMb": "0.08",
+      "feeRecords": 1020,
+      "verdict": "production-ready",
+      "timings": [
+        {
+          "label": "JSON.parse users",
+          "ms": 0.58
+        },
+        {
+          "label": "filter students + counts",
+          "ms": 0.14
+        },
+        {
+          "label": "arrears O(n+m) Map [production]",
+          "ms": 0.4
+        },
+        {
+          "label": "reg table filter+search+virtual slice",
+          "ms": 0.59
+        },
+        {
+          "label": "cache fingerprint hit (emsCacheGet)",
+          "ms": 0.17
+        },
+        {
+          "label": "JSON.stringify users (snapshot write)",
+          "ms": 0.72
+        }
+      ],
+      "mapArrearsMs": 0.4,
+      "legacyArrearsMs": null,
+      "searchMs": 0.59,
+      "parseMs": 0.58
+    },
+    {
+      "students": 1000,
+      "records": 1050,
+      "usersJsonMb": "0.20",
+      "feeRecords": 2550,
+      "verdict": "production-ready",
+      "timings": [
+        {
+          "label": "JSON.parse users",
+          "ms": 1.26
+        },
+        {
+          "label": "filter students + counts",
+          "ms": 0.26
+        },
+        {
+          "label": "arrears O(n+m) Map [production]",
+          "ms": 0.63
+        },
+        {
+          "label": "reg table filter+search+virtual slice",
+          "ms": 0.92
+        },
+        {
+          "label": "cache fingerprint hit (emsCacheGet)",
+          "ms": 0.03
+        },
+        {
+          "label": "JSON.stringify users (snapshot write)",
+          "ms": 1.15
+        }
+      ],
+      "mapArrearsMs": 0.63,
+      "legacyArrearsMs": null,
+      "searchMs": 0.92,
+      "parseMs": 1.26
+    },
+    {
+      "students": 10000,
+      "records": 10500,
+      "usersJsonMb": "1.97",
+      "feeRecords": 25500,
+      "verdict": "acceptable",
+      "timings": [
+        {
+          "label": "JSON.parse users",
+          "ms": 13.57
+        },
+        {
+          "label": "filter students + counts",
+          "ms": 2.96
+        },
+        {
+          "label": "arrears O(n+m) Map [production]",
+          "ms": 7.85
+        },
+        {
+          "label": "reg table filter+search+virtual slice",
+          "ms": 9.27
+        },
+        {
+          "label": "cache fingerprint hit (emsCacheGet)",
+          "ms": 0.05
+        },
+        {
+          "label": "JSON.stringify users (snapshot write)",
+          "ms": 10.74
+        }
+      ],
+      "mapArrearsMs": 7.85,
+      "legacyArrearsMs": null,
+      "searchMs": 9.27,
+      "parseMs": 13.57
+    }
+  ]
+}

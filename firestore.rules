@@ -1,0 +1,928 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* ---------------------------- helpers ---------------------------- */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function token() {
+      return request.auth.token;
+    }
+
+    function roles() {
+      return isSignedIn() && token().roles is list ? token().roles : [];
+    }
+
+    function isSuperAdminClaim() {
+      return isSignedIn() && (token().isSuperAdmin == true || 'super_admin' in roles());
+    }
+
+    /** SuperAdmins/{email_with_underscores} — seed convention (see scripts/seed-super-admin.js) */
+    function saEmailDocKey() {
+      let e = token().email.lower();
+      return e.replace('@', '_').replace('.', '_');
+    }
+
+    function isSuperAdminEmailDoc() {
+      return isSignedIn()
+        && token().email != null
+        && exists(/databases/$(database)/documents/SuperAdmins/$(saEmailDocKey()));
+    }
+
+    function isSuperAdminPlatformListed() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/Platform_Users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/Platform_Users/$(request.auth.uid)).data.get('globalRoles', []).hasAny(['super_admin']);
+    }
+
+    function isSuperAdminDoc() {
+      return isSignedIn()
+        && (exists(/databases/$(database)/documents/SuperAdmins/$(request.auth.uid))
+            || isSuperAdminEmailDoc()
+            || isSuperAdminPlatformListed());
+    }
+
+    function isSuperAdmin() {
+      return isSuperAdminClaim() || isSuperAdminDoc();
+    }
+
+    function hasRole(r) {
+      return r in roles();
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    /** Phase C — tenant kill switch: suspended madrasas blocked (SA bypasses via isSuperAdmin) */
+    function madrasaProfile(madrasaId) {
+      return get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)).data;
+    }
+
+    function isMadrasaActive(madrasaId) {
+      return exists(/databases/$(database)/documents/All_Madrasas/$(madrasaId))
+        && madrasaProfile(madrasaId).get('subStatus', 'default') != 'suspended';
+    }
+
+    function isStaffOf(madrasaId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Staff_Links/$(request.auth.uid))
+        && get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Staff_Links/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function isParentOf(madrasaId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Parent_Links/$(request.auth.uid))
+        && get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Parent_Links/$(request.auth.uid)).data.status == 'active';
+    }
+
+    /** Owner / staff / super-admin — مکمل tenant رسائی */
+    function canReadTenantStaff(madrasaId) {
+      return isOwner(madrasaId) || isSuperAdmin() || isStaffOf(madrasaId);
+    }
+
+    function canWriteTenant(madrasaId) {
+      return isSuperAdmin()
+        || (isMadrasaActive(madrasaId) && (isOwner(madrasaId) || isStaffOf(madrasaId)));
+    }
+
+    /** مالیات / ledger / فیس — owner + staff with finance/ledger edit (MFA when required for owner) */
+    function canWriteFinance(madrasaId) {
+      return isSuperAdmin()
+        || (isMadrasaActive(madrasaId)
+            && (canOwnerAct(madrasaId)
+                || canStaffCreate(madrasaId, 'finance')
+                || canStaffUpdate(madrasaId, 'finance')
+                || canStaffCreate(madrasaId, 'ledger')
+                || canStaffUpdate(madrasaId, 'ledger')));
+    }
+
+    /** رجسٹریشن — صرف owner (MFA when required) */
+    function canWriteRegistration(madrasaId) {
+      return isSuperAdmin() || (isMadrasaActive(madrasaId) && canOwnerAct(madrasaId));
+    }
+
+    /** Owner پروفائل اپڈیٹ — لائسنس فیلڈز SA only */
+    function canOwnerUpdateProfile(madrasaId) {
+      return canOwnerAct(madrasaId)
+        && !request.resource.data.diff(resource.data).affectedKeys()
+             .hasAny(['allowedModules', 'subStatus', 'accessAutoRepairedAt']);
+    }
+
+    /** Owner-only sensitive writes (permissions, links) */
+    function canManageTenantAccess(madrasaId) {
+      return isOwner(madrasaId) || isSuperAdmin();
+    }
+
+    function hasMfaSession() {
+      return isSignedIn() && token().firebase.sign_in_second_factor != null;
+    }
+
+    function tenantMfaRequired(madrasaId) {
+      return exists(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/SecuritySettings/mfa)
+        && get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/SecuritySettings/mfa).data.requireMfaForAdmin == true;
+    }
+
+    /** Owner actions when MFA policy applies — session must include 2FA */
+    function canOwnerAct(madrasaId) {
+      return isOwner(madrasaId) && (!tenantMfaRequired(madrasaId) || hasMfaSession());
+    }
+
+    function staffRecordId(madrasaId) {
+      return get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Staff_Links/$(request.auth.uid)).data.staffId;
+    }
+
+    function staffPermExists(madrasaId) {
+      return staffRecordId(madrasaId) != ''
+        && exists(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/StaffPermissions/$(staffRecordId(madrasaId)));
+    }
+
+    function staffPerm(madrasaId) {
+      return get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/StaffPermissions/$(staffRecordId(madrasaId))).data;
+    }
+
+    /** Phase 3: temporary staff grant active (expiryAt ms epoch) */
+    function staffTempGrantActive(madrasaId, tempKey) {
+      return staffPermExists(madrasaId)
+        && tempKey in staffPerm(madrasaId).temporary
+        && staffPerm(madrasaId).temporary[tempKey].expiryAt is int
+        && staffPerm(madrasaId).temporary[tempKey].expiryAt > request.time.toMillis();
+    }
+
+    function staffHasModule(madrasaId, moduleId) {
+      return isStaffOf(madrasaId)
+        && staffPermExists(madrasaId)
+        && staffPerm(madrasaId).status != 'suspended'
+        && moduleId in staffPerm(madrasaId).modules
+        && staffPerm(madrasaId).modules[moduleId] == true;
+    }
+
+    function staffTempModuleAccess(madrasaId, moduleId) {
+      return staffTempGrantActive(madrasaId, moduleId + '.view')
+        || staffTempGrantActive(madrasaId, moduleId + '.create')
+        || staffTempGrantActive(madrasaId, moduleId + '.edit')
+        || staffTempGrantActive(madrasaId, moduleId + '.delete');
+    }
+
+    function canWriteStaffModule(madrasaId, moduleId) {
+      return isSuperAdmin() || canOwnerAct(madrasaId) || staffHasModule(madrasaId, moduleId) || staffTempModuleAccess(madrasaId, moduleId);
+    }
+
+    /** Action-level staff permission (create/edit/delete/view) + temporary grants — strict RBAC only */
+    function staffHasAction(madrasaId, moduleId, actionId) {
+      return (staffHasModule(madrasaId, moduleId)
+              && staffPermExists(madrasaId)
+              && moduleId in staffPerm(madrasaId).actions
+              && actionId in staffPerm(madrasaId).actions[moduleId]
+              && staffPerm(madrasaId).actions[moduleId][actionId] == true)
+          || staffTempGrantActive(madrasaId, moduleId + '.' + actionId);
+    }
+
+    function canStaffReadModule(madrasaId, moduleId) {
+      return isSuperAdmin()
+        || (isMadrasaActive(madrasaId)
+            && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, moduleId, 'view')));
+    }
+
+    function canStaffCreate(madrasaId, moduleId) {
+      return isSuperAdmin()
+        || (isMadrasaActive(madrasaId)
+            && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, moduleId, 'create')));
+    }
+
+    function canStaffUpdate(madrasaId, moduleId) {
+      return isSuperAdmin()
+        || (isMadrasaActive(madrasaId)
+            && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, moduleId, 'edit')));
+    }
+
+    function canStaffDelete(madrasaId, moduleId) {
+      return isSuperAdmin()
+        || (isMadrasaActive(madrasaId)
+            && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, moduleId, 'delete')));
+    }
+
+    function isValidEmsAuditCreate() {
+      return request.resource.data.keys().hasAll(['module', 'action', 'timestamp', 'uid'])
+        && request.resource.data.module is string
+        && request.resource.data.action is string
+        && request.resource.data.uid is string
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.module.size() <= 40
+        && request.resource.data.action.size() <= 40;
+    }
+
+    /** والدین + staff — صرف پروفائل ڈاک */
+    function canReadTenantProfile(madrasaId) {
+      return canReadTenantStaff(madrasaId) || isParentOf(madrasaId);
+    }
+
+    function parentLinkData(madrasaId) {
+      return get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Parent_Links/$(request.auth.uid)).data;
+    }
+
+    function parentHasLinkedStudent(madrasaId, studentId) {
+      return isParentOf(madrasaId)
+        && 'studentIds' in parentLinkData(madrasaId)
+        && studentId in parentLinkData(madrasaId).studentIds;
+    }
+
+    function parentPermData(madrasaId, studentId) {
+      return get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/ParentPermissions/$(studentId)).data;
+    }
+
+    /** Phase 3: parent view permission (permanent or temporary) */
+    function parentHasView(madrasaId, studentId, viewId) {
+      return isSuperAdmin() || canOwnerAct(madrasaId)
+        || (parentHasLinkedStudent(madrasaId, studentId)
+            && exists(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/ParentPermissions/$(studentId))
+            && parentPermData(madrasaId, studentId).status == 'active'
+            && (
+              (viewId in parentPermData(madrasaId, studentId).views
+               && parentPermData(madrasaId, studentId).views[viewId] == true)
+              || (viewId in parentPermData(madrasaId, studentId).temporary
+                  && parentPermData(madrasaId, studentId).temporary[viewId].expiryAt is int
+                  && parentPermData(madrasaId, studentId).temporary[viewId].expiryAt > request.time.toMillis())
+            ));
+    }
+
+    /** @deprecated — Phase 0: staff-only; parents use explicit collection rules */
+    function canReadTenant(madrasaId) {
+      return canReadTenantStaff(madrasaId);
+    }
+
+    function isValidPendingStaffLinkCreate() {
+      return request.resource.data.status == 'pending'
+        && request.resource.data.authUid == ''
+        && request.resource.data.keys().hasAll(['staffId', 'email', 'status'])
+        && request.resource.data.staffId is string
+        && request.resource.data.staffId.size() > 0;
+    }
+
+    function isValidPendingParentLinkCreate() {
+      return request.resource.data.status == 'pending'
+        && request.resource.data.authUid == ''
+        && request.resource.data.keys().hasAll(['email', 'status']);
+    }
+
+    function isValidSecurityLogCreate() {
+      return request.resource.data.keys().hasAll(['action', 'timestamp', 'uid'])
+        && request.resource.data.action is string
+        && request.resource.data.uid is string
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.action.size() <= 80
+        && (!('details' in request.resource.data) || request.resource.data.details is map);
+    }
+
+    function isValidAuditCreate() {
+      return request.resource.data.keys().hasAll(['action', 'timestamp'])
+        && request.resource.data.action is string
+        && request.resource.data.action.size() <= 120;
+    }
+
+    /** Phase A P0 — registration draft payload (PII); tenant + staff scoped */
+    function isValidRegistrationDraftData(tenantId) {
+      return request.resource.data.keys().hasAll(['staffId', 'tenantId', 'type', 'revision'])
+        && request.resource.data.staffId is string
+        && request.resource.data.staffId.size() > 0
+        && request.resource.data.staffId.size() <= 80
+        && request.resource.data.tenantId == tenantId
+        && request.resource.data.type is string
+        && request.resource.data.type.size() > 0
+        && request.resource.data.type.size() <= 24
+        && request.resource.data.revision is int
+        && request.resource.data.revision >= 0;
+    }
+
+    function registrationDraftDocMatchesId(docId) {
+      return docId == request.resource.data.staffId + '_' + request.resource.data.type;
+    }
+
+    function canReadRegistrationDraft(tenantId) {
+      return isSignedIn()
+        && !isParentOf(tenantId)
+        && resource.data.tenantId == tenantId
+        && (
+          isSuperAdmin()
+          || canOwnerAct(tenantId)
+          || (isStaffOf(tenantId)
+              && resource.data.staffId == staffRecordId(tenantId))
+        );
+    }
+
+    function canCreateRegistrationDraft(tenantId, docId) {
+      return isSignedIn()
+        && !isParentOf(tenantId)
+        && isValidRegistrationDraftData(tenantId)
+        && registrationDraftDocMatchesId(docId)
+        && (
+          isSuperAdmin()
+          || canOwnerAct(tenantId)
+          || (isStaffOf(tenantId)
+              && request.resource.data.staffId == staffRecordId(tenantId)
+              && (canStaffCreate(tenantId, 'admission') || canStaffUpdate(tenantId, 'admission')))
+        );
+    }
+
+    function canUpdateRegistrationDraft(tenantId) {
+      return isSignedIn()
+        && !isParentOf(tenantId)
+        && isValidRegistrationDraftData(tenantId)
+        && resource.data.tenantId == tenantId
+        && request.resource.data.staffId == resource.data.staffId
+        && request.resource.data.tenantId == resource.data.tenantId
+        && request.resource.data.type == resource.data.type
+        && (
+          isSuperAdmin()
+          || canOwnerAct(tenantId)
+          || (isStaffOf(tenantId)
+              && resource.data.staffId == staffRecordId(tenantId)
+              && request.resource.data.staffId == staffRecordId(tenantId)
+              && (canStaffCreate(tenantId, 'admission') || canStaffUpdate(tenantId, 'admission')))
+        );
+    }
+
+    function canDeleteRegistrationDraft(tenantId) {
+      return isSignedIn()
+        && !isParentOf(tenantId)
+        && resource.data.tenantId == tenantId
+        && (
+          isSuperAdmin()
+          || canOwnerAct(tenantId)
+          || (isStaffOf(tenantId)
+              && resource.data.staffId == staffRecordId(tenantId))
+        );
+    }
+
+    /* ------------------------ Platform_Users ------------------------- */
+    match /Platform_Users/{uid} {
+      allow read: if isOwner(uid) || isSuperAdmin() || hasRole('admin') || hasRole('manager');
+      allow create: if (isOwner(uid) || isSuperAdmin())
+        && (
+          isSuperAdmin()
+          || !('globalRoles' in request.resource.data)
+          || !('super_admin' in request.resource.data.globalRoles)
+        );
+      allow update: if isSuperAdmin()
+        || (isOwner(uid)
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                 .hasAny(['globalRoles', 'accountStatus', 'tenants', 'claimsUpdatedAt']));
+      allow delete: if isSuperAdmin();
+
+      match /{sub=**} {
+        allow read: if isOwner(uid) || isSuperAdmin();
+        allow write: if isSuperAdmin();
+      }
+    }
+
+    /* ------------------------ Platform_Roles ------------------------- */
+    match /Platform_Roles/{roleId} {
+      allow read: if isSuperAdmin() || hasRole('admin') || hasRole('manager');
+      allow write: if isSuperAdmin() || hasRole('admin');
+    }
+
+    /* ---------------------- Audit & Security ------------------------- */
+    match /Platform_AuditLog/{logId} {
+      allow read: if isSuperAdmin() || hasRole('admin') || hasRole('moderator') || hasRole('accountant');
+      allow write: if false;
+    }
+    match /Platform_SecurityEvents/{eventId} {
+      allow read: if isSuperAdmin() || hasRole('admin');
+      allow write: if false;
+    }
+    match /Platform_ErrorLog/{errId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    /* --------------------- Subscriptions/Billing --------------------- */
+    match /Platform_Subscriptions/{uid} {
+      allow read: if isOwner(uid) || isSuperAdmin() || hasRole('admin') || hasRole('accountant');
+      allow write: if isSuperAdmin() || hasRole('admin');
+    }
+    match /Platform_Payments/{paymentId} {
+      allow read: if isSuperAdmin() || hasRole('admin') || hasRole('accountant');
+      allow write: if false;
+    }
+    match /Platform_Invoices/{invoiceId} {
+      allow read: if isSuperAdmin() || hasRole('admin') || hasRole('accountant');
+      allow write: if false;
+    }
+
+    /* ----------------------------- Stats ----------------------------- */
+    match /Platform_Stats/{docId} {
+      allow read: if isSuperAdmin() || hasRole('admin') || hasRole('manager');
+      allow write: if false;
+    }
+
+    /* --------------------- Config / Notifications -------------------- */
+    match /Platform_Config/{docId} {
+      allow read: if isSuperAdmin() || hasRole('admin') || hasRole('manager');
+      allow write: if isSuperAdmin() || hasRole('admin');
+    }
+    match /Platform_Notifications/{docId} {
+      allow read: if isSuperAdmin() || hasRole('admin') || hasRole('manager') || hasRole('moderator');
+      allow write: if isSuperAdmin() || hasRole('admin') || hasRole('manager') || hasRole('moderator');
+    }
+    match /Platform_Content/{docId} {
+      allow read: if isSuperAdmin() || hasRole('admin') || hasRole('editor') || hasRole('manager');
+      allow write: if isSuperAdmin() || hasRole('admin') || hasRole('editor') || hasRole('manager');
+    }
+    match /Platform_Backups/{docId} {
+      allow read, write: if isSuperAdmin();
+      match /{sub=**} {
+        allow read, write: if isSuperAdmin();
+      }
+    }
+    match /Platform_Licenses/{docId} {
+      allow read: if isSuperAdmin() || hasRole('admin');
+      allow write: if isSuperAdmin();
+    }
+
+    /* ----------------------- Legacy collections ---------------------- */
+    match /System_Settings/{docId} {
+      allow read: if isSuperAdmin() || hasRole('admin');
+      allow write: if isSuperAdmin();
+    }
+
+    match /System_AuditLog/{logId} {
+      allow read: if isSuperAdmin() || hasRole('admin');
+      allow create: if isSuperAdmin() && isValidAuditCreate();
+      allow update, delete: if false;
+    }
+
+    match /SuperAdmins/{adminId} {
+      allow read: if isSuperAdmin()
+        || (isSignedIn() && request.auth.uid == adminId)
+        || (isSignedIn() && resource.data.email == request.auth.token.email);
+      allow create, update, delete: if isSuperAdmin();
+    }
+
+    /* ----------------------- Tenant (Madrasa) data ------------------- */
+    match /All_Madrasas/{madrasaId} {
+      allow read: if canReadTenantProfile(madrasaId);
+      allow create: if isOwner(madrasaId)
+        && request.resource.data.keys().hasAll(['madrasaName', 'email']);
+      allow update: if isSuperAdmin() || canOwnerUpdateProfile(madrasaId);
+      allow delete: if isSuperAdmin();
+
+      match /Registrations/{studentId} {
+        allow read: if canStaffReadModule(madrasaId, 'admission')
+          || (isMadrasaActive(madrasaId) && parentHasLinkedStudent(madrasaId, studentId));
+        allow write: if canWriteRegistration(madrasaId);
+      }
+
+      match /Rejected/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if canWriteRegistration(madrasaId);
+      }
+
+      /** Write-trigger sync — clients listen to meta only (Phase A4) */
+      match /RegistrationMeta/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if canWriteRegistration(madrasaId);
+      }
+
+      match /DashboardStats/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+
+      match /FeeSummary/{studentId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+
+      match /Attendance/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'attendance');
+        allow update: if canStaffUpdate(madrasaId, 'attendance');
+        allow delete: if canStaffDelete(madrasaId, 'attendance');
+      }
+
+      match /Attendance_Config/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'attendance');
+        allow update: if canStaffUpdate(madrasaId, 'attendance');
+        allow delete: if canStaffDelete(madrasaId, 'attendance');
+      }
+
+      match /Archive_Meta/{yearId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+
+      match /Archive_Attendance/{yearId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+        match /docs/{docId} {
+          allow read: if canReadTenantStaff(madrasaId);
+          allow write: if false;
+        }
+      }
+
+      match /Archive_Finance/{yearId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+
+      match /Archive_Ledger/{yearId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+
+      match /Archive_Exams/{yearId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+
+      match /Registration_Config/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'admission');
+        allow update: if canStaffUpdate(madrasaId, 'admission');
+        allow delete: if canStaffDelete(madrasaId, 'admission');
+      }
+
+      match /ImportHistory/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'admission');
+        allow update: if canStaffUpdate(madrasaId, 'admission');
+        allow delete: if canStaffDelete(madrasaId, 'admission');
+      }
+
+      match /ModuleData/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canOwnerAct(madrasaId) || isSuperAdmin()
+          || (docId == 'Curriculum__ems_curriculum_daily' && canStaffCreate(madrasaId, 'curriculum'));
+        allow update: if canOwnerAct(madrasaId) || isSuperAdmin()
+          || (docId == 'Curriculum__ems_curriculum_daily' && canStaffUpdate(madrasaId, 'curriculum'));
+        allow delete: if canOwnerAct(madrasaId) || isSuperAdmin();
+      }
+
+      match /BackupSnapshots/{backupId} {
+        allow read: if isOwner(madrasaId) || isSuperAdmin();
+        allow write: if isOwner(madrasaId) || isSuperAdmin();
+        match /modules/{moduleDoc} {
+          allow read: if isOwner(madrasaId) || isSuperAdmin();
+          allow write: if isOwner(madrasaId) || isSuperAdmin();
+        }
+      }
+
+      match /Backup/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+
+      match /SecurityLog/{logId} {
+        allow read: if isOwner(madrasaId) || isSuperAdmin();
+        allow create: if canWriteTenant(madrasaId) && isValidSecurityLogCreate();
+        allow update, delete: if false;
+      }
+
+      match /SecuritySettings/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if isOwner(madrasaId) || isSuperAdmin();
+      }
+
+      match /Complaints/{complaintId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'complaints');
+        allow update: if canStaffUpdate(madrasaId, 'complaints');
+        allow delete: if canStaffDelete(madrasaId, 'complaints');
+      }
+
+      match /ExamResults/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'exams');
+        allow update: if canStaffUpdate(madrasaId, 'exams');
+        allow delete: if canStaffDelete(madrasaId, 'exams');
+      }
+      match /Exams_Config/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'exams');
+        allow update: if canStaffUpdate(madrasaId, 'exams');
+        allow delete: if canStaffDelete(madrasaId, 'exams');
+      }
+      match /FeeCollections/{docId} {
+        allow read: if canStaffReadModule(madrasaId, 'finance');
+        allow write: if canWriteFinance(madrasaId);
+      }
+      match /FeeSetups/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if canWriteFinance(madrasaId);
+      }
+      match /FeeBills/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if canWriteFinance(madrasaId);
+      }
+      match /Finance_Config/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if canWriteFinance(madrasaId);
+      }
+      match /LedgerEntries/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if canWriteFinance(madrasaId);
+      }
+      match /Ledger_Config/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if canWriteFinance(madrasaId);
+      }
+      match /Announcements/{docId} {
+        allow read: if isSuperAdmin()
+          || (isMadrasaActive(madrasaId) && canReadTenantStaff(madrasaId));
+        allow create: if canStaffCreate(madrasaId, 'announcements');
+        allow update: if canStaffUpdate(madrasaId, 'announcements');
+        allow delete: if canStaffDelete(madrasaId, 'announcements');
+
+        match /AnnouncementVotes/{voteId} {
+          allow read: if isSuperAdmin()
+            || (isMadrasaActive(madrasaId) && canReadTenantStaff(madrasaId));
+          allow write: if false;
+        }
+      }
+      match /Announcements_Config/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'announcements');
+        allow update: if canStaffUpdate(madrasaId, 'announcements');
+        allow delete: if canStaffDelete(madrasaId, 'announcements');
+      }
+      match /StaffPermissions/{docId} {
+        allow read: if isSignedIn()
+          && (
+            (isStaffOf(madrasaId) && staffRecordId(madrasaId) == docId)
+            || canManageTenantAccess(madrasaId)
+          );
+        allow write: if canManageTenantAccess(madrasaId);
+      }
+      match /ParentAccessKeys/{studentId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isParentOf(madrasaId) && parentHasLinkedStudent(madrasaId, studentId));
+        allow write: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+      }
+      match /ParentPermissions/{studentId} {
+        allow read: if canReadTenantStaff(madrasaId) || parentHasLinkedStudent(madrasaId, studentId);
+        allow write: if canManageTenantAccess(madrasaId);
+      }
+      match /TenantSettings/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+      }
+      match /KeyExpiryAlerts/{alertId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow create: if false;
+        allow update: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow delete: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+      }
+      match /KeyExpiryNotifications/{notifyId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow create: if false;
+        allow update: if false;
+        allow delete: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+      }
+      match /ParentPushNotifications/{notifyId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow create: if false;
+        allow update: if false;
+        allow delete: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+      }
+      match /ParentDeviceTokens/{uid} {
+        allow read: if canManageTenantAccess(madrasaId) || request.auth.uid == uid;
+        allow write: if request.auth.uid == uid && isParentOf(madrasaId);
+      }
+      match /OwnerDeviceTokens/{uid} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow write: if isOwner(madrasaId) && request.auth.uid == uid;
+      }
+      match /SecurityAuditExports/{exportId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow create: if false;
+        allow update: if false;
+        allow delete: if false;
+      }
+      match /LoginSessions/{sessionId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isSignedIn() && resource.data.uid == request.auth.uid);
+        allow write: if false;
+      }
+      match /NotificationAnalyticsDaily/{dateKey} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow write: if false;
+      }
+      match /TrustedDevices/{deviceId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isSignedIn() && resource.data.uid == request.auth.uid);
+        allow write: if false;
+      }
+
+      match /TrainingPrayer/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'training');
+        allow update: if canStaffUpdate(madrasaId, 'training');
+        allow delete: if canStaffDelete(madrasaId, 'training');
+      }
+      match /TrainingEthics/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'training');
+        allow update: if canStaffUpdate(madrasaId, 'training');
+        allow delete: if canStaffDelete(madrasaId, 'training');
+      }
+      match /TrainingDiscipline/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'training');
+        allow update: if canStaffUpdate(madrasaId, 'training');
+        allow delete: if canStaffDelete(madrasaId, 'training');
+      }
+      match /TrainingReform/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'training');
+        allow update: if canStaffUpdate(madrasaId, 'training');
+        allow delete: if canStaffDelete(madrasaId, 'training');
+      }
+      match /TrainingAwards/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'training');
+        allow update: if canStaffUpdate(madrasaId, 'training');
+        allow delete: if canStaffDelete(madrasaId, 'training');
+      }
+      match /TrainingWarnings/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'training');
+        allow update: if canStaffUpdate(madrasaId, 'training');
+        allow delete: if canStaffDelete(madrasaId, 'training');
+      }
+      match /Training_Config/{docId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow create: if canStaffCreate(madrasaId, 'training');
+        allow update: if canStaffUpdate(madrasaId, 'training');
+        allow delete: if canStaffDelete(madrasaId, 'training');
+      }
+      match /SystemSettings_Config/{docId} {
+        allow read: if canReadTenantStaff(madrasaId) && docId != 'ai_config';
+        allow read: if docId == 'ai_config' && (isOwner(madrasaId) || isSuperAdmin());
+        allow write: if canOwnerAct(madrasaId) || isSuperAdmin();
+      }
+
+      match /EmsAudit/{logId} {
+        allow read: if isOwner(madrasaId) || isSuperAdmin();
+        allow create: if canReadTenantStaff(madrasaId) && isValidEmsAuditCreate();
+        allow update, delete: if false;
+      }
+
+      /** AI Assistant audit — server (Admin SDK) writes only */
+      match /AiAuditLog/{logId} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+
+      match /ParentMessages/{msgId} {
+        allow read: if isSuperAdmin()
+          || (isMadrasaActive(madrasaId) && canReadTenantStaff(madrasaId))
+          || (isMadrasaActive(madrasaId)
+              && isParentOf(madrasaId)
+              && (!('parentUid' in resource.data) || resource.data.parentUid == request.auth.uid));
+        allow create: if isParentOf(madrasaId) || canStaffCreate(madrasaId, 'announcements');
+        allow update: if canStaffUpdate(madrasaId, 'announcements');
+        allow delete: if canStaffDelete(madrasaId, 'announcements');
+      }
+
+      match /Staff_Links/{linkId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isMadrasaActive(madrasaId) && isStaffOf(madrasaId) && request.auth.uid == linkId);
+        allow create: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow update: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow delete: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isSignedIn() && resource.data.email == token().email && resource.data.status == 'pending');
+      }
+
+      match /Parent_Links/{linkId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isMadrasaActive(madrasaId) && isParentOf(madrasaId) && request.auth.uid == linkId);
+        allow create: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow update: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow delete: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isSignedIn() && resource.data.email == token().email && resource.data.status == 'pending');
+      }
+
+      match /{document=**} {
+        allow read: if canReadTenantStaff(madrasaId);
+        allow write: if false;
+      }
+    }
+
+    /* TI-01: Staff/Parent link resolution is server-only (activateTenantLink / resolveTenantLink).
+       Collection-group client reads removed to block cross-tenant enumeration. */
+
+    match /Madrasa_Backup/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    match /LoginAttempts/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    match /LoginRateLimit/{docId} {
+      allow read, write: if false;
+    }
+
+    /** Phase A P0 — draft admission mirror (PII). Staff: own draft only; owner: tenant. */
+    match /RegistrationDrafts/{tenantId} {
+      match /items/{docId} {
+        allow read: if canReadRegistrationDraft(tenantId);
+        allow create: if canCreateRegistrationDraft(tenantId, docId);
+        allow update: if canUpdateRegistrationDraft(tenantId);
+        allow delete: if canDeleteRegistrationDraft(tenantId);
+      }
+    }
+
+    /* Guest demo canonical dataset — read logged-in, write Super Admin only */
+    match /Demo_Madrasas/{demoId} {
+      allow read, write: if isSignedIn()
+        && demoId == ('demo_guest_' + request.auth.uid);
+      match /{subCollection}/{docId} {
+        allow read, write: if isSignedIn()
+          && demoId == ('demo_guest_' + request.auth.uid);
+      }
+    }
+    match /Demo_Students/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+    match /Demo_Attendance/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+    match /Demo_Fees/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+    match /Demo_Exams/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+    match /Demo_Reports/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+    match /Demo_Meta/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    /* ------------------------ SA Platform Advisor (Phase 2) ----- */
+    match /Platform_CmiMeta/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_CmiFiles/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_CmiModules/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_CmiFeatures/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_CmiWeaknesses/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_CmiDecisions/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_CmiBugs/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_CmiRoadmap/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_CmiTests/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_AdvisorCache/{docId} {
+      allow read, write: if false;
+    }
+    match /Platform_AiAuditLog/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+    match /Platform_AdvisorLimits/{docId} {
+      allow read, write: if false;
+    }
+    match /Platform_AdvisorBudget/{docId} {
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+  }
+}

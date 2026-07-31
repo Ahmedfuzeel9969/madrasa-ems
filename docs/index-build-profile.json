@@ -1,0 +1,109 @@
+{
+  "generatedAt": "2026-07-08T12:35:06.089Z",
+  "profiler": "bench/index-build-profile.js",
+  "batchRowsPerTransaction": 100,
+  "scales": [
+    {
+      "records": 1000,
+      "inserted": 1000,
+      "insertMs": 456,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "stages": {
+        "recordReadMs": 147,
+        "tokenGenerationMs": 90.6,
+        "idbWriteBatchMs": 183.2,
+        "indexBuildTotalMs": 420.8
+      },
+      "stagePercent": {
+        "recordRead": 34.933,
+        "tokenGeneration": 21.53,
+        "idbWriteBatch": 43.536
+      },
+      "tokensPerRecord": {
+        "avg": 31.125,
+        "min": 29,
+        "max": 32
+      },
+      "totalTokens": 31125,
+      "totalIndexEntriesWritten": 1000,
+      "idbWritePattern": {
+        "mode": "row-doc-batch",
+        "rowsPerTransaction": 100,
+        "idbPutCallsPerRow": 1,
+        "transactionCount": 10,
+        "idbPutCalls": 1000,
+        "putsPerTransaction": 100,
+        "putsAreSyncOpsInsideTransaction": true,
+        "oneTransactionPerTokenSample": {
+          "sampleRows": 100,
+          "sampleMs": 1595.2,
+          "sampleTransactions": 3013,
+          "extrapolatedFullMs": 15952
+        }
+      },
+      "throughput": {
+        "recordsPerMinute": 142585.551,
+        "msPer1000Records": 420.8,
+        "msPerRecordTotal": 0.421,
+        "msPerRecordIdbWrite": 0.183,
+        "msPerRecordTokenGen": 0.091
+      }
+    },
+    {
+      "records": 10000,
+      "inserted": 10000,
+      "insertMs": 23116.9,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "stages": {
+        "recordReadMs": 427.6,
+        "tokenGenerationMs": 284.1,
+        "idbWriteBatchMs": 4223.3,
+        "indexBuildTotalMs": 4935
+      },
+      "stagePercent": {
+        "recordRead": 8.665,
+        "tokenGeneration": 5.757,
+        "idbWriteBatch": 85.579
+      },
+      "tokensPerRecord": {
+        "avg": 32.124,
+        "min": 29,
+        "max": 33
+      },
+      "totalTokens": 321239,
+      "totalIndexEntriesWritten": 10000,
+      "idbWritePattern": {
+        "mode": "row-doc-batch",
+        "rowsPerTransaction": 100,
+        "idbPutCallsPerRow": 1,
+        "transactionCount": 100,
+        "idbPutCalls": 10000,
+        "putsPerTransaction": 100,
+        "putsAreSyncOpsInsideTransaction": true,
+        "oneTransactionPerTokenSample": {
+          "sampleRows": 50,
+          "sampleMs": 5815.7,
+          "sampleTransactions": 1501,
+          "extrapolatedFullMs": 1163140
+        }
+      },
+      "throughput": {
+        "recordsPerMinute": 121580.547,
+        "msPer1000Records": 493.5,
+        "msPerRecordTotal": 0.494,
+        "msPerRecordIdbWrite": 0.422,
+        "msPerRecordTokenGen": 0.028
+      }
+    }
+  ]
+}

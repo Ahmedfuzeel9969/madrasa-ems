@@ -1,0 +1,107 @@
+{
+  "generatedAt": "2026-07-12T04:24:50.326Z",
+  "mode": "offline-production-scale",
+  "note": "Full pipeline verified without live Firebase. Production sign-off requires --tenant= with GAC + gcloud.",
+  "tenantId": "dr-offline-tenant-1",
+  "scale": {
+    "students": 1000
+  },
+  "drBackupDir": "F:\\WPS\\stackblitz-starters-nbktzqft (4)\\stackblitz-starters-nbktzqft (4)\\backups\\dr-offline-2026-07-12T04-24-49",
+  "tiers": [
+    {
+      "id": "config",
+      "done": true,
+      "label": "Rules & indexes snapshot"
+    },
+    {
+      "id": "firestore-cloud",
+      "done": true,
+      "label": "Firestore export (local full tenant JSON)"
+    },
+    {
+      "id": "storage",
+      "done": true,
+      "label": "Storage object mirror"
+    },
+    {
+      "id": "tenant-json",
+      "done": true,
+      "label": "Tenant JSON export"
+    },
+    {
+      "id": "encrypted-local",
+      "done": true,
+      "label": "Encrypted .emsbak bundle"
+    }
+  ],
+  "allTiersOk": true,
+  "preBackupInventory": {
+    "registrations": 1000,
+    "rejected": 5,
+    "attendance_registers": 12,
+    "complaints": 45,
+    "module_keys": 0,
+    "idb_keys": 0,
+    "total_records": 4062,
+    "fee_collections": 3000,
+    "staff_permissions": 1,
+    "staff_links": 1,
+    "parent_links": 1,
+    "storage_files": 100
+  },
+  "postRestoreInventory": {
+    "registrations": 1000,
+    "rejected": 5,
+    "attendance_registers": 12,
+    "complaints": 45,
+    "module_keys": 0,
+    "idb_keys": 0,
+    "total_records": 4062,
+    "fee_collections": 3000,
+    "staff_permissions": 1,
+    "staff_links": 1,
+    "parent_links": 1,
+    "storage_files": 100
+  },
+  "countVerification": {
+    "ok": true,
+    "diffs": [],
+    "expected": {
+      "registrations": 1000,
+      "rejected": 5,
+      "attendance_registers": 12,
+      "complaints": 45,
+      "module_keys": 0,
+      "idb_keys": 0,
+      "total_records": 4062,
+      "fee_collections": 3000,
+      "staff_permissions": 1,
+      "staff_links": 1,
+      "parent_links": 1,
+      "storage_files": 100
+    },
+    "actual": {
+      "registrations": 1000,
+      "rejected": 5,
+      "attendance_registers": 12,
+      "complaints": 45,
+      "module_keys": 0,
+      "idb_keys": 0,
+      "total_records": 4062,
+      "fee_collections": 3000,
+      "staff_permissions": 1,
+      "staff_links": 1,
+      "parent_links": 1,
+      "storage_files": 100
+    }
+  },
+  "permissions": {
+    "ok": true,
+    "staffPermissions": 1
+  },
+  "storage": {
+    "expectedFiles": 100,
+    "mirroredFiles": 100
+  },
+  "verdict": "PASS"
+}

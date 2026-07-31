@@ -1,0 +1,203 @@
+{
+  "generatedAt": "2026-07-07T17:31:28.384Z",
+  "scales": [
+    {
+      "records": 10000,
+      "inserted": 10000,
+      "insertMs": 9965.2,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 12.779,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 180.9,
+      "filterMs": 263.2,
+      "searchMs": 203.2,
+      "searchExpectedLoadAll": true,
+      "admissionFirstPageMs": 521.1,
+      "admissionLongTaskMs": 0,
+      "admissionElapsedMs": 521.6,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:ts"
+          ]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 1,
+          "colAllCalls": 1,
+          "colAllCollections": [
+            "bench_tenant_scale__registrations"
+          ],
+          "pagePaths": [],
+          "loadAllCollections": [
+            "bench_tenant_scale__registrations"
+          ]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        }
+      },
+      "pageSortTotal": 10000,
+      "filterTotal": 8571,
+      "searchTotal": 8571,
+      "persistCountBeforeReload": 10000,
+      "persistence": {
+        "expected": 10000,
+        "actual": 10000,
+        "ok": true
+      }
+    },
+    {
+      "records": 50000,
+      "inserted": 50000,
+      "insertMs": 132955.3,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 12.779,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 704.6,
+      "filterMs": 1388.1,
+      "searchMs": 918.9,
+      "searchExpectedLoadAll": true,
+      "admissionFirstPageMs": 2744.6,
+      "admissionLongTaskMs": 177,
+      "admissionElapsedMs": 2745.1,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:ts"
+          ]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 1,
+          "colAllCalls": 1,
+          "colAllCollections": [
+            "bench_tenant_scale__registrations"
+          ],
+          "pagePaths": [],
+          "loadAllCollections": [
+            "bench_tenant_scale__registrations"
+          ]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        }
+      },
+      "pageSortTotal": 50000,
+      "filterTotal": 42857,
+      "searchTotal": 42857,
+      "persistCountBeforeReload": 50000,
+      "persistence": {
+        "expected": 50000,
+        "actual": 50000,
+        "ok": true
+      }
+    },
+    {
+      "records": 100000,
+      "inserted": 100000,
+      "insertMs": 507488,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 12.779,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 1345.2,
+      "filterMs": 3051.8,
+      "searchMs": 1803.6,
+      "searchExpectedLoadAll": true,
+      "admissionFirstPageMs": 5836.5,
+      "admissionLongTaskMs": 320,
+      "admissionElapsedMs": 5836.7,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:ts"
+          ]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 1,
+          "colAllCalls": 1,
+          "colAllCollections": [
+            "bench_tenant_scale__registrations"
+          ],
+          "pagePaths": [],
+          "loadAllCollections": [
+            "bench_tenant_scale__registrations"
+          ]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "colAllCollections": [],
+          "pagePaths": [
+            "pageIndexed:type_ts"
+          ]
+        }
+      },
+      "pageSortTotal": 100000,
+      "filterTotal": 85714,
+      "searchTotal": 85714,
+      "persistCountBeforeReload": 100000,
+      "persistence": {
+        "expected": 100000,
+        "actual": 100000,
+        "ok": true
+      }
+    }
+  ],
+  "checks": {
+    "noLoadAllOnSortedPage": true,
+    "noColAllOnSortedPage": true,
+    "persistenceOk": true,
+    "legacyArrearsDisabled": true
+  }
+}

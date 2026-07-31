@@ -1,0 +1,101 @@
+{
+  "generatedAt": "2026-07-03T20:54:24.714Z",
+  "node": "v24.16.0",
+  "purpose": "offline-first perf refactor (write + render + event coalescing)",
+  "scales": [
+    1000,
+    10000,
+    50000,
+    100000
+  ],
+  "rows": [
+    {
+      "records": 1000,
+      "phase1_singleWrite": {
+        "fullListWriteMs": 4.496,
+        "perRecordWriteMs": 0.07,
+        "speedup": 64
+      },
+      "phase3_render": {
+        "renders": 20,
+        "noCacheMs": 27.081,
+        "withCacheMs": 3.919,
+        "noCachePerRenderMs": 1.354,
+        "withCachePerRenderMs": 0.196,
+        "speedup": 7
+      },
+      "phase2_eventStorm": {
+        "listeners": 4,
+        "stormMs": 0.518,
+        "coalescedMs": 0.103,
+        "savedMs": 0.415
+      }
+    },
+    {
+      "records": 10000,
+      "phase1_singleWrite": {
+        "fullListWriteMs": 24.718,
+        "perRecordWriteMs": 0.023,
+        "speedup": 1070
+      },
+      "phase3_render": {
+        "renders": 20,
+        "noCacheMs": 35.673,
+        "withCacheMs": 17.626,
+        "noCachePerRenderMs": 1.784,
+        "withCachePerRenderMs": 0.881,
+        "speedup": 2
+      },
+      "phase2_eventStorm": {
+        "listeners": 4,
+        "stormMs": 0.394,
+        "coalescedMs": 0.076,
+        "savedMs": 0.318
+      }
+    },
+    {
+      "records": 50000,
+      "phase1_singleWrite": {
+        "fullListWriteMs": 101.895,
+        "perRecordWriteMs": 0.053,
+        "speedup": 1923
+      },
+      "phase3_render": {
+        "renders": 20,
+        "noCacheMs": 153.036,
+        "withCacheMs": 115.4,
+        "noCachePerRenderMs": 7.652,
+        "withCachePerRenderMs": 5.77,
+        "speedup": 1
+      },
+      "phase2_eventStorm": {
+        "listeners": 4,
+        "stormMs": 3.13,
+        "coalescedMs": 0.382,
+        "savedMs": 2.748
+      }
+    },
+    {
+      "records": 100000,
+      "phase1_singleWrite": {
+        "fullListWriteMs": 182.577,
+        "perRecordWriteMs": 0.019,
+        "speedup": 9869
+      },
+      "phase3_render": {
+        "renders": 20,
+        "noCacheMs": 254.125,
+        "withCacheMs": 217.792,
+        "noCachePerRenderMs": 12.706,
+        "withCachePerRenderMs": 10.89,
+        "speedup": 1
+      },
+      "phase2_eventStorm": {
+        "listeners": 4,
+        "stormMs": 4.308,
+        "coalescedMs": 2.089,
+        "savedMs": 2.219
+      }
+    }
+  ]
+}

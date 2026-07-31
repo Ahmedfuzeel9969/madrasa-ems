@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isTenantOwner(tenantId) {
+      return isSignedIn() && request.auth.uid == tenantId;
+    }
+
+    function isTenantStaff(tenantId) {
+      return isSignedIn() && (
+        request.auth.uid == tenantId ||
+        firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/Staff_Links/$(request.auth.uid))
+      );
+    }
+
+    // Registration photos — tenant-scoped path
+    match /registrations/{tenantId}/{userType}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isTenantStaff(tenantId)
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if isTenantOwner(tenantId);
+    }
+
+    // Ledger attachments (existing pattern)
+    match /ledger/{tenantId}/{entryId}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isTenantStaff(tenantId)
+        && request.resource.size < 10 * 1024 * 1024;
+      allow delete: if isTenantOwner(tenantId);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

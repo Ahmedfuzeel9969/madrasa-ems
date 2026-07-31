@@ -1,0 +1,388 @@
+{
+  "generatedAt": "2026-07-08T06:00:00.000Z",
+  "phase": "Priority 5 — Browser Verification Suite",
+  "rules": "Read-only verification; no source fixes, deploy, or optimization during this phase",
+  "environment": {
+    "node": "v24.16.0",
+    "playwright": "@playwright/test 1.61.0",
+    "chromium": "Chrome for Testing 149.0.7827.55 (playwright chromium v1228)",
+    "chromiumHeadlessShell": "149.0.7827.55 (playwright chromium-headless-shell v1228)",
+    "ffmpeg": "playwright ffmpeg v1011",
+    "browserStorage": "IndexedDB + localStorage verified in Chromium",
+    "serviceWorker": "Verified via bench/sw-update-bench.html + ems-sw-update.spec.js",
+    "os": "Windows 10.0.26200",
+    "unitSuite": "431/431 pass (vitest, 13.7s)"
+  },
+  "testGroups": {
+    "group1_multiTab": {
+      "classification": "VERIFIED",
+      "evidence": [
+        {
+          "suite": "test:e2e:outbox",
+          "file": "tests/e2e/ems-outbox-multitab.spec.js",
+          "result": "1 passed (6.9s)",
+          "checks": [
+            "2 tabs concurrent flush → totalFlushed=1, totalWrites≤1, queueRemaining=0"
+          ]
+        },
+        {
+          "suite": "test:e2e:cursor",
+          "file": "tests/e2e/ems-sync-cursor-multitab.spec.js",
+          "result": "6 passed (3.7m)",
+          "checks": [
+            "40 concurrent write trials — 0 lost cursors",
+            "2 / 5 / 10 tabs — no missing cursor keys",
+            "reload persistence",
+            "offline IDB cursor read",
+            "localStorage→IDB cursor migration — no duplicate import",
+            "3000 cursor updates — sample cursor correct, <60s"
+          ]
+        }
+      ],
+      "expectedMet": "No duplicate flush/write operations; no lost cursor operations across 2/5/10 tabs"
+    },
+    "group2_multiDevice": {
+      "classification": "NOT VERIFIED",
+      "reason": "No Playwright suite simulates separate browser profiles / isolated storage with cloud sync reconciliation. Only same-origin multi-tab tests exist.",
+      "evidence": []
+    },
+    "group3_offlineOnline": {
+      "classification": "NOT VERIFIED",
+      "partialEvidence": [
+        {
+          "item": "Offline cursor read from IDB",
+          "classification": "VERIFIED",
+          "suite": "ems-sync-cursor-multitab.spec.js offline test"
+        },
+        {
+          "item": "Multi-tab offline queue flush deduplication",
+          "classification": "VERIFIED",
+          "suite": "ems-outbox-multitab.spec.js"
+        }
+      ],
+      "reason": "No end-to-end browser test covers create/update/delete offline across reconnect with cloud reconciliation and duplicate/missing record checks."
+    },
+    "group4_serviceWorkerUpdates": {
+      "classification": "VERIFIED",
+      "evidence": {
+        "suite": "test:e2e:sw",
+        "file": "tests/e2e/ems-sw-update.spec.js",
+        "result": "3 passed (8.5s)",
+        "checks": [
+          "SW build tag bound and readable via MessageChannel",
+          "Tag mismatch shows #ems-sw-update-banner",
+          "controllerchange with tag mismatch schedules reload (reloadReason=controllerchange)"
+        ],
+        "buildTag": "20260708_sw_update_v1"
+      },
+      "notCoveredInSuite": [
+        "background-tab-only update while active tab stays on old controller (NOT VERIFIED)",
+        "full deploy-new-build production hosting swap (NOT VERIFIED — bench page only)"
+      ]
+    },
+    "group5_migration": {
+      "classification": "VERIFIED",
+      "evidence": [
+        {
+          "item": "Cursor localStorage → IDB one-time migration",
+          "classification": "VERIFIED",
+          "suite": "ems-sync-cursor-multitab.spec.js upgrade migration test"
+        },
+        {
+          "item": "Legacy registration blob → IDB mirror (700 records)",
+          "classification": "VERIFIED",
+          "method": "Playwright API manual run (root servor :4178)",
+          "elapsedMs": 803,
+          "checks": {
+            "A_migration_batches": "700 records in 2 bulkPut batches (500+200)",
+            "B_blob_cleanup": "legacy localStorage key removed, migFlag set",
+            "C_pagination": "page 500 rows, memAfter=0 (no full RAM load)",
+            "D_no_blob_sync": "persistRepoBlobSync undefined, blobWrites=0"
+          },
+          "note": "Default playwright.config.js serves dist/ only → legacy-migration-smoke.spec.js returns 404 (scripts/smoke-legacy-migration.html not in dist). Manual root-server run required."
+        },
+        {
+          "item": "Interrupted migration recovery",
+          "classification": "NOT VERIFIED",
+          "reason": "No browser test simulates mid-migration crash/resume"
+        }
+      ]
+    },
+    "group6_corruptionRecovery": {
+      "classification": "VERIFIED",
+      "evidence": {
+        "browser": {
+          "method": "Playwright Chromium + ems-data-corruption.js + ems-data-cache.js",
+          "result": {
+            "isCorruptSentinel": true,
+            "alertShown": true,
+            "registry": ["ems_reg_full_v2_corrupt_test"],
+            "notFalseEmpty": true
+          }
+        },
+        "unitSupplement": "tests/unit/ems-data-corruption.test.js (Node vm, not browser)"
+      }
+    },
+    "group7_largeDataset": {
+      "classification": "NOT VERIFIED",
+      "partialClassification": {
+        "10k": "VERIFIED",
+        "50k": "NOT VERIFIED",
+        "100k": "NOT VERIFIED"
+      },
+      "evidence": {
+        "10k": {
+          "artifact": "docs/idb-browser-bench-10k-p5.json",
+          "playwrightResult": "1 passed (11.7m)",
+          "metrics": {
+            "insertMs": 20848.2,
+            "indexBuildMs": 678353.1,
+            "pageSortMs": 222.1,
+            "filterMs": 251.6,
+            "searchMs": 760.8,
+            "admissionFirstPageMs": 231.2,
+            "usedJSHeapMb": 9.537,
+            "loadAllCalls": 0,
+            "colAllCalls": 0
+          }
+        },
+        "50k": {
+          "status": "Started EMS_IDB_BENCH_SCALES=50000; still running index build after ~4min at report time",
+          "reason": "50k/100k index build extrapolated >45min each from 10k indexBuildMs=678s; not completed within verification session"
+        }
+      }
+    },
+    "group8_disasterRecovery": {
+      "classification": "NOT VERIFIED",
+      "partialEvidence": {
+        "offlineNodePipeline": {
+          "classification": "VERIFIED",
+          "command": "npm run backup:verify-production -- --offline",
+          "verdict": "PASS",
+          "scale": "1000 students",
+          "artifact": "docs/DR-PRODUCTION-VERIFICATION-REPORT.json",
+          "note": "Node/offline pipeline, not in-browser storage deletion + restore UI flow"
+        },
+        "browserStorageDeletionRestore": {
+          "classification": "NOT VERIFIED",
+          "reason": "No Playwright test for partial IDB deletion or in-app restore wizard"
+        }
+      }
+    },
+    "group9_permissions": {
+      "classification": "NOT VERIFIED",
+      "partialEvidence": {
+        "emulatorAuth": {
+          "result": "3 passed — teacher/parent access key panel, tenant security policy module loaded",
+          "file": "tests/e2e/emulator-auth.spec.js"
+        },
+        "loginLanding": {
+          "result": "3 passed — 4 portal cards, panel badge, parent module shell",
+          "file": "tests/e2e/login-smoke.spec.js (dist)"
+        },
+        "superadminShell": {
+          "result": "2 passed, 1 failed — DOM shell present; saInitNavigation not on initial page load (lazy cloud load)",
+          "file": "tests/e2e/superadmin-smoke.spec.js"
+        },
+        "failures": [
+          "login-auth.spec.js — identity gate helpers not on dist initial load",
+          "emulator-integration.spec.js — admin export security log not wired on dist shell"
+        ]
+      },
+      "reason": "No browser test exercises teacher/parent/admin/super-admin RBAC matrix, module bypass, or direct URL unauthorized access"
+    },
+    "group10_longSession": {
+      "classification": "NOT VERIFIED",
+      "reason": "1h / 4h / 8h / 24h soak tests not executed (impractical in single verification session). No automated memory/CPU/listener leak harness in repo."
+    }
+  },
+  "distE2eStaleHarness": {
+    "classification": "VERIFIED",
+    "description": "Several playwright.config.js (dist:4173) tests fail because dist shell no longer exposes scripts synchronously on index.html",
+    "failures": [
+      "ems-repository-idb.spec.js — emsRepo timeout / not ready within 20s",
+      "login-auth.spec.js — emsIdentityGate helpers missing on initial load",
+      "perf-load-smoke.spec.js — ems-dashboard-stats.js not in dist index.html",
+      "superadmin-smoke.spec.js — saInitNavigation lazy-loaded via cloud manifest",
+      "ems-reg-page-live.spec.js — 0 rows rendered (offline boot incomplete in headless dist)",
+      "ems-reg-incremental-mirror.spec.js — timeout waiting for emsRepo",
+      "legacy-migration-smoke.spec.js — 404 (smoke page not copied to dist)"
+    ],
+    "passesOnDist": [
+      "smoke.spec.js (2)",
+      "login-smoke.spec.js (3/4)",
+      "superadmin-smoke.spec.js (2/3)",
+      "perf-load-smoke.spec.js ribbon shell (1/2)",
+      "emulator-auth.spec.js (3)",
+      "emulator-integration.spec.js (2/3, 1 skipped — no Java/Firestore emulator)"
+    ]
+  },
+  "sectionA_verifiedIssues": [
+    {
+      "id": "P5-V-01",
+      "title": "Multi-tab outbox flush deduplication",
+      "classification": "VERIFIED",
+      "severity": "was P1 hardening",
+      "evidence": "ems-outbox-multitab.spec.js PASS"
+    },
+    {
+      "id": "P5-V-02",
+      "title": "Multi-tab sync cursor atomicity (2/5/10 tabs)",
+      "classification": "VERIFIED",
+      "severity": "was P2 hardening",
+      "evidence": "ems-sync-cursor-multitab.spec.js 6/6 PASS"
+    },
+    {
+      "id": "P5-V-03",
+      "title": "Service worker update banner + reload scheduling",
+      "classification": "VERIFIED",
+      "severity": "was P3 hardening",
+      "evidence": "ems-sw-update.spec.js 3/3 PASS"
+    },
+    {
+      "id": "P5-V-04",
+      "title": "Legacy blob → IDB migration (700 records)",
+      "classification": "VERIFIED",
+      "evidence": "Manual Playwright run, 803ms, checks A–D pass"
+    },
+    {
+      "id": "P5-V-05",
+      "title": "Corrupt localStorage JSON → user warning + corrupt sentinel (not false empty list)",
+      "classification": "VERIFIED",
+      "evidence": "Playwright Chromium corruption smoke"
+    },
+    {
+      "id": "P5-V-06",
+      "title": "10k IDB pagination/search without loadAll/colAll",
+      "classification": "VERIFIED",
+      "evidence": "docs/idb-browser-bench-10k-p5.json"
+    }
+  ],
+  "sectionB_rejectedIssues": [
+    {
+      "id": "P5-R-01",
+      "title": "Multi-device cloud sync eventual consistency",
+      "classification": "NOT VERIFIED",
+      "note": "Not rejected as bug — insufficient browser evidence"
+    },
+    {
+      "id": "P5-R-02",
+      "title": "Full offline CRUD → reconnect sync",
+      "classification": "NOT VERIFIED"
+    },
+    {
+      "id": "P5-R-03",
+      "title": "50k / 100k browser usability at institution scale",
+      "classification": "NOT VERIFIED",
+      "note": "10k verified usable; larger scales not measured in this session"
+    },
+    {
+      "id": "P5-R-04",
+      "title": "In-browser DR after storage wipe",
+      "classification": "NOT VERIFIED"
+    },
+    {
+      "id": "P5-R-05",
+      "title": "RBAC enforcement across roles in real browser sessions",
+      "classification": "NOT VERIFIED"
+    },
+    {
+      "id": "P5-R-06",
+      "title": "Long-session memory/CPU stability (1–24h)",
+      "classification": "NOT VERIFIED"
+    },
+    {
+      "id": "P5-R-07",
+      "title": "dist/ Playwright harness failures imply production regressions",
+      "classification": "NOT REPRODUCIBLE",
+      "note": "Failures correlate with stale e2e expectations (lazy cloud loader, missing smoke assets in dist), not with passing targeted P1–P4 bench suites on project root"
+    }
+  ],
+  "sectionC_performanceMeasurements": {
+    "browser10k": {
+      "insertMs": 20848,
+      "indexBuildMs": 678353,
+      "pageSortMs": 222,
+      "filterMs": 252,
+      "searchMs": 761,
+      "admissionFirstPageMs": 231,
+      "heapUsedMb": 9.5,
+      "verdict": "Usable after ~11.3min index build; query paths stay sub-second"
+    },
+    "unitLargeSearchP4": {
+      "note": "Node benchmark from Priority 4; not re-run in this session",
+      "100kSearchMsBest": 88.6
+    }
+  },
+  "sectionD_securityObservations": [
+    {
+      "item": "Portal landing renders 4 role cards; SA tab hidden until auth",
+      "classification": "VERIFIED",
+      "evidence": "login-smoke + superadmin-smoke DOM checks"
+    },
+    {
+      "item": "Emulator mock auth flows for teacher/parent access key",
+      "classification": "VERIFIED",
+      "evidence": "emulator-auth.spec.js"
+    },
+    {
+      "item": "Cross-role unauthorized module/URL enforcement",
+      "classification": "NOT VERIFIED"
+    },
+    {
+      "item": "Live Firebase security rules + production auth",
+      "classification": "NOT VERIFIED",
+      "reason": "No production credentials; Firestore emulator seed test skipped"
+    }
+  ],
+  "sectionE_operationalReadiness": {
+    "playwrightInstalled": true,
+    "chromiumInstalled": true,
+    "targetedBenchSuitesPass": true,
+    "fullDistE2ePass": false,
+    "unitSuitePass": true,
+    "liveFirebaseSignOff": false,
+    "recommendedBeforeProduction": [
+      "Refresh dist/ build and repair dist-targeted e2e harness for lazy loader architecture",
+      "Add Playwright suites for multi-device sync, offline CRUD reconnect, RBAC matrix, in-browser DR restore",
+      "Complete 50k/100k browser bench runs (allow 1–2h each for index build)",
+      "Schedule 4h+ soak test on staging hardware",
+      "Live Firebase DR + rules verification with tenant credentials"
+    ]
+  },
+  "finalQuestions": {
+    "1_productionReady": "Conditionally — core P1–P4 hardening behaviors verified in real Chromium for targeted bench suites; institution-scale and operational gaps remain.",
+    "2_risksRemaining": [
+      "Multi-device sync divergence not browser-proven",
+      "50k–100k index build latency (~11min+ at 10k) may block first-use on large tenants",
+      "dist/ e2e harness drift from lazy cloud loading",
+      "No long-session leak validation",
+      "Live Firebase/auth/rules not signed off"
+    ],
+    "3_mostCriticalIssue": "Multi-device / multi-profile sync eventual consistency (Group 2) — highest institutional risk with zero browser proof.",
+    "4_fixNext": "Add automated multi-device Playwright sync suite + refresh dist e2e harness; then complete 50k browser bench.",
+    "5_readyForRealInstitutions": "Partially",
+    "6_limitsIfYes": "Small–medium tenants (<10k active registrations per device) with staged index build tolerance; manual cloud sync discipline; staging soak before go-live.",
+    "7_blocksProductionIfNo": [
+      "Unverified multi-device sync",
+      "Unverified RBAC in browser across roles",
+      "Unverified 50k+ first-load UX",
+      "No live Firebase DR/sign-off",
+      "No long-session stability evidence"
+    ]
+  },
+  "commandLog": [
+    "npm run test:e2e:outbox → 1 passed (6.9s)",
+    "npm run test:e2e:cursor → 6 passed (3.7m)",
+    "npm run test:e2e:sw → 3 passed (8.5s)",
+    "EMS_IDB_BENCH_SCALES=10000 npx playwright test --config=playwright.bench.config.js → 1 passed (11.7m)",
+    "npx playwright test smoke/login/superadmin/perf-load/ems-repository-idb → 8 passed, 4 failed (22.2s)",
+    "npx playwright test ems-reg-* → 2 failed",
+    "npx playwright test emulator-* login-auth → 9 passed, 2 failed, 1 skipped",
+    "legacy-migration-smoke via dist → FAIL 404",
+    "legacy migration manual Playwright → PASS 803ms",
+    "corruption browser smoke → PASS",
+    "npm run backup:verify-production -- --offline → PASS 1000 students",
+    "npm test → 431/431 pass"
+  ]
+}

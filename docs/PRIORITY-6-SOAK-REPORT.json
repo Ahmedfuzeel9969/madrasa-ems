@@ -1,0 +1,325 @@
+{
+  "generatedAt": "2026-07-12T04:06:00.218Z",
+  "phase": "Priority 6 — Targeted Edge-Case Soak",
+  "scales": {
+    "default": 5000,
+    "broadSearch": 5000,
+    "tabs": 5
+  },
+  "findings": {
+    "P6-A": {
+      "classification": "VERIFIED",
+      "note": "Multi-tab index completed with leader lock; write amplification near 1×.",
+      "metrics": {
+        "tabs": 5,
+        "records": 5000,
+        "repoCount": 5000,
+        "indexRowDocs": 5000,
+        "metaComplete": true,
+        "metaProcessed": 5000,
+        "totalChunkRowsIndexed": 5000,
+        "writeAmplification": 1,
+        "chunkEvents": 0,
+        "tabResults": [
+          {
+            "tabId": "tab-0",
+            "chunks": 0,
+            "rowsIndexed": 0,
+            "complete": true,
+            "observed": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "reason": "index_lock_busy",
+              "observing": true
+            }
+          },
+          {
+            "tabId": "tab-1",
+            "chunks": 1,
+            "rowsIndexed": 0,
+            "complete": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "complete": true,
+              "processed": 5000,
+              "total": 500
+            }
+          },
+          {
+            "tabId": "tab-2",
+            "chunks": 0,
+            "rowsIndexed": 0,
+            "complete": true,
+            "observed": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "reason": "index_lock_busy",
+              "observing": true
+            }
+          },
+          {
+            "tabId": "tab-3",
+            "chunks": 50,
+            "rowsIndexed": 5000,
+            "complete": true,
+            "last": {
+              "ok": true,
+              "complete": true,
+              "processed": 5000,
+              "total": 500,
+              "chunkRows": 100,
+              "lastPk": "p6_multitab__registrations::STU-004999"
+            }
+          },
+          {
+            "tabId": "tab-4",
+            "chunks": 1,
+            "rowsIndexed": 0,
+            "complete": true,
+            "last": {
+              "ok": true,
+              "skipped": true,
+              "complete": true,
+              "processed": 5000,
+              "total": 500
+            }
+          }
+        ]
+      },
+      "recommendation": "Leader lock effective — no immediate fix required."
+    },
+    "P6-B": {
+      "classification": "VERIFIED",
+      "platform": "Chromium (Playwright)",
+      "androidWebView": "NOT VERIFIED — no emulator/Java on CI host",
+      "metrics": {
+        "memBefore": {
+          "available": true,
+          "usedJSHeapMb": 9.537,
+          "totalJSHeapMb": 13.638
+        },
+        "memAfter": {
+          "available": true,
+          "usedJSHeapMb": 9.537,
+          "totalJSHeapMb": 13.638
+        },
+        "queries": [
+          {
+            "label": "phone-0300",
+            "query": "0300",
+            "elapsedMs": 224.1,
+            "longTaskMs": 0,
+            "total": 4285,
+            "rowCount": 50,
+            "memAfter": {
+              "available": true,
+              "usedJSHeapMb": 9.537,
+              "totalJSHeapMb": 13.638
+            }
+          },
+          {
+            "label": "name-طالب",
+            "query": "طالب",
+            "elapsedMs": 186.8,
+            "longTaskMs": 0,
+            "total": 4285,
+            "rowCount": 50,
+            "memAfter": {
+              "available": true,
+              "usedJSHeapMb": 9.537,
+              "totalJSHeapMb": 13.638
+            }
+          },
+          {
+            "label": "id-stu",
+            "query": "stu",
+            "elapsedMs": 182.8,
+            "longTaskMs": 0,
+            "total": 4285,
+            "rowCount": 50,
+            "memAfter": {
+              "available": true,
+              "usedJSHeapMb": 9.537,
+              "totalJSHeapMb": 13.638
+            }
+          }
+        ]
+      },
+      "observation": "Broad prefix query matches majority of rows — in-memory sort cost scales with match count.",
+      "worstQuery": {
+        "label": "phone-0300",
+        "query": "0300",
+        "elapsedMs": 224.1,
+        "longTaskMs": 0,
+        "total": 4285,
+        "rowCount": 50,
+        "memAfter": {
+          "available": true,
+          "usedJSHeapMb": 9.537,
+          "totalJSHeapMb": 13.638
+        }
+      }
+    },
+    "P6-C": {
+      "classification": "VERIFIED",
+      "metrics": {
+        "estimateApiPresent": true,
+        "estimateFnPresent": true,
+        "quotaModulePresent": true,
+        "userWarningSelectors": [
+          "body-contains:storage",
+          "body-contains:quota",
+          "body-contains:Storage",
+          "body-contains:جگہ",
+          "ems-storage-quota-banner"
+        ],
+        "simulatedPutRejected": false,
+        "estimate": {
+          "persisted": false,
+          "usage": 6349,
+          "quota": 2147489997
+        },
+        "usagePercent": 0,
+        "quotaStatus": {
+          "ok": true,
+          "level": "warn",
+          "usagePercent": 86,
+          "usage": 1846841397,
+          "quota": 2147489997,
+          "remaining": 300648600,
+          "usageFormatted": "1.7 GB",
+          "quotaFormatted": "2 GB",
+          "remainingFormatted": "286.7 MB",
+          "persisted": false,
+          "context": "p6_probe"
+        }
+      },
+      "defect": null,
+      "recommendation": "Storage quota module wired; monitor real-device quota in production."
+    },
+    "P6-D": {
+      "classification": "VERIFIED",
+      "metrics": {
+        "elapsedMs": 11582.4,
+        "indexStarted": true,
+        "index": {
+          "tabId": "rush-index",
+          "chunks": 100,
+          "rowsIndexed": 5000,
+          "complete": true,
+          "last": {
+            "ok": true,
+            "complete": true,
+            "processed": 5000,
+            "total": 500,
+            "chunkRows": 50,
+            "lastPk": "p6_rush__registrations::STU-004999"
+          }
+        },
+        "search": {
+          "memBefore": {
+            "available": true,
+            "usedJSHeapMb": 9.537,
+            "totalJSHeapMb": 9.537
+          },
+          "memAfter": {
+            "available": true,
+            "usedJSHeapMb": 9.537,
+            "totalJSHeapMb": 9.537
+          },
+          "queries": [
+            {
+              "label": "rush-0300",
+              "query": "0300",
+              "elapsedMs": 626.8,
+              "longTaskMs": 0,
+              "total": 2571,
+              "rowCount": 50,
+              "memAfter": {
+                "available": true,
+                "usedJSHeapMb": 9.537,
+                "totalJSHeapMb": 9.537
+              }
+            },
+            {
+              "label": "rush-name",
+              "query": "طالب",
+              "elapsedMs": 821.3,
+              "longTaskMs": 0,
+              "total": 4285,
+              "rowCount": 50,
+              "memAfter": {
+                "available": true,
+                "usedJSHeapMb": 9.537,
+                "totalJSHeapMb": 9.537
+              }
+            }
+          ]
+        },
+        "secondImportDone": true,
+        "filterTotal": 2571,
+        "memAfter": {
+          "available": true,
+          "usedJSHeapMb": 9.537,
+          "totalJSHeapMb": 9.537
+        }
+      },
+      "metaAfter": {
+        "version": 3,
+        "complete": true,
+        "collection": "p6_rush__registrations",
+        "processed": 5000,
+        "total": 500,
+        "lastPk": "p6_rush__registrations::STU-004999",
+        "updatedAt": "2026-07-12T04:06:38.139Z"
+      },
+      "finalCount": 5000,
+      "note": "Concurrent bulk import + partial index + broad search completed without count mismatch."
+    },
+    "P6-E": {
+      "classification": "VERIFIED",
+      "offlineOps": {
+        "pending": 1,
+        "localCount": 1
+      },
+      "flush": {
+        "flushed": 0,
+        "pending": 0,
+        "cloudCount": 1
+      },
+      "flakyLatencyPacketLoss": "NOT VERIFIED — latency/packet-loss throttle not simulated",
+      "note": "Disconnect/reconnect CRUD path verified; intermittent network not fully simulated."
+    },
+    "P6-F": {
+      "classification": "COVERED BY EXISTING TESTS",
+      "scope": "CLI DR + backup-service contract",
+      "unitTests": [
+        "tests/unit/ems-p6-backup-apk-edge.test.js",
+        "tests/unit/ems-disaster-recovery.test.js"
+      ],
+      "browserRestoreUI": "NOT VERIFIED — requires Firebase emulator E2E",
+      "note": "pre_restore snapshot + confirmed gate present in source; in-browser wizard not soak-tested."
+    },
+    "P6-G": {
+      "classification": "VERIFIED",
+      "scope": "security-layer suspended/expired/temp grant/unlinked parent",
+      "unitTests": [
+        "tests/unit/ems-p6-rbac-edge.test.js"
+      ],
+      "firestoreRulesLive": "NOT VERIFIED — emulator rules soak not run in P6"
+    },
+    "P6-H": {
+      "classification": "NOT VERIFIED",
+      "buildTimeParity": "VERIFIED via android-asset-preflight",
+      "runtimeOldApk": "NOT VERIFIED — no N-1 APK on host; JAVA_HOME blocked APK build",
+      "note": "Asset SHA parity at build; runtime stale-APK warning not implemented."
+    }
+  },
+  "recommendation": {
+    "action": "continue_roadmap",
+    "blockers": []
+  }
+}

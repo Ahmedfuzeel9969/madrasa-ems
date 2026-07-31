@@ -1,0 +1,958 @@
+/* ============================================================================
+   EMS Landing Page — clean institutional entry portal
+   Tokens: style.css :root (--ems-navy / --ems-teal) loaded first
+   ============================================================================ */
+
+html.ems-offline-no-signin #ems-landing,
+html.ems-offline-no-signin #ems-login-panel,
+html.ems-offline-no-signin #profile-setup-gateway {
+    display: none !important;
+}
+
+body.ems-locked .ems-app-shell {
+    display: none !important;
+}
+
+#ems-landing {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: linear-gradient(165deg, var(--ems-navy, #0f172a) 0%, var(--ems-navy-mid, #1e3a5f) 42%, var(--ems-teal, #0f766e) 100%);
+    font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif;
+    color: #f8fafc;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    box-sizing: border-box;
+}
+
+#ems-landing[dir="ltr"] {
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+}
+
+.ems-landing-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 20px clamp(16px, 4vw, 48px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(15, 23, 42, 0.35);
+    backdrop-filter: blur(8px);
+}
+
+.ems-landing-brand {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+}
+
+.ems-landing-logo-wrap {
+    width: 72px;
+    height: 72px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    overflow: hidden;
+}
+
+.ems-landing-logo-wrap img {
+    max-width: 90%;
+    max-height: 90%;
+    object-fit: contain;
+}
+
+.ems-landing-logo-wrap i {
+    font-size: 32px;
+    color: #0f766e;
+}
+
+.ems-landing-brand-text h1 {
+    margin: 0 0 4px;
+    font-size: clamp(1.25rem, 2.5vw, 1.75rem);
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.ems-landing-brand-text .ems-landing-tagline {
+    margin: 0;
+    font-size: 13px;
+    color: #cbd5e1;
+    line-height: 1.5;
+}
+
+.ems-landing-brand-text .ems-landing-system {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+.ems-landing-lang {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.ems-landing-lang button {
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+    padding: 10px 16px;
+    min-height: 48px;
+    min-width: 48px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.ems-landing-lang button.active,
+.ems-landing-lang button:hover {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.45);
+}
+
+.ems-landing-lang button:active {
+    transform: scale(0.97);
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.ems-landing-main {
+    flex: 1;
+    padding: clamp(20px, 4vw, 40px) clamp(16px, 4vw, 48px) 32px;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+.ems-landing-section-title {
+    text-align: center;
+    margin: 0 0 20px;
+    font-size: clamp(1rem, 2vw, 1.25rem);
+    color: #e2e8f0;
+    font-weight: 700;
+}
+
+.ems-portal-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 0 auto 28px;
+    max-width: 1200px;
+    width: 100%;
+}
+
+.ems-portal-card {
+    background: rgba(255, 255, 255, 0.97);
+    color: #0f172a;
+    border-radius: 14px;
+    padding: 18px 14px;
+    text-align: center;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.18s, box-shadow 0.18s, border-color 0.18s;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+    position: relative;
+    min-width: 0;
+}
+
+.ems-portal-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+    border-color: #0f766e;
+}
+
+.ems-portal-card:active {
+    transform: scale(0.98);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.ems-portal-card-icon {
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 10px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #fff;
+}
+
+.ems-portal-card.admin .ems-portal-card-icon { background: linear-gradient(135deg, #16a085, #0d9488); }
+.ems-portal-card.teacher .ems-portal-card-icon { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+.ems-portal-card.parent .ems-portal-card-icon { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+.ems-portal-card.student .ems-portal-card-icon { background: linear-gradient(135deg, #0891b2, #0e7490); }
+
+.ems-portal-card--disabled,
+.ems-portal-grid--loading .ems-portal-card {
+    opacity: 0.55;
+    pointer-events: none;
+    cursor: not-allowed;
+    transform: none !important;
+}
+
+.ems-portal-card--disabled::after,
+.ems-portal-grid--loading .ems-portal-card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.ems-portal-card h3 {
+    margin: 0 0 4px;
+    font-size: 1.05rem;
+    line-height: 1.35;
+}
+
+.ems-portal-card .ems-portal-en {
+    font-size: 12px;
+    color: #64748b;
+    margin-bottom: 8px;
+}
+
+.ems-portal-card p {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: #475569;
+    line-height: 1.45;
+}
+
+.ems-portal-secure {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    color: #0f766e;
+    font-weight: 700;
+}
+
+.ems-landing-info {
+    display: block;
+    margin: 0 auto;
+    max-width: 1200px;
+    width: 100%;
+}
+
+.ems-landing-info-inner {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    width: 100%;
+}
+
+.ems-landing-more {
+    width: 100%;
+}
+
+.ems-landing-more > summary {
+    display: none;
+    list-style: none;
+    cursor: pointer;
+    text-align: center;
+    color: #e2e8f0;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 14px 16px;
+    min-height: 48px;
+    box-sizing: border-box;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    margin-bottom: 12px;
+}
+
+.ems-landing-more > summary::-webkit-details-marker {
+    display: none;
+}
+
+.ems-info-card {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    padding: 24px 20px;
+    min-height: 180px;
+    box-sizing: border-box;
+}
+
+.ems-info-card h4 {
+    margin: 0 0 10px;
+    font-size: 15px;
+    color: #f1f5f9;
+}
+
+.ems-info-card p,
+.ems-info-card li {
+    margin: 0;
+    font-size: 13px;
+    color: #cbd5e1;
+    line-height: 1.6;
+}
+
+.ems-info-card ul {
+    margin: 0;
+    padding-right: 18px;
+    padding-left: 0;
+}
+
+#ems-landing[dir="ltr"] .ems-info-card ul {
+    padding-right: 0;
+    padding-left: 18px;
+}
+
+.ems-info-card a {
+    color: #5eead4;
+    text-decoration: none;
+}
+
+.ems-contact-phone-row {
+    margin: 0;
+    text-align: center;
+}
+
+.ems-contact-whatsapp {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: #25d366;
+    font-size: 1.05rem;
+    font-weight: 700;
+    text-decoration: none;
+    direction: ltr;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(37, 211, 102, 0.12);
+    border: 1px solid rgba(37, 211, 102, 0.35);
+    transition: background 0.18s, transform 0.18s;
+}
+
+.ems-contact-whatsapp:hover {
+    background: rgba(37, 211, 102, 0.2);
+    transform: translateY(-1px);
+    color: #34eb7a;
+}
+
+.ems-contact-whatsapp i {
+    font-size: 1.35rem;
+}
+
+body.ems-authenticated #ems-landing,
+body.ems-authenticated #ems-login-panel,
+body.ems-authenticated #ems-access-key-panel,
+body.ems-authenticated #ems-access-denied-panel {
+    display: none !important;
+}
+
+.ems-landing-footer {
+    text-align: center;
+    padding: 16px;
+    font-size: 12px;
+    color: #64748b;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Login overlay */
+#ems-login-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(15, 23, 42, 0.72);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.ems-login-box {
+    background: #fff;
+    color: #0f172a;
+    border-radius: 16px;
+    width: min(400px, 100%);
+    padding: 28px 24px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+    position: relative;
+    border-top: 4px solid #0f766e;
+}
+
+.ems-login-box--admin { border-top-color: #0d9488; }
+.ems-login-box--teacher { border-top-color: #2563eb; }
+.ems-login-box--parent { border-top-color: #7c3aed; }
+.ems-login-box--student { border-top-color: #0891b2; }
+.ems-login-box--guest { border-top-color: #d97706; }
+
+.ems-login-portal-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.ems-login-portal-icon {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    color: #fff;
+    background: linear-gradient(135deg, #0f766e, #115e59);
+    flex-shrink: 0;
+}
+
+.ems-login-box--admin .ems-login-portal-icon { background: linear-gradient(135deg, #16a085, #0d9488); }
+.ems-login-box--teacher .ems-login-portal-icon { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+.ems-login-box--parent .ems-login-portal-icon { background: linear-gradient(135deg, #7c3aed, #6d28d9); }
+.ems-login-box--student .ems-login-portal-icon { background: linear-gradient(135deg, #0891b2, #0e7490); }
+.ems-login-box--guest .ems-login-portal-icon { background: linear-gradient(135deg, #f59e0b, #d97706); }
+
+.ems-login-portal-text {
+    min-width: 0;
+    flex: 1;
+}
+
+.ems-login-subtitle {
+    margin: 0 0 14px;
+    font-size: 13px;
+    color: #64748b;
+}
+
+.ems-login-loading {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 14px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 10px;
+    font-size: 13px;
+    color: #475569;
+    font-weight: 600;
+}
+
+.ems-login-box--loading .ems-login-loading,
+.ems-login-panel--loading .ems-login-loading {
+    display: flex;
+}
+
+.ems-login-box--loading .ems-login-actions,
+.ems-login-box--loading #ems-login-google-only,
+.ems-login-box--loading #ems-login-email-fields {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.ems-access-key-hint {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.5;
+}
+
+.ems-access-key-input {
+    direction: ltr;
+    text-align: center;
+    letter-spacing: 0.08em;
+    font-family: 'Consolas', 'Courier New', monospace;
+    text-transform: uppercase;
+}
+
+.ems-coming-soon-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100002;
+    background: rgba(15, 23, 42, 0.78);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.ems-coming-soon-box {
+    background: #fff;
+    color: #0f172a;
+    border-radius: 16px;
+    width: min(380px, 100%);
+    padding: 28px 24px;
+    text-align: center;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+    border-top: 4px solid #0891b2;
+}
+
+.ems-coming-soon-icon {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: #fff;
+    background: linear-gradient(135deg, #0891b2, #0e7490);
+}
+
+.ems-coming-soon-box h3 {
+    margin: 0 0 10px;
+    font-size: 1.15rem;
+    color: #0e7490;
+}
+
+.ems-coming-soon-box p {
+    margin: 0 0 18px;
+    font-size: 14px;
+    color: #475569;
+    line-height: 1.6;
+}
+
+.ems-profile-setup-gateway {
+    position: fixed;
+    inset: 0;
+    z-index: 100003;
+    background: rgba(15, 23, 42, 0.82);
+    backdrop-filter: blur(8px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.ems-profile-setup-box {
+    background: #fff;
+    color: #0f172a;
+    border-radius: 16px;
+    width: min(480px, 100%);
+    padding: 28px 24px;
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35);
+    border-top: 4px solid #0d9488;
+}
+
+.ems-profile-setup-box h2 {
+    margin: 0 0 6px;
+    font-size: 1.25rem;
+    color: #0f766e;
+}
+
+.ems-profile-setup-box > p {
+    margin: 0 0 18px;
+    font-size: 13px;
+    color: #64748b;
+}
+
+.ems-profile-setup-box input,
+.ems-profile-setup-box select {
+    width: 100%;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 14px;
+    font-family: inherit;
+}
+
+.ems-profile-setup-box button {
+    width: 100%;
+    margin-top: 8px;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    background: #059669;
+    color: #fff;
+    font-weight: 700;
+    font-family: inherit;
+    cursor: pointer;
+}
+
+.ems-login-box h2 {
+    margin: 0 0 6px;
+    font-size: 1.25rem;
+    color: #0f766e;
+}
+
+.ems-login-portal-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    background: #ecfdf5;
+    color: #047857;
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+}
+
+.ems-login-box input[type="email"],
+.ems-login-box input[type="password"] {
+    width: 100%;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    box-sizing: border-box;
+    font-size: 14px;
+}
+
+.ems-login-box input[type="password"] {
+    direction: ltr;
+    text-align: right;
+}
+
+#ems-landing[dir="ltr"] .ems-login-box input[type="password"] {
+    text-align: left;
+}
+
+.ems-login-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.ems-login-actions button {
+    width: 100%;
+    padding: 12px 16px;
+    min-height: 48px;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    font-family: inherit;
+    font-size: 15px;
+    transition: transform 0.1s, box-shadow 0.15s, background 0.15s;
+}
+
+.ems-login-actions button:active {
+    transform: scale(0.98);
+}
+
+.ems-btn-login { background: var(--ems-teal, #0f766e); color: #fff; }
+.ems-btn-signup { background: var(--ems-navy-mid, #1e3a5f); color: #fff; }
+/* Google-style: white surface, dark text (not solid red) */
+.ems-btn-google {
+    background: #fff;
+    color: #1f1f1f;
+    border: 1px solid #dadce0 !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    box-shadow: 0 1px 2px rgba(60, 64, 67, 0.15);
+}
+.ems-btn-google i {
+    color: #ea4335;
+    font-size: 18px;
+}
+.ems-btn-google:hover {
+    background: #f8f9fa;
+    box-shadow: 0 1px 3px rgba(60, 64, 67, 0.25);
+}
+.ems-btn-google:active {
+    background: #f1f3f4;
+}
+
+.ems-login-method-toggle {
+    width: 100%;
+    margin-top: 10px;
+    padding: 8px;
+    background: none;
+    border: none;
+    color: #2563eb;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    text-align: center;
+}
+
+.ems-login-method-toggle:hover {
+    text-decoration: underline;
+}
+
+.ems-login-back {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: none;
+    border: none;
+    color: #64748b;
+    cursor: pointer;
+    font-size: 13px;
+    font-family: inherit;
+}
+
+#ems-landing[dir="rtl"] .ems-login-back {
+    left: auto;
+    right: 12px;
+}
+
+.ems-login-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    margin-bottom: 12px;
+}
+
+.ems-login-meta a {
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.ems-login-divider {
+    border: 0;
+    border-top: 1px solid #e2e8f0;
+    margin: 12px 0;
+}
+
+/* Parent-only top bar (Method 1) */
+#ems-parent-topbar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    background: linear-gradient(90deg, #0f766e, #115e59);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+#ems-parent-topbar h2 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+body.ems-portal-parent .ribbon-wrapper {
+    display: none !important;
+}
+
+body.ems-portal-parent #ems-parent-topbar {
+    display: flex !important;
+}
+
+@media (max-width: 1024px) {
+    .ems-portal-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .ems-landing-info-inner {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .ems-landing-info-inner .ems-info-card:last-child {
+        grid-column: 1 / -1;
+    }
+}
+
+@media (max-width: 640px) {
+    .ems-landing-header {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 16px;
+    }
+    .ems-landing-lang {
+        justify-content: center;
+    }
+    .ems-landing-brand-text .ems-landing-tagline,
+    .ems-landing-brand-text .ems-landing-system {
+        display: none;
+    }
+    .ems-landing-section-title {
+        font-size: 1.15rem;
+        margin-bottom: 14px;
+    }
+    .ems-portal-grid {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+    .ems-portal-card {
+        padding: 18px 16px;
+        min-height: 72px;
+    }
+    /* Demote "coming soon" student portal off the primary path on phones */
+    .ems-portal-card--soon {
+        display: none;
+    }
+    .ems-landing-more > summary {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .ems-landing-info-inner {
+        display: none;
+        grid-template-columns: 1fr;
+    }
+    .ems-landing-more[open] .ems-landing-info-inner {
+        display: grid;
+    }
+    .ems-landing-info-inner .ems-info-card:last-child {
+        grid-column: auto;
+    }
+    .ems-info-card {
+        min-height: 0;
+        padding: 16px;
+    }
+
+    /* Full-screen login sheet on phones */
+    #ems-login-panel {
+        padding: 0;
+        align-items: stretch;
+        justify-content: stretch;
+        background: #0f172a;
+    }
+    .ems-login-box {
+        width: 100%;
+        min-height: 100%;
+        max-width: none;
+        border-radius: 0;
+        padding: 28px 20px calc(28px + env(safe-area-inset-bottom, 0px));
+        box-shadow: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        box-sizing: border-box;
+    }
+    .ems-login-back {
+        min-height: 44px;
+        min-width: 44px;
+        font-size: 15px;
+        top: calc(12px + env(safe-area-inset-top, 0px));
+    }
+}
+
+@media (min-width: 641px) {
+    .ems-landing-more > summary {
+        display: none;
+    }
+    .ems-landing-info-inner {
+        display: grid;
+    }
+}
+
+/* Identity verification overlays */
+#ems-access-key-panel,
+#ems-access-denied-panel {
+    position: fixed;
+    inset: 0;
+    z-index: 100001;
+    background: rgba(15, 23, 42, 0.78);
+    backdrop-filter: blur(6px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.ems-access-key-icon,
+.ems-access-denied-icon {
+    width: 56px;
+    height: 56px;
+    margin: 0 auto 12px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    color: #fff;
+}
+
+.ems-access-key-icon { background: linear-gradient(135deg, #2563eb, #1d4ed8); }
+.ems-access-denied-icon { background: linear-gradient(135deg, #dc2626, #b91c1c); }
+
+.ems-access-denied-box h2 { color: #dc2626 !important; text-align: center; }
+
+#ems-guest-topbar {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    background: linear-gradient(90deg, #d97706, #b45309);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+#ems-guest-topbar h2 { margin: 0; font-size: 1rem; font-weight: 700; }
+
+body.ems-portal-guest .ribbon-wrapper { display: none !important; }
+body.ems-portal-guest #ems-guest-topbar { display: flex !important; }
+
+.ems-demo-sandbox-banner {
+    position: sticky;
+    top: 0;
+    z-index: 10050;
+    background: linear-gradient(90deg, #b45309, #d97706);
+    color: #fffbeb;
+    text-align: center;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.55;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+    border-bottom: 2px solid #92400e;
+}
+
+body.ems-demo-sandbox-active .ribbon-wrapper {
+    margin-top: 0;
+}
+
+body.ems-demo-sandbox-active .ems-app-shell.ribbon-wrapper {
+    scroll-margin-top: 48px;
+}
+
+.ems-guest-banner {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    color: #92400e;
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin-bottom: 14px;
+    font-size: 13px;
+}
+
+.ems-guest-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.ems-guest-tab {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    padding: 8px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.ems-guest-tab.active {
+    background: #0f766e;
+    color: #fff;
+    border-color: #0f766e;
+}

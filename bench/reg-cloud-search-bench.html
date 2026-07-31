@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EMS Registration Cloud Search Benchmark</title>
+</head>
+<body>
+    <h1 id="bench-status">Cloud search benchmark</h1>
+    <p id="bench-hint">Login to the main EMS app in this browser first, then open this page on the same origin.</p>
+    <button id="bench-run" type="button">Run benchmark</button>
+    <pre id="bench-log"></pre>
+    <script src="reg-cloud-search-bench.js"></script>
+    <script>
+        document.getElementById('bench-run').addEventListener('click', function () {
+            var log = document.getElementById('bench-log');
+            var status = document.getElementById('bench-status');
+            status.textContent = 'Running…';
+            if (typeof window.emsRegCloudSearchBench !== 'function') {
+                log.textContent = 'Harness loaded. Load cloud/ems-enterprise-search.js from logged-in app context, or run from browser console after admission module loads.';
+                status.textContent = 'Router not loaded — use main app console';
+                return;
+            }
+            window.emsRegCloudSearchBench().then(function (res) {
+                log.textContent = JSON.stringify(res, null, 2);
+                status.textContent = res.ok ? 'Done' : ('Blocked: ' + (res.error || 'unknown'));
+            });
+        });
+    </script>
+</body>
+</html>

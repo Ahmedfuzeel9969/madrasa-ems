@@ -1,0 +1,136 @@
+{
+  "generatedAt": "2026-07-08T05:23:31.710Z",
+  "node": "v24.16.0",
+  "skipLegacy": true,
+  "scales": [
+    10000,
+    50000,
+    100000
+  ],
+  "release": "20260621-perf5",
+  "rows": [
+    {
+      "students": 10000,
+      "records": 10500,
+      "usersJsonMb": "1.97",
+      "feeRecords": 25500,
+      "verdict": "acceptable",
+      "timings": [
+        {
+          "label": "JSON.parse users",
+          "ms": 21.03
+        },
+        {
+          "label": "filter students + counts",
+          "ms": 1.65
+        },
+        {
+          "label": "arrears O(n+m) Map [production]",
+          "ms": 11.63
+        },
+        {
+          "label": "reg table filter+search+virtual slice",
+          "ms": 12.33
+        },
+        {
+          "label": "reg table filter-only count (type=student)",
+          "ms": 2.62
+        },
+        {
+          "label": "cache fingerprint hit (emsCacheGet)",
+          "ms": 0.25
+        },
+        {
+          "label": "JSON.stringify users (snapshot write)",
+          "ms": 15.47
+        }
+      ],
+      "mapArrearsMs": 11.63,
+      "legacyArrearsMs": null,
+      "searchMs": 12.33,
+      "parseMs": 21.03
+    },
+    {
+      "students": 50000,
+      "records": 52500,
+      "usersJsonMb": "9.95",
+      "feeRecords": 127500,
+      "verdict": "large-tenant",
+      "timings": [
+        {
+          "label": "JSON.parse users",
+          "ms": 67.37
+        },
+        {
+          "label": "filter students + counts",
+          "ms": 6.72
+        },
+        {
+          "label": "arrears O(n+m) Map [production]",
+          "ms": 42.68
+        },
+        {
+          "label": "reg table filter+search+virtual slice",
+          "ms": 83.53
+        },
+        {
+          "label": "reg table filter-only count (type=student)",
+          "ms": 7.55
+        },
+        {
+          "label": "cache fingerprint hit (emsCacheGet)",
+          "ms": 0.1
+        },
+        {
+          "label": "JSON.stringify users (snapshot write)",
+          "ms": 94.63
+        }
+      ],
+      "mapArrearsMs": 42.68,
+      "legacyArrearsMs": null,
+      "searchMs": 83.53,
+      "parseMs": 67.37
+    },
+    {
+      "students": 100000,
+      "records": 105000,
+      "usersJsonMb": "19.97",
+      "feeRecords": 255000,
+      "verdict": "stress-ok",
+      "timings": [
+        {
+          "label": "JSON.parse users",
+          "ms": 256.11
+        },
+        {
+          "label": "filter students + counts",
+          "ms": 32.28
+        },
+        {
+          "label": "arrears O(n+m) Map [production]",
+          "ms": 171.25
+        },
+        {
+          "label": "reg table filter+search+virtual slice",
+          "ms": 192.59
+        },
+        {
+          "label": "reg table filter-only count (type=student)",
+          "ms": 30.61
+        },
+        {
+          "label": "cache fingerprint hit (emsCacheGet)",
+          "ms": 0.16
+        },
+        {
+          "label": "JSON.stringify users (snapshot write)",
+          "ms": 400.39
+        }
+      ],
+      "mapArrearsMs": 171.25,
+      "legacyArrearsMs": null,
+      "searchMs": 192.59,
+      "parseMs": 256.11
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-07-08T05:37:30.639Z",
+  "phase": "Priority 5 browser verification",
+  "scales": [
+    {
+      "records": 10000,
+      "inserted": 10000,
+      "insertMs": 20848.2,
+      "indexBuildMs": 678353.1,
+      "memAfterInsert": {
+        "available": true,
+        "usedJSHeapMb": 9.537,
+        "totalJSHeapMb": 9.537,
+        "heapLimitMb": 3585.815
+      },
+      "pageSortMs": 222.1,
+      "filterMs": 251.6,
+      "searchMs": 760.8,
+      "searchExpectedLoadAll": false,
+      "admissionFirstPageMs": 231.2,
+      "admissionLongTaskMs": 0,
+      "admissionElapsedMs": 233.5,
+      "trace": {
+        "afterSortPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "pagePaths": ["pageIndexed:ts"]
+        },
+        "afterFilterPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "pagePaths": ["pageIndexed:type_ts"]
+        },
+        "afterSearchPage": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "pagePaths": ["searchIndex:tokens"]
+        },
+        "afterAdmission": {
+          "loadAllCalls": 0,
+          "colAllCalls": 0,
+          "pagePaths": ["pageIndexed:type_ts"]
+        }
+      },
+      "pageSortTotal": 10000,
+      "filterTotal": 8571,
+      "searchTotal": 8571,
+      "persistCountBeforeReload": 10000,
+      "persistence": {
+        "expected": 10000,
+        "actual": 10000,
+        "ok": true
+      }
+    }
+  ],
+  "checks": {
+    "noLoadAllOnSortedPage": true,
+    "noColAllOnSortedPage": true,
+    "noLoadAllOnSearch": true,
+    "noColAllOnSearch": true,
+    "persistenceOk": true,
+    "legacyArrearsDisabled": true
+  },
+  "playwrightCommand": "EMS_IDB_BENCH_SCALES=10000 npx playwright test --config=playwright.bench.config.js",
+  "playwrightResult": "1 passed (11.7m)"
+}

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>EMS Legacy Migration Smoke Test</title>
+</head>
+<body>
+  <h1 id="status">Loading EMS stack…</h1>
+  <pre id="log"></pre>
+  <script src="/ems-query-utils.js"></script>
+  <script src="/ems-data-cache.js"></script>
+  <script src="/ems-idb-engine.js"></script>
+  <script src="/ems-repository.js"></script>
+  <script src="/ems-registration-repository.js"></script>
+  <script src="/ems-user-service.js"></script>
+  <script>
+    window.emsLeanUserForLocalStorage = function (u) { return u; };
+    window.EMS_CACHE_RECORD_CAP = 500;
+    document.getElementById('status').textContent = 'EMS stack loaded';
+  </script>
+</body>
+</html>

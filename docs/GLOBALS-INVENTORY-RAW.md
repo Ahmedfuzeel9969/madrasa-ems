@@ -1,0 +1,2143 @@
+# Auto-extracted window/globalThis assignments
+Generated: 2026-07-17T19:25:07.067Z
+Total unique names: 2139
+
+- `ACCESS_KEY_TTL_OPTIONS` — access-keys.js
+- `ADMIN_ACTIONS` — admin-panel.js
+- `ADMIN_STAFF_MODULES` — admin-panel.js, tests/unit/ems-p6-rbac-edge.test.js, tests/unit/payroll-phase-c.test.js
+- `ADMIN_TEMPLATES` — admin-panel.js
+- `ADMIN_TEMP_DURATIONS` — admin-panel.js
+- `AP_THREAD_ID` — admin-panel.js
+- `CMP_STATUS_KEYS` — complaints.js
+- `CURRENT_MADRASA_DATA` — auth.js, ems-demo-sandbox.js, ems-offline-session-cache.js, identity-gate.js, tests/helpers/auth-mock.js
+- `CURRENT_MADRASA_TENANT_ID` — auth.js, bench/sync-bench.js, ems-demo-sandbox.js, ems-firestore-paths.js, ems-offline-session-cache.js
+- `CURRENT_PARENT_LINK` — auth.js, ems-offline-session-cache.js, tenant-context.js
+- `CURRENT_STAFF_LINK` — auth.js, ems-offline-session-cache.js, tenant-context.js, tests/unit/ems-p6-rbac-edge.test.js, tests/unit/payroll-phase-c.test.js
+- `CURRENT_USER_TENANT_ROLE` — auth.js, cloud/ems-ai-settings.js, cloud/ems-push-register.js, complaints.js, ems-boot-gate.js
+- `CmpCloud` — cloud/complaints-firestore.js
+- `CmpIDB` — complaints.js
+- `CustomEvent` — tests/unit/ems-online-mode.test.js
+- `DB` — core.js
+- `EMS_ACTIVE_TENANT_ID` — ems-demo-sandbox.js, ems-firestore-paths.js, ems-tenant-storage.js, tenant-context.js
+- `EMS_ALLOWED_PORTALS` — portal-access.js, tests/unit/ems-auth-p3-phase3.test.js
+- `EMS_ALLOW_FIRST_LOGIN_CLOUD_FETCH` — ems-native-google-auth.js, ems-offline-policy.js, ems-registration-repository.js
+- `EMS_AUTH_STATE_READY` — auth.js
+- `EMS_BUILD_TAG` — ems-sw-update.js, tests/e2e/ems-sw-update.spec.js
+- `EMS_CACHE_RECORD_CAP` — ems-registration-repository.js, ems-tenant-storage.js
+- `EMS_CLOUD_REACHABLE` — auth.js, ems-native-google-auth.js, ems-offline-policy.js
+- `EMS_CURRENT_DEPARTMENT` — department-context.js
+- `EMS_DEBUG` — auth.js
+- `EMS_DEFAULT_SECURITY_POLICY` — tenant-security.js, tests/e2e/emulator-auth.spec.js
+- `EMS_DEPARTMENT_ALL` — department-context.js
+- `EMS_DEPARTMENT_DEFAULT` — department-context.js
+- `EMS_DEPARTMENT_GLOBAL_MODULES` — department-context.js
+- `EMS_DEPARTMENT_REGISTRY` — department-context.js
+- `EMS_DEPARTMENT_SCOPED_MODULES` — department-context.js
+- `EMS_DESKTOP_OFFLINE_ONLY` — ems-online-mode.js
+- `EMS_DESKTOP_UNLIMITED` — admission.js, auth.js, cloud/ems-firebase-read-api.js, dashboard.js, ems-diagnostics-ui.js
+- `EMS_DESKTOP_WHATSAPP_MODE` — ems-offline-policy.js
+- `EMS_DISABLE_LEGACY_ARREARS` — bench/idb-scale-bench.js, core.js
+- `EMS_ENTERPRISE_BOOT_ENABLED` — ems-boot-gate.js
+- `EMS_EXPLICIT_SIGNOUT` — auth.js
+- `EMS_FCM_VAPID_KEY` — tenant-delivery.js
+- `EMS_FIREBASE_CONFIG` — ems-firebase-init.js
+- `EMS_FIRESTORE_DB` — core.js, ems-firebase-init.js
+- `EMS_FORCE_CLOUD_RECOVERY_SYNC` — ems-offline-policy.js, ems-registration-repository.js
+- `EMS_FORCE_FULL_TENANT_DOWNLOAD` — ems-offline-policy.js
+- `EMS_GOOGLE_AUTH_IN_PROGRESS` — auth.js
+- `EMS_GUEST_MODE` — auth.js, ems-demo-sandbox.js, identity-gate.js, tests/helpers/auth-mock.js, tests/unit/ems-auth-guest-sandbox-phase1.test.js
+- `EMS_IDB_BENCH_TRACE` — bench/idb-scale-bench.js, tests/e2e/ems-idb-scale-bench.spec.js
+- `EMS_IDB_INDEX_AUTO_SCHEDULE` — bench/idb-scale-bench.js, bench/index-build-profile.js, bench/p6-soak-harness.js
+- `EMS_IDENTITY` — identity-gate.js
+- `EMS_INTENDED_PORTAL` — portal-access.js, tests/e2e/emulator-auth.spec.js, tests/e2e/emulator-integration.spec.js
+- `EMS_IS_TENANT_OWNER` — cloud/ems-ai-settings.js
+- `EMS_LITE_LOGIN` — admission.js, ems-registration-bootstrap.js, ems-tenant-storage.js
+- `EMS_LOCAL_AUTH` — auth.js, ems-offline-session-cache.js, ems-online-mode.js, ems-runtime-mode.js
+- `EMS_LOCAL_HYDRATE_INCOMPLETE` — auth.js
+- `EMS_MANUAL_CLOUD_SYNC` — auth.js, ems-cloud-pull.js, ems-offline-policy.js, ems-online-mode.js
+- `EMS_MODULE_FETCH_ATTEMPTED` — ems-registration-bootstrap.js
+- `EMS_MODULE_LOCAL_ONLY_KEYS` — core.js
+- `EMS_NATIVE_FIRST_LOGIN_REQUIRED` — ems-native-app-boot.js
+- `EMS_NATIVE_GOOGLE_DIAG` — ems-native-google-auth.js
+- `EMS_NATIVE_GOOGLE_PREPARE_OK` — ems-native-google-auth.js
+- `EMS_NATIVE_GOOGLE_PREWARM_ERROR` — ems-native-google-auth.js
+- `EMS_NETWORK_OFFLINE_AT_BOOT` — auth.js, ems-native-google-auth.js
+- `EMS_OFFLINE_CONFIG` — ems-offline-config.js
+- `EMS_OFFLINE_FIRST_SSOT` — admission.js, cloud/ems-dashboard-stats.js, dashboard.js, ems-offline-policy.js, ems-online-mode.js
+- `EMS_OFFLINE_ONLY` — att-dashboard.js, attendance-helper.js, auth.js, cloud/complaints-firestore.js, cloud/ems-enterprise-search.js
+- `EMS_PARENT_MODULES` — portal-access.js
+- `EMS_PENDING_NATIVE_GOOGLE_SUCCESS` — auth.js
+- `EMS_POST_LOGIN_DIAG` — auth.js
+- `EMS_REBUILD_IN_PROGRESS` — ems-registration-bootstrap.js, ems-registration-repository.js
+- `EMS_REGISTRATION_ALLOW_SERVER_FETCH` — ems-registration-repository.js
+- `EMS_REGISTRATION_IDB_ONLY_BOOT` — ems-diagnostics-ui.js, ems-registration-repository.js
+- `EMS_REGISTRATION_LEGACY_FIRESTORE` — admission.js, ems-registration-repository.js
+- `EMS_REGISTRATION_SSOT_OFFLINE` — admission.js, ems-registration-repository.js
+- `EMS_REG_DRAFTS_ENABLED` — admission.js, ems-registration-drafts.js, registration-ui.js
+- `EMS_REG_FORCE_LOCAL_SEARCH` — cloud/ems-enterprise-search.js
+- `EMS_REG_LEGACY_READ_FALLBACK` — ems-registration-repository.js
+- `EMS_REG_USE_REPO_PAGE` — admission.js, tests/e2e/ems-reg-page-live.spec.js
+- `EMS_REPOSITORY_BOOT_COMPLETE` — ems-registration-bootstrap.js, ems-registration-repository.js, ems-tenant-storage.js, ems-user-service.js, tests/e2e/legacy-migration-smoke.spec.js
+- `EMS_REPOSITORY_READY` — ems-user-service.js, tests/e2e/legacy-migration-smoke.spec.js
+- `EMS_SEARCH_INDEX_LEASE_MS` — bench/p6-soak-harness.js
+- `EMS_SECURITY_LAYER_FAILED` — auth.js
+- `EMS_SWITCH_ACCOUNT` — auth.js
+- `EMS_TEACHER_MODULES` — portal-access.js
+- `EMS_TENANT_KEY_TTL_DAYS` — access-keys.js, admin-panel.js
+- `EMS_TENANT_NOTIFICATION_DELIVERY` — tenant-delivery.js
+- `EMS_TENANT_POLICY_TENANT` — tenant-security.js, tests/e2e/emulator-integration.spec.js
+- `EMS_TENANT_SECURITY_POLICY` — tenant-security.js, tests/e2e/emulator-auth.spec.js, tests/e2e/emulator-integration.spec.js
+- `EMS_TENANT_SSO_POLICY` — tenant-sso.js, tests/unit/ems-auth-p1-phase2.test.js
+- `EmsBackupService` — cloud/backup-service.js, ems-perf-settings.js
+- `EmsBranding` — ems-branding.js
+- `EmsCachePolicy` — cache-policy.js
+- `EmsCardTemplates` — ems-idcard.js
+- `EmsCloudManifest` — cloud/ems-cloud-manifest.js, tests/helpers/wait-for-boot.js
+- `EmsDirect` — cloud/direct-firestore.js, tests/unit/ems-online-mode.test.js
+- `EmsI18n` — ems-i18n.js
+- `EmsImportExport` — ems-import-export.js
+- `EmsImportTemplates` — ems-import-templates.js
+- `EmsMasterData` — ems-master-data.js
+- `EmsSyncCursorIdb` — ems-sync-cursor-idb.js
+- `EmsSyncEngine` — cloud/sync-engine.js, sync-engine.js, tests/unit/ems-online-mode.test.js
+- `EmsUI` — ems-ui-kit.js
+- `LICENSED_MODULE_IDS` — auth.js
+- `PARENT_MSG_CATEGORIES` — parent-shared.js
+- `PARENT_VIEWS` — parent-shared.js
+- `PLATFORM_PERMISSIONS` — sa/platform-users.js
+- `PLATFORM_USER` — sa/platform-users.js
+- `PUBLIC_MODULE_IDS` — auth.js
+- `RBAC` — sa/rbac-config.js
+- `RegistrationModule` — admission.js
+- `ResizeObserver` — ems-virtual-table.js
+- `SA_ACTIVE_CATEGORY` — sa/sa-nav.js
+- `SA_ACTIVE_PANEL` — sa/sa-nav.js, superadmin.js
+- `SA_BILLING_PLANS` — sa/sa-billing.js, superadmin.js
+- `SA_CURRENT_PAGE` — sa/sa-tenants.js, superadmin.js
+- `SA_LEGACY_ROLE` — sa/sa-core.js, superadmin.js
+- `SA_PAGE_SIZE` — sa/sa-tenants.js
+- `SA_PENDING_EDITS` — sa/sa-tenants.js, superadmin.js
+- `SA_REASON_CALLBACK` — superadmin.js
+- `SA_SELECTED_UIDS` — superadmin.js
+- `SA_TENANTS_CACHE` — sa/sa-tenants.js, superadmin.js
+- `SA_TENANTS_LIVE` — sa/sa-tenants.js, superadmin.js
+- `SUPER_ADMIN_CACHE` — auth.js, portal-access.js, tests/helpers/auth-mock.js
+- `SYSTEM_GLOBAL_STATUS` — auth.js, sa/sa-tenants.js, superadmin.js
+- `SYSTEM_MAINTENANCE_MODE` — auth.js, superadmin.js
+- `SYSTEM_MAINTENANCE_MSG` — auth.js, superadmin.js
+- `SYS_PERM_AREAS` — sys-permissions.js
+- `SYS_PERM_RULE_ACTIONS` — sys-permissions.js
+- `SYS_PERM_TRIGGERS` — sys-permissions.js
+- `SYS_REPORT_SOURCES` — sys-report-builder.js
+- `SaAudit` — sa/sa-audit.js
+- `SaCharts` — sa/sa-charts.js
+- `SaCore` — sa/sa-core.js
+- `SaDashboard` — sa/sa-dashboard.js
+- `SaNav` — sa/sa-nav.js
+- `SaTenants` — sa/sa-tenants.js
+- `SaUi` — sa/sa-ui.js
+- `W_setConflict` — ems-import-wizard.js
+- `W_setMasterCat` — ems-import-wizard.js
+- `XLSX` — vendor/xlsx/xlsx.full.min.js
+- `__EMS_CLOUD_MUTATION_INIT` — ems-cloud-mutation.js
+- `__EMS_CLOUD_PULL_CLICK_BOUND__` — ems-cloud-pull.js
+- `__EMS_CLOUD_PULL_MODULE__` — ems-cloud-pull.js
+- `__EMS_E2E_SUPPRESS_LANDING__` — tests/e2e/emulator-auth.spec.js
+- `__EMS_FS_SETTINGS_DONE` — ems-firebase-init.js
+- `__EMS_OFFLINE_POLICY_INIT` — ems-offline-policy.js
+- `__IDB_BENCH_DONE__` — bench/idb-scale-bench.js
+- `__IDB_BENCH_ERROR__` — bench/idb-scale-bench.js
+- `__IDB_BENCH_REPORT__` — bench/idb-scale-bench.js
+- `__INDEX_BUILD_PROFILE_DONE__` — bench/index-build-profile.js
+- `__INDEX_BUILD_PROFILE_ERROR__` — bench/index-build-profile.js
+- `__INDEX_BUILD_PROFILE__` — bench/index-build-profile.js
+- `__P6_CHUNK_LOG` — bench/p6-soak-harness.js, tests/e2e/ems-p6-soak.spec.js
+- `__P6_TAB_ID` — tests/e2e/ems-p6-soak.spec.js
+- `__bulkCalls` — tests/e2e/ems-reg-incremental-mirror.spec.js
+- `__e2eRows` — tests/e2e/ems-reg-page-live.spec.js
+- `__emsAttKeyListAsyncFromHelper` — attendance-helper.js, ems-offline-write.js
+- `__emsAttKeyListFromHelper` — attendance-helper.js, ems-offline-write.js
+- `__emsBlockAutoFlush` — tests/e2e/ems-offline-crud-reconnect.spec.js, tests/e2e/ems-outbox-multitab.spec.js, tests/e2e/ems-p6-soak.spec.js
+- `__emsMockCloud` — bench/sync-bench.js
+- `__emsMockDb` — tests/e2e/ems-outbox-multitab.spec.js
+- `__emsPostLoginDbRetry` — auth.js
+- `__emsSearchIndexStatus` — ems-search-index-bg.js
+- `__emsShowLandingOrig` — tests/e2e/emulator-auth.spec.js
+- `__emsSyncBenchExportCloud` — bench/sync-bench.js
+- `__emsSyncBenchImportCloud` — bench/sync-bench.js
+- `__emsSyncBenchLocalCount` — bench/sync-bench.js
+- `__emsSyncBenchPullToLocal` — bench/sync-bench.js
+- `__emsSyncBenchPushLocalToCloud` — bench/sync-bench.js
+- `__emsSyncBenchReady` — bench/sync-bench.js, tests/helpers/sync-mock.js
+- `__emsSyncBenchReset` — bench/sync-bench.js
+- `__emsSyncBenchSeedLocal` — bench/sync-bench.js
+- `__emsWriteLog` — bench/sync-bench.js, tests/e2e/ems-offline-crud-reconnect.spec.js, tests/e2e/ems-outbox-multitab.spec.js
+- `__fbReady` — tests/unit/ems-online-mode.test.js
+- `__parentGateCompleted` — tests/e2e/emulator-integration.spec.js
+- `__putCalls` — tests/e2e/ems-reg-incremental-mirror.spec.js
+- `__reloadCalled` — tests/e2e/ems-sw-update.spec.js
+- `__reloadReason` — tests/e2e/ems-sw-update.spec.js
+- `__removeCalls` — tests/e2e/ems-reg-incremental-mirror.spec.js
+- `__swBenchReady` — bench/sw-update-bench.js, tests/e2e/ems-sw-update.spec.js
+- `__swReg` — bench/sw-update-bench.js
+- `__teacherGateCompleted` — tests/e2e/emulator-integration.spec.js
+- `_annArchivePage` — announcements.js
+- `_annArchivePageSize` — announcements.js
+- `_annAuditPage` — announcements.js
+- `_annComposeAttachments` — announcements.js
+- `_annDesignState` — announcements.js
+- `_annEditingId` — announcements.js
+- `_annGrpEditIdx` — announcements.js
+- `_annMsgText` — announcements.js
+- `_annProgEditIdx` — announcements.js
+- `_annVoiceChunks` — announcements.js
+- `_annVoiceRecorder` — announcements.js
+- `_apListenersBound` — admin-panel.js
+- `_attChunkDisposers` — attendance.js
+- `_attCurrentTabId` — att-dashboard.js
+- `_attEditingPeriodId` — attendance.js
+- `_attModuleLifecycleBound` — attendance.js
+- `_attReportRowHtmlCache` — attendance.js
+- `_attSummaryHook` — dashboard.js
+- `_cmpAttachments` — complaints.js
+- `_cmpDropdownGen` — complaints.js
+- `_cmpDropdownReady` — complaints.js
+- `_cmpFilteredCache` — complaints.js
+- `_cmpListState` — complaints.js
+- `_cmpListenersBound` — complaints.js
+- `_cmpResolutionState` — complaints.js
+- `_curPlanFiltered` — curriculum.js
+- `_curSummaryHook` — curriculum.js
+- `_dashFiltersBound` — dashboard.js
+- `_emsActiveModuleId` — auth.js
+- `_emsDashLive` — dashboard.js
+- `_emsDashboardDataPulled` — auth.js
+- `_emsDrill` — dashboard-pro.js
+- `_emsLegacyFile` — ems-import-legacy.js
+- `_emsNavGeneration` — auth.js
+- `_emsOriginalGetItem` — core.js
+- `_emsOriginalSetItem` — core.js
+- `_emsSuppressSync` — attendance.js, cloud/direct-firestore.js, cloud/ems-photo-storage.js, cloud/sync-engine.js, core.js
+- `_emsTemplateHeaders` — ems-import-templates.js
+- `_emsTemplateOnApply` — ems-import-templates.js
+- `_emsTemplateType` — ems-import-templates.js
+- `_emsWizardMapRef` — ems-import-smart.js
+- `_evtEditId` — attendance.js
+- `_evtParticipantSearchBound` — attendance.js
+- `_evtStatusDelegationBound` — attendance.js
+- `_exmActiveTab` — exams.js
+- `_exmDropdownGen` — exams.js
+- `_exmLazyPickersBound` — exams.js
+- `_finActiveTab` — finance.js
+- `_finClassDropdownGen` — finance.js
+- `_finColStudents` — finance.js
+- `_finDuesPage` — finance.js
+- `_finDuesRows` — finance.js
+- `_finFeeCtx` — finance.js
+- `_finLastReceiptId` — finance.js
+- `_finLastReceiptStudentId` — finance.js
+- `_finLastReportRows` — finance.js
+- `_finSummaryHook` — finance.js
+- `_ldgActiveTab` — ledger.js
+- `_ldgAnnualReviewRows` — ledger.js
+- `_ldgAnnualSummaryRows` — ledger.js
+- `_ldgApprovalPage` — ledger.js
+- `_ldgAuditPage` — ledger.js
+- `_ldgAuditPageSize` — ledger.js
+- `_ldgEditingBudgetIdx` — ledger.js
+- `_ldgEditingEntryId` — ledger.js
+- `_ldgEntryPage` — ledger.js
+- `_ldgEntryPageSize` — ledger.js
+- `_ldgFilteredCache` — ledger.js
+- `_ldgFsCursors` — ledger.js
+- `_ldgFsHasNext` — ledger.js
+- `_ldgFsLastDoc` — ledger.js
+- `_ldgFsPageEndCursors` — ledger.js
+- `_ldgFundPerfRows` — ledger.js
+- `_ldgImportWizard` — ledger.js
+- `_ldgLastReportRows` — ledger.js
+- `_ldgPayrollData` — ledger.js
+- `_ldgStaffDropdownGen` — ledger.js
+- `_ppCurrentView` — parent-portal.js
+- `_ppExamCache` — parent-portal.js
+- `_ppFeeCache` — parent-portal.js
+- `_promoRows` — exams.js
+- `_regDraftLifecycleBound` — ems-registration-drafts.js
+- `_regLastLetterEntityId` — admission.js
+- `_regLastLetterEntityType` — admission.js
+- `_regListState` — admission.js, tests/e2e/ems-reg-incremental-mirror.spec.js, tests/e2e/ems-reg-page-live.spec.js
+- `_regRejectedCache` — admission.js
+- `_repIndividualSearchBound` — attendance.js
+- `_sysTermSearchT` — sys-terminology.js
+- `_ttView` — att-dashboard.js, attendance.js
+- `addAnnCategory` — announcements.js
+- `addEventListener` — admin-panel.js, att-dashboard.js, cloud/ems-ai-ui.js, dashboard.js, ems-global-sync.js
+- `addNewClassBtn` — admission.js
+- `alert` — ems-registration-permissions.js
+- `annActorName` — announcements.js, sys-settings.js
+- `annAddAttachments` — announcements.js
+- `annApplyDesignState` — announcements.js
+- `annApproveDecision` — announcements.js
+- `annAudienceName` — announcements.js
+- `annAuditLog` — announcements.js
+- `annAuditSnapshot` — announcements.js
+- `annBuildMessage` — announcements.js
+- `annCanPublishDecisionDirectly` — announcements.js
+- `annCancelEdit` — announcements.js
+- `annClearArchiveFilters` — announcements.js
+- `annCreateProgramAnnouncement` — announcements.js
+- `annDeleteAnnouncement` — announcements.js
+- `annDeleteGroup` — announcements.js
+- `annDeleteProgram` — announcements.js
+- `annDeleteTemplate` — announcements.js
+- `annDesignAddImage` — announcements.js
+- `annDesignAddLogo` — announcements.js
+- `annDesignControl` — announcements.js
+- `annDownloadAttachment` — announcements.js
+- `annDownloadPDF` — announcements.js
+- `annEditAnnouncement` — announcements.js
+- `annEditGroup` — announcements.js
+- `annEditProgram` — announcements.js
+- `annExportArchiveCSV` — announcements.js
+- `annExportDesignJSON` — announcements.js
+- `annExportDesignPNG` — announcements.js
+- `annExportDesignSVG` — announcements.js
+- `annGetAnnouncements` — announcements.js
+- `annGetArchivePageSize` — announcements.js
+- `annGetAudienceMeta` — announcements.js
+- `annGetUsers` — announcements.js
+- `annImportDesignJSON` — announcements.js
+- `annImportExternalDesign` — announcements.js
+- `annInitDesigner` — announcements.js
+- `annInitModule` — announcements.js
+- `annKindName` — announcements.js
+- `annLoadCategories` — announcements.js
+- `annLoadSettingsForm` — announcements.js
+- `annLoadTemplate` — announcements.js
+- `annNormalizeItem` — announcements.js
+- `annOpenRecipientSMS` — announcements.js
+- `annOpenRecipientWA` — announcements.js
+- `annPopulateSelects` — announcements.js
+- `annPreview` — announcements.js
+- `annPreviewComposeAttach` — announcements.js
+- `annPrint` — announcements.js
+- `annPrintDesign` — announcements.js
+- `annPublishProgramAnnouncement` — announcements.js
+- `annRemoveAttachment` — announcements.js
+- `annRenderArchive` — announcements.js
+- `annRenderAttachList` — announcements.js
+- `annRenderAuditLog` — announcements.js
+- `annRenderDashboard` — announcements.js
+- `annRenderGroupsUI` — announcements.js
+- `annRenderMessaging` — announcements.js
+- `annRenderPreviewAttachments` — announcements.js
+- `annRenderPrintCenter` — announcements.js
+- `annRenderPrograms` — announcements.js
+- `annRenderTemplates` — announcements.js
+- `annRequireAction` — announcements.js
+- `annResolvePublishStatus` — announcements.js
+- `annResolveRecipients` — announcements.js
+- `annSaveAnnouncement` — announcements.js
+- `annSaveAnnouncements` — announcements.js
+- `annSaveAsTemplate` — announcements.js
+- `annSaveGroup` — announcements.js
+- `annSaveProgram` — announcements.js
+- `annSaveSettings` — announcements.js
+- `annSendBulkSMS` — announcements.js
+- `annSendBulkWA` — announcements.js
+- `annShareVoiceWA` — announcements.js
+- `annShareWA` — announcements.js
+- `annShareWAPdf` — announcements.js
+- `annSmsLink` — announcements.js
+- `annStartVoiceRecord` — announcements.js
+- `annStatusLabel` — announcements.js
+- `annStopVoiceRecord` — announcements.js
+- `annTypeName` — announcements.js
+- `annUpdateAudienceMeta` — announcements.js
+- `annUpdateMsgRecipients` — announcements.js
+- `annViewAuditDetail` — announcements.js
+- `annViewVersion` — announcements.js
+- `annVoteTallyHtml` — announcements.js
+- `annWaLink` — announcements.js
+- `announcementVisibleToParent` — tests/unit/announcements-phase-a.test.js, tests/unit/announcements-phase-b.test.js
+- `apApplyTemplateInModal` — admin-panel.js
+- `apApproveAllPendingTrustedDevices` — admin-panel.js
+- `apApproveTrustedDevice` — admin-panel.js
+- `apCheckStaffAction` — admin-panel.js
+- `apClearVoice` — admin-panel.js
+- `apCreateBackup` — admin-panel.js
+- `apCreateStaff` — admin-panel.js
+- `apDismissKeyAlert` — admin-panel.js
+- `apDismissSessionAnomaly` — admin-panel.js
+- `apDownloadAuditExportByPath` — admin-panel.js
+- `apDownloadAuditExportSignedUrl` — admin-panel.js
+- `apExportLoginAudit` — admin-panel.js
+- `apExportSecurityEvents` — admin-panel.js
+- `apExportSecurityLog` — admin-panel.js, tests/e2e/emulator-integration.spec.js
+- `apForceSync` — admin-panel.js
+- `apGenerateParentKey` — admin-panel.js
+- `apGenerateTeacherKey` — admin-panel.js
+- `apGetParentPerm` — parent-shared.js
+- `apGetStaffPerm` — admin-panel.js, tests/unit/ems-p6-rbac-edge.test.js, tests/unit/payroll-phase-c.test.js
+- `apGrantParentTemp` — admin-panel.js
+- `apGrantTemp` — admin-panel.js
+- `apLinkParentAccount` — admin-panel.js
+- `apLinkStaffAccount` — admin-panel.js
+- `apLoadAuditExportHistory` — admin-panel.js
+- `apLoadAuditExportStatus` — admin-panel.js
+- `apLoadFailedNotifications` — admin-panel.js
+- `apLoadKeyAlerts` — admin-panel.js
+- `apLoadKeyExpiryDashboard` — admin-panel.js
+- `apLoadLoginAuditSummary` — admin-panel.js
+- `apLoadLoginIpSummary` — admin-panel.js
+- `apLoadLoginLockouts` — admin-panel.js
+- `apLoadLoginSecurityHealth` — admin-panel.js
+- `apLoadLoginSecurityOverview` — admin-panel.js
+- `apLoadLoginSessions` — admin-panel.js, tests/e2e/emulator-integration.spec.js
+- `apLoadMfaPolicySummary` — admin-panel.js
+- `apLoadNotificationAnalytics` — admin-panel.js, tests/e2e/emulator-integration.spec.js
+- `apLoadNotificationDelivery` — admin-panel.js
+- `apLoadNotificationStats` — admin-panel.js
+- `apLoadSecurityAlertSummary` — admin-panel.js
+- `apLoadSecurityEvents` — admin-panel.js
+- `apLoadSecurityLog` — admin-panel.js
+- `apLoadSecurityPolicy` — admin-panel.js
+- `apLoadSecurityWebhookStatus` — admin-panel.js
+- `apLoadSessionAnomalies` — admin-panel.js
+- `apLoadSsoPolicy` — admin-panel.js
+- `apLoadSsoProviderSummary` — admin-panel.js
+- `apLoadStaff` — admin-panel.js
+- `apLoadTenantKeySettings` — admin-panel.js
+- `apLoadTrustedDeviceStats` — admin-panel.js
+- `apLoadTrustedDevices` — admin-panel.js
+- `apOpenComposeMsg` — admin-panel.js
+- `apOpenCreateStaff` — admin-panel.js
+- `apOpenHistoryModal` — admin-panel.js
+- `apOpenParentHistory` — admin-panel.js
+- `apOpenParentModal` — admin-panel.js
+- `apOpenStaffModal` — admin-panel.js
+- `apOpenThread` — admin-panel.js
+- `apPreviewBackup` — admin-panel.js
+- `apProbeLoginSecurityBackend` — admin-panel.js
+- `apPurgeExpired` — admin-panel.js
+- `apPurgeExpiredParent` — admin-panel.js
+- `apRefreshBackupList` — admin-panel.js
+- `apRejectTrustedDevice` — admin-panel.js
+- `apRemoveParentTemp` — admin-panel.js
+- `apRemoveTemp` — admin-panel.js
+- `apRenderCommThreads` — admin-panel.js
+- `apRenderHistory` — admin-panel.js
+- `apRenderParentsTable` — admin-panel.js
+- `apRenderStaffTable` — admin-panel.js
+- `apRenderSyncStatus` — admin-panel.js, ems-offline-policy.js
+- `apRenderTemplates` — admin-panel.js
+- `apRenderThreadBody` — admin-panel.js
+- `apRestoreBackup` — admin-panel.js
+- `apRetryAllFailedNotifications` — admin-panel.js, tests/e2e/emulator-integration.spec.js
+- `apRetryFailedNotification` — admin-panel.js
+- `apRevokeLoginSession` — admin-panel.js
+- `apRevokeTrustedDevice` — admin-panel.js
+- `apSaveNotificationDelivery` — admin-panel.js
+- `apSaveParentPerm` — admin-panel.js
+- `apSaveSecurityPolicy` — admin-panel.js
+- `apSaveSsoPolicy` — admin-panel.js
+- `apSaveStaffPerm` — admin-panel.js
+- `apSaveTenantKeySettings` — admin-panel.js
+- `apSendReply` — admin-panel.js
+- `apSubmitCompose` — admin-panel.js
+- `apSyncParentMessagesFromFirestore` — admin-panel.js
+- `apTestSecurityWebhook` — admin-panel.js
+- `apToggleStatus` — admin-panel.js
+- `apToggleVoice` — admin-panel.js
+- `apTriggerAuditExportToStorage` — admin-panel.js
+- `apUnlockLoginLockout` — admin-panel.js
+- `apValidateOidcIssuer` — admin-panel.js
+- `applyCustomDictionary` — core.js, sys-settings.js, sys-terminology.js
+- `applyModuleAccessUI` — auth.js
+- `areAllModulesLocked` — auth.js
+- `attBrandHeaderHTML` — announcements.js, attendance.js, complaints.js, ems-smart-slip.js, exams.js
+- `attClosePeriodModal` — attendance.js
+- `attDashCancelRender` — att-dashboard.js
+- `attDashOpenClassRegister` — att-dashboard.js
+- `attDeleteEventAttendance` — attendance.js
+- `attGetUserId` — att-dashboard.js, attendance.js
+- `attGetUsersWhenReady` — attendance.js
+- `attNormalizeUserType` — att-dashboard.js
+- `attOpenBranding` — attendance.js
+- `attOpenNewPeriodModal` — attendance.js
+- `attPrintRegister` — attendance.js
+- `attPrintReport` — attendance.js
+- `attPrintWithBrandingShared` — complaints.js
+- `attRegisterRowPage` — attendance.js
+- `attSaveEventAttendance` — attendance.js
+- `attSignFooterHTML` — attendance.js, complaints.js, ems-smart-slip.js, exams.js, finance.js
+- `attTryAutoLoadRegister` — attendance.js
+- `buildDefaultAllowedModules` — auth.js, ems-demo-sandbox.js
+- `buildSmartRegister` — attendance.js
+- `can` — auth.js, sa/platform-users.js, sa/sa-core.js
+- `cancelAnnEdit` — announcements.js
+- `changeSchFormat` — exams.js
+- `checkCustomTeacherSelect` — attendance.js
+- `checkModuleAccess` — auth.js, portal-access.js, security-layer.js
+- `checkParentViewAccess` — parent-portal.js, security-layer.js
+- `checkStaffModuleAccess` — admin-panel.js, auth.js, ems-registration-audit.js, ems-registration-permissions.js, ledger.js
+- `clearCellStatus` — attendance.js
+- `clearRejectedHistory` — admission.js
+- `closeImportWizard` — ems-import-wizard.js
+- `closeModal` — admin-panel.js, admission.js, attendance.js, complaints.js, core.js
+- `cmpAddResponse` — complaints.js
+- `cmpApplyRoleUi` — complaints.js
+- `cmpCanShowDeleteBtn` — complaints.js
+- `cmpCanShowEditBtn` — complaints.js
+- `cmpCanShowResolutionBtn` — complaints.js
+- `cmpCanViewConfidentialComplaint` — complaints.js
+- `cmpClearFilters` — complaints.js
+- `cmpClearResolutionAttach` — complaints.js
+- `cmpEnsureDropdowns` — complaints.js
+- `cmpFilterConfidentialRecords` — complaints.js, dashboard.js
+- `cmpFilterRecordsForRole` — complaints.js
+- `cmpGetCurrentActor` — complaints.js
+- `cmpGetCurrentStaffId` — complaints.js
+- `cmpGetDefaultTabId` — complaints.js
+- `cmpGetFilteredRecords` — complaints.js
+- `cmpGetOverdue` — complaints.js
+- `cmpGoPage` — complaints.js
+- `cmpIsAdminOrOwner` — complaints.js
+- `cmpIsCurrentAssignee` — complaints.js
+- `cmpIsCurrentCreator` — complaints.js
+- `cmpIsResolvedRecord` — complaints.js
+- `cmpIsTeacherOnly` — complaints.js
+- `cmpNormalizeComplaint` — complaints.js
+- `cmpOnAttach` — complaints.js
+- `cmpOnResolutionAttach` — complaints.js
+- `cmpOpenResolutionModal` — complaints.js
+- `cmpPrintList` — complaints.js
+- `cmpPriorityBadge` — complaints.js
+- `cmpRemoveAttach` — complaints.js
+- `cmpRenderAttachPreview` — complaints.js
+- `cmpRenderPager` — complaints.js
+- `cmpRenderReminders` — complaints.js
+- `cmpRenderResolutionTimeline` — complaints.js
+- `cmpRenderStatStrip` — complaints.js
+- `cmpResetResolutionForm` — complaints.js
+- `cmpResolveTabForRole` — complaints.js
+- `cmpSaveResolution` — complaints.js
+- `cmpSearch` — complaints.js
+- `cmpSetStatus` — complaints.js
+- `cmpShowOverdueOnly` — complaints.js
+- `cmpStatusBadge` — complaints.js
+- `cmpStatusKeyToUr` — complaints.js
+- `cmpUrToStatusKey` — complaints.js
+- `confirm` — ems-online-mode.js, ems-storage-quota.js
+- `curAudit` — curriculum.js
+- `curAutoCalcLines` — curriculum.js
+- `curAutoSplitMonths` — curriculum.js
+- `curCollectPlanForm` — curriculum.js
+- `curComputeStatus` — curriculum.js, dashboard-pro.js, dashboard.js
+- `curDeleteDaily` — curriculum.js
+- `curDrillBook` — curriculum.js
+- `curExportReport` — curriculum.js
+- `curFillPlanForm` — curriculum.js
+- `curFormatScopeText` — curriculum.js, exams.js
+- `curGetDaily` — curriculum.js
+- `curGetDashboardStats` — curriculum.js, dashboard-pro.js
+- `curGetExamScope` — curriculum.js
+- `curGetPlans` — curriculum.js
+- `curGetSettings` — curriculum.js
+- `curInitModule` — auth.js, curriculum.js
+- `curLoadPlanForm` — curriculum.js
+- `curMonthlyEntryTrend` — curriculum.js
+- `curOpenFromDashboard` — curriculum.js
+- `curRefreshComparePickers` — curriculum.js
+- `curRefreshDailyBooks` — curriculum.js
+- `curRenderCompare` — curriculum.js
+- `curRenderDaily` — curriculum.js
+- `curRenderMonitor` — curriculum.js
+- `curRenderPerformance` — curriculum.js
+- `curRenderPlanning` — curriculum.js
+- `curRenderReports` — curriculum.js
+- `curRenderSettings` — curriculum.js
+- `curSaveDaily` — curriculum.js
+- `curSavePlan` — curriculum.js
+- `curSaveSettings` — curriculum.js
+- `curSaveSettingsForm` — curriculum.js
+- `curShowDailyExpected` — curriculum.js
+- `curShowLastProgress` — curriculum.js
+- `curSyncFromLibrary` — curriculum.js, exams.js
+- `curUpdateDashboardCard` — curriculum.js, dashboard-pro.js, dashboard.js
+- `currentAnnPreviewId` — announcements.js
+- `currentAttState` — attendance.js
+- `currentEditingCmpId` — complaints.js
+- `currentEditingId` — ems-registration-drafts.js
+- `currentEventParticipants` — attendance.js
+- `currentRegType` — admission.js, ems-registration-mobile.js
+- `currentRoles` — sa/platform-users.js
+- `currentUploadedImageBase64` — ems-registration-drafts.js
+- `cycleCellStatus` — attendance.js
+- `deleteAnnCategory` — announcements.js
+- `deleteAnnouncement` — announcements.js
+- `deleteBlackout` — ledger.js
+- `deleteClassBtn` — admission.js
+- `deleteComplaint` — complaints.js
+- `deleteCustomTeacher` — attendance.js
+- `deleteDictWord` — core.js, sys-terminology.js
+- `deleteEvent` — attendance.js
+- `deleteExamType` — exams.js
+- `deleteFeeCat` — finance.js
+- `deleteFromPreview` — announcements.js
+- `deleteHoliday` — attendance.js
+- `deleteLibBook` — exams.js
+- `deleteMasterCat` — ledger.js
+- `deletePeriod` — attendance.js
+- `deleteRegistration` — admission.js
+- `deleteTerms` — admission.js
+- `deleteTimetablePeriod` — attendance.js
+- `deleteTplBook` — exams.js
+- `dictObserver` — core.js
+- `dispatchEvent` — ems-data-corruption.js, ems-storage-quota.js, tests/e2e/ems-offline-crud-reconnect.spec.js, tests/unit/ems-online-mode.test.js
+- `document` — tests/unit/ems-p6-rbac-edge.test.js, tests/unit/payroll-phase-c.test.js
+- `editAnnouncement` — announcements.js
+- `editComplaint` — complaints.js
+- `editEvent` — attendance.js
+- `editExamType` — exams.js
+- `editFromPreview` — announcements.js
+- `editLibBook` — exams.js
+- `editRegistration` — admission.js, reg-dashboard.js
+- `editTerms` — admission.js
+- `editTimetablePeriod` — attendance.js
+- `emptyRecycleBin` — attendance.js
+- `emsAccessKeyTtlMs` — access-keys.js, admin-panel.js
+- `emsActivateTenantStorage` — admission.js, auth.js, ems-cloud-pull.js, ems-demo-sandbox.js, ems-firestore-paths.js
+- `emsAiAsk` — cloud/ems-ai-client.js
+- `emsAiBuildClassCompareContextPack` — cloud/ems-ai-context-builders.js
+- `emsAiBuildContextPack` — cloud/ems-ai-orchestrator.js
+- `emsAiBuildInstitutionContextPack` — cloud/ems-ai-context-builders.js
+- `emsAiBuildMacroContextPack` — cloud/ems-ai-macro-builders.js
+- `emsAiBuildStudentContextPack` — cloud/ems-ai-context-builders.js
+- `emsAiCanUse` — auth.js, cloud/ems-ai-guard-client.js, cloud/ems-ai-orchestrator.js, cloud/ems-ai-studio-ui.js, cloud/ems-ai-ui.js
+- `emsAiClientGuard` — cloud/ems-ai-guard-client.js
+- `emsAiDefaultQuestion` — cloud/ems-ai-intent-router.js, cloud/ems-ai-studio-ui.js
+- `emsAiEnsureOnlineReady` — cloud/ems-ai-guard-client.js, cloud/ems-ai-orchestrator.js, cloud/ems-ai-ui.js
+- `emsAiGetStatus` — cloud/ems-ai-client.js
+- `emsAiIntents` — cloud/ems-ai-intent-router.js
+- `emsAiIsOnlineReady` — cloud/ems-ai-guard-client.js, cloud/ems-ai-orchestrator.js, cloud/ems-ai-studio-ui.js, cloud/ems-ai-ui.js
+- `emsAiListStudioClasses` — cloud/ems-ai-macro-builders.js, cloud/ems-ai-studio-ui.js
+- `emsAiOpenPanel` — cloud/ems-ai-orchestrator.js, dashboard.js, ems-post-auth-loader.js
+- `emsAiResolveIntent` — cloud/ems-ai-intent-router.js
+- `emsAiRunQuery` — cloud/ems-ai-orchestrator.js
+- `emsAiSettingsCanManage` — cloud/ems-ai-settings.js
+- `emsAiSettingsGetLocal` — cloud/ems-ai-settings.js
+- `emsAiSettingsInitUI` — cloud/ems-ai-settings.js, sys-settings.js
+- `emsAiSettingsLoad` — cloud/ems-ai-settings.js, sys-settings.js
+- `emsAiSettingsProbe` — cloud/ems-ai-settings.js
+- `emsAiSettingsSave` — cloud/ems-ai-settings.js
+- `emsAiSettingsSaveLocal` — cloud/ems-ai-settings.js
+- `emsAiStudioInit` — auth.js, cloud/ems-ai-studio-ui.js
+- `emsAiStudioRefresh` — auth.js, cloud/ems-ai-studio-ui.js
+- `emsAiUiInit` — cloud/ems-ai-ui.js, ems-post-auth-loader.js
+- `emsAiUiOpen` — cloud/ems-ai-orchestrator.js, cloud/ems-ai-ui.js, ems-post-auth-loader.js
+- `emsAiUiRefreshOnlineState` — cloud/ems-ai-ui.js
+- `emsApplyCustomDictionaryDeferred` — core.js, ems-post-auth-loader.js
+- `emsApplyDashboardAttendance` — attendance-helper.js, attendance.js, dashboard.js
+- `emsApplyDashboardStats` — cloud/ems-dashboard-stats.js, dashboard.js, tests/e2e/perf-load-smoke.spec.js
+- `emsApplyDemoSandboxContext` — auth.js, ems-demo-sandbox.js, identity-gate.js
+- `emsApplyLandingContactForce` — landing.js
+- `emsApplyLandingFeaturesList` — landing.js
+- `emsApplyLoginAuthMethodVisibility` — landing.js
+- `emsApplyMfaComplianceGate` — auth.js, security-mfa.js
+- `emsApplyOptionalDeptFilter` — announcements.js, department-context.js, ledger.js
+- `emsApplyPhotoFieldsToUser` — admission.js, cloud/ems-photo-storage.js
+- `emsApplyPortalShell` — auth.js, identity-gate.js, portal-access.js, tests/helpers/auth-mock.js
+- `emsApplyProfileSetupLang` — auth.js, landing.js
+- `emsApplyRegTopbarContrast` — core.js, ems-post-auth-loader.js, sys-settings.js
+- `emsApplyStatusBar` — auth.js, ems-status-bar.js
+- `emsArchiveCutoffDate` — cloud/ems-academic-archive.js
+- `emsArchiveCutoffMonth` — cloud/ems-academic-archive.js
+- `emsArchiveDateInWindow` — cloud/ems-academic-archive.js
+- `emsArchiveFilterByDate` — cloud/ems-academic-archive.js, ledger.js
+- `emsArchiveFilterFeeCollections` — cloud/ems-academic-archive.js, finance.js
+- `emsArchiveGetMetaList` — cloud/ems-academic-archive.js
+- `emsArchiveLoadMeta` — auth.js, cloud/ems-academic-archive.js
+- `emsArchiveMonthFromAttKey` — cloud/ems-academic-archive.js
+- `emsArchiveMonthInWindow` — attendance-helper.js, cloud/ems-academic-archive.js
+- `emsArchivePruneLocalStorage` — auth.js, cloud/ems-academic-archive.js
+- `emsArchiveRunYear` — cloud/ems-academic-archive.js, ems-perf-settings.js
+- `emsArchiveYearMonths` — cloud/ems-academic-archive.js
+- `emsAssertTenantIsolation` — ems-production-diagnostic.js, ems-tenant-storage.js
+- `emsAttCloudDocId` — attendance.js, ems-offline-write.js
+- `emsAttCollectReportSheetsAsync` — attendance-helper.js, attendance.js
+- `emsAttLocalStorageKey` — attendance.js, ems-offline-write.js
+- `emsAttOfflineKeyIndexInvalidate` — attendance-helper.js, ems-data-cache.js, ems-offline-write.js
+- `emsAttPanelIsVisible` — att-dashboard.js, attendance.js
+- `emsAttReadSheetByKeyAsync` — att-dashboard.js, attendance-helper.js
+- `emsAttResolveLocalKey` — ems-offline-write.js
+- `emsAttemptStrictOfflineBoot` — auth.js, ems-boot-gate.js, portal-access.js
+- `emsAttendanceSelfEditBlocked` — security-layer.js
+- `emsAuthContinueAsAdmin` — auth.js, identity-gate.js
+- `emsAuthContinueAsParent` — auth.js, identity-gate.js, tests/e2e/emulator-integration.spec.js
+- `emsAuthContinueAsTeacher` — auth.js, identity-gate.js, tests/e2e/emulator-integration.spec.js
+- `emsAuthMarkPortalRouted` — auth.js, identity-gate.js
+- `emsAwaitOfflineFirstDatastoreReady` — ems-registration-bootstrap.js
+- `emsBackupApply` — ems-idb-engine.js, ems-repository.js
+- `emsBackupCollect` — ems-idb-engine.js, ems-repository.js
+- `emsBackupDownloadFile` — ems-idb-engine.js
+- `emsBackupImportFromFile` — ems-idb-engine.js
+- `emsBarChartSVG` — att-dashboard.js, complaints.js, dashboard-pro.js, exams.js, finance.js
+- `emsBindLazyStaffSelect` — complaints.js, ems-module-perf.js, exams.js, ledger.js
+- `emsBindLazyStudentSelect` — complaints.js, ems-module-perf.js, exams.js
+- `emsBootLiteLogin` — auth.js, ems-registration-bootstrap.js
+- `emsBootMark` — auth.js, core.js, ems-boot-gate.js, ems-post-auth-loader.js, ems-registration-bootstrap.js
+- `emsBootRegistrationData` — auth.js, ems-registration-bootstrap.js, ems-user-access.js, ems-user-service.js
+- `emsBootRegistrationModule` — cloud/ems-firebase-read-api.js, cloud/ems-registration-sync.js, dashboard.js, ems-registration-bootstrap.js, ems-user-access.js
+- `emsBrandClear` — ems-branding.js
+- `emsBrandLoadUI` — admission.js, ems-branding.js
+- `emsBrandPreviewLetter` — ems-branding.js
+- `emsBrandSaveInfo` — ems-branding.js
+- `emsBrandUpload` — ems-branding.js
+- `emsBroadcastUsersChanged` — ems-import-export.js, ems-registration-bootstrap.js, ems-registration-repository.js, ems-user-access.js, ems-user-service.js
+- `emsBuild360Report` — dashboard.js
+- `emsBuildDemoTenantId` — ems-demo-sandbox.js, ems-firestore-paths.js, tenant-context.js
+- `emsBuildRegAccordions` — registration-ui.js
+- `emsBulkImportViaCf` — ems-import-export.js, ems-import-merge.js, ems-import-queue.js
+- `emsCacheGet` — admission.js, att-dashboard.js, attendance-helper.js, cloud/direct-firestore.js, cloud/ems-ai-context-builders.js
+- `emsCacheGetRaw` — attendance-helper.js, cloud/direct-firestore.js, cloud/sync-engine.js, ems-cloud-mutation.js, ems-data-cache.js
+- `emsCacheInvalidate` — cloud/direct-firestore.js, cloud/ems-photo-storage.js, cloud/photo-migration.js, cloud/sync-engine.js, ems-data-cache.js
+- `emsCacheRestoreFromIdb` — ems-data-cache.js, ems-post-auth-loader.js
+- `emsCacheSet` — admission.js, cloud/ems-photo-storage.js, ems-data-cache.js, ems-data-corruption.js, ems-registration-repository.js
+- `emsCallFunction` — access-keys.js, admin-panel.js, cloud/ems-academic-archive.js, cloud/ems-ai-client.js, cloud/ems-ai-guard-client.js
+- `emsCanRunEnterpriseBoot` — core.js, dashboard.js, ems-boot-gate.js, ems-registration-bootstrap.js, ems-user-service.js
+- `emsCanUseOfflineDesktop` — ems-offline-policy.js
+- `emsCancelMfaSignIn` — security-mfa.js
+- `emsCardDesignerLoad` — ems-idcard.js
+- `emsCardDesignerReset` — ems-idcard.js
+- `emsCardDesignerSave` — ems-idcard.js
+- `emsCardDrill` — dashboard-pro.js
+- `emsCheckFullModuleAccess` — auth.js, portal-access.js, security-layer.js, tests/helpers/auth-mock.js
+- `emsCheckLoginAllowed` — auth.js, security-layer.js
+- `emsCheckMfaCompliance` — security-mfa.js
+- `emsCheckMfaComplianceForPortal` — security-mfa.js, tests/e2e/emulator-auth.spec.js
+- `emsCheckTenantLoginAllowed` — tenant-security.js
+- `emsCheckTrustedDevice` — ems-trusted-device.js, tests/e2e/emulator-auth.spec.js
+- `emsClearDemoSandboxSession` — ems-demo-sandbox.js, identity-gate.js
+- `emsClearIdentitySession` — auth.js, identity-gate.js
+- `emsClearIntendedPortal` — portal-access.js, tests/e2e/emulator-auth.spec.js
+- `emsClearLandingAuthLoading` — auth.js, landing.js, portal-access.js
+- `emsClearLoginAttempts` — auth.js, security-layer.js
+- `emsClearOfflineSession` — auth.js, ems-offline-session-cache.js, tenant-context.js
+- `emsClearPersistedBootTenantId` — ems-tenant-storage.js, tenant-context.js
+- `emsClearSensitiveLocalCache` — auth.js, security-layer.js
+- `emsClearTenantContext` — auth.js, tenant-context.js
+- `emsClearTenantLoginSuccess` — identity-gate.js, tenant-security.js
+- `emsCloseAllModals` — announcements.js, att-dashboard.js, attendance.js, auth.js, complaints.js
+- `emsCloudEmitAttendancePatch` — ems-cloud-mutation.js, ems-offline-write.js
+- `emsCloudEmitModuleBlob` — ems-cloud-mutation.js
+- `emsCloudEmitModuleItem` — ems-cloud-mutation.js
+- `emsCloudEmitModuleMapItem` — ems-cloud-mutation.js
+- `emsCloudEmitMutation` — ems-cloud-mutation.js, ems-offline-write.js
+- `emsCloudFlushPendingMutations` — ems-cloud-mutation.js, ems-sync-failure-ui.js
+- `emsCloudLazyScripts` — cloud/ems-cloud-loader.js, ems-lazy-loader.js
+- `emsCloudMutationQueueTypeFor` — ems-cloud-mutation.js
+- `emsCloudPullExecute` — admission.js, ems-cloud-pull.js, ems-diagnostics-ui.js, ems-global-sync.js, ems-perf-settings.js
+- `emsCloudPullGetStatus` — ems-cloud-pull.js
+- `emsCloudPullInitUI` — admission.js, ems-cloud-pull.js
+- `emsCloudPullNow` — ems-cloud-pull.js, ems-global-sync.js, ems-online-mode.js, ems-perf-settings.js
+- `emsCloudPushNow` — admin-panel.js, ems-global-sync.js, ems-online-mode.js, ems-perf-settings.js
+- `emsCollectClasses` — ems-module-perf.js, finance.js
+- `emsCollectUserIdAliases` — cloud/ems-ai-context-builders.js, cloud/ems-ai-macro-builders.js, dashboard.js, ems-user-access.js, ledger.js
+- `emsCompleteMfaSignIn` — security-mfa.js
+- `emsConfirmFullTenantDownload` — ems-online-mode.js
+- `emsContinueOfflineDesktop` — auth.js
+- `emsCreateParentLink` — tenant-context.js
+- `emsCreateStaffLink` — tenant-context.js
+- `emsDashApplyLocalStudentCounts` — dashboard.js
+- `emsDashApplyRepoCounts` — cloud/ems-dashboard-stats.js, dashboard.js
+- `emsDashboardCacheKey` — ems-tenant-storage.js
+- `emsDashboardListLimit` — dashboard.js
+- `emsDataCorruptionGet` — ems-data-corruption.js
+- `emsDataCorruptionGetRecoveryHint` — ems-data-corruption.js
+- `emsDataCorruptionList` — ems-data-corruption.js
+- `emsDataCorruptionQuarantineKey` — ems-data-corruption.js
+- `emsDataCorruptionReport` — core.js, ems-data-cache.js, ems-data-corruption.js
+- `emsDataCorruptionScheduleRecover` — core.js, ems-data-cache.js, ems-data-corruption.js
+- `emsDataCorruptionTryRecover` — ems-data-corruption.js
+- `emsDebugAccess` — auth.js
+- `emsDeferModuleWork` — att-dashboard.js, attendance.js, auth.js, complaints.js, ems-module-perf.js
+- `emsDeleteImportHistory` — ems-import-wizard.js
+- `emsDemoExpiresAt` — ems-demo-sandbox.js
+- `emsDeptMigrationApplyFirestore` — department-migration.js
+- `emsDeptMigrationApplyLocal` — department-migration.js
+- `emsDeptMigrationEnsureRegistrations` — department-migration.js
+- `emsDeptMigrationGetStatus` — department-migration.js
+- `emsDeptMigrationRenderUI` — department-migration.js, sys-settings.js
+- `emsDeptMigrationRunFirestore` — department-migration.js
+- `emsDeptMigrationRunLocal` — department-migration.js
+- `emsDeptMigrationScan` — department-migration.js
+- `emsDeptMigrationScanComplaints` — department-migration.js
+- `emsDesktopOfflineBootDiagnostics` — auth.js
+- `emsDestroyRegistrationSession` — ems-registration-bootstrap.js
+- `emsDiagRegistrationFlow` — ems-enterprise-diagnostic.js, ems-registration-bootstrap.js
+- `emsDiagnosticsUIExport` — ems-diagnostics-ui.js
+- `emsDiagnosticsUIInit` — auth.js, ems-diagnostics-ui.js, sys-settings.js
+- `emsDiagnosticsUIRun` — ems-cloud-pull.js, ems-diagnostics-ui.js, sys-settings.js
+- `emsDiffArrayModuleItems` — core.js
+- `emsDiffMapModuleItems` — core.js
+- `emsDisableFirestoreNetwork` — core.js, ems-online-mode.js
+- `emsDisableOnlineMode` — ems-online-mode.js, ems-perf-settings.js
+- `emsDismissBootSplash` — auth.js, ems-boot-gate.js, ems-registration-bootstrap.js
+- `emsDismissLoginUi` — auth.js, portal-access.js
+- `emsDoExport` — ems-import-wizard.js
+- `emsDonutCompactSVG` — att-dashboard.js, dashboard-pro.js, reg-dashboard.js
+- `emsDonutSVG` — att-dashboard.js, complaints.js, dashboard-pro.js, exams.js, finance.js
+- `emsDownloadIDCardPDF` — ems-idcard.js
+- `emsDrillBack` — dashboard-pro.js
+- `emsDrillOpen` — dashboard-pro.js
+- `emsDrillPush` — dashboard-pro.js
+- `emsDrillTo` — dashboard-pro.js
+- `emsDurableHydrateFromIdb` — ems-durable-storage.js
+- `emsDurableListKeys` — ems-durable-storage.js, ems-storage-quota.js
+- `emsDurableMigrateBoot` — ems-durable-storage.js, ems-post-auth-loader.js
+- `emsDurableReadRaw` — cloud/sync-engine.js, ems-data-cache.js, ems-durable-storage.js, ems-offline-write.js
+- `emsDurableWriteRaw` — cloud/direct-firestore.js, cloud/sync-engine.js, ems-data-cache.js, ems-durable-storage.js, ems-offline-write.js
+- `emsEmailPasswordLoginAllowed` — landing.js, tenant-sso.js
+- `emsEnableOnlineMode` — admission.js, auth.js, ems-cloud-pull.js, ems-online-mode.js, ems-perf-settings.js
+- `emsEnsure360SelectOption` — dashboard.js
+- `emsEnsureAiClient` — auth.js, cloud/ems-ai-orchestrator.js, cloud/ems-ai-studio-ui.js, dashboard.js, ems-post-auth-loader.js
+- `emsEnsureAuthListenerForCloudSync` — auth.js, ems-online-mode.js
+- `emsEnsureDashboardReportData` — dashboard-pro.js, dashboard.js, tests/unit/ems-dashboard-report-data-p0.test.js, tests/unit/ems-student-list-consistency-regent12.test.js
+- `emsEnsureDataConsistency` — ems-runtime-mode.js, ems-user-service.js
+- `emsEnsureDemoMadrasaProfile` — ems-demo-sandbox.js, identity-gate.js
+- `emsEnsureDeviceId` — bench/sync-bench.js, ems-device-identity.js, ems-session-registry.js
+- `emsEnsureFirebaseAuthReady` — admission.js, auth.js, ems-cloud-pull.js, ems-online-mode.js, ems-registration-repository.js
+- `emsEnsureLocalTenantId` — auth.js, ems-tenant-storage.js
+- `emsEnsureLoginShellVisible` — auth.js, core.js, ems-boot-gate.js
+- `emsEnsureNativeGoogleAuthReady` — ems-native-google-auth.js
+- `emsEnsureNetworkForCloudSync` — ems-offline-policy.js, ems-online-mode.js
+- `emsEnsurePhotoStorageReady` — cloud/ems-photo-storage.js, cloud/photo-migration.js
+- `emsEnsurePostAuthScripts` — auth.js, ems-cloud-pull.js, ems-post-auth-loader.js, tests/helpers/wait-for-boot.js
+- `emsEnsureRegistrationSync` — admission.js, auth.js, cloud/ems-registration-sync.js, registration-ui.js
+- `emsEnsureRepositoryReady` — att-dashboard.js, attendance.js, auth.js, dashboard-pro.js, dashboard.js
+- `emsEnsureSecurityStackReady` — auth.js
+- `emsEnsureTenantPushConfig` — cloud/ems-push-register.js, tenant-delivery.js
+- `emsEnsureTenantSecurityPolicy` — identity-gate.js, tenant-security.js, tests/e2e/emulator-auth.spec.js, tests/e2e/emulator-integration.spec.js
+- `emsEnsureUsersReady` — ems-lazy-loader.js, ems-user-service.js
+- `emsEnterpriseDiagnostic` — ems-enterprise-diagnostic.js, ems-registration-bootstrap.js
+- `emsEnterpriseResolveTenant` — ems-tenant-resolver.js
+- `emsEnterpriseSearchClear` — admission.js, bench/reg-cloud-search-bench.js, cloud/ems-enterprise-search.js
+- `emsEnterpriseSearchGetSource` — admission.js, cloud/ems-enterprise-search.js
+- `emsEnterpriseSearchRegistrations` — admission.js, bench/reg-cloud-search-bench.js, cloud/ems-enterprise-search.js
+- `emsExportAttDashboard` — att-dashboard.js
+- `emsExportDashboard` — dashboard.js
+- `emsFailSecurityLayerMissing` — auth.js
+- `emsFetchAttendanceForPayroll` — attendance-helper.js, ledger.js
+- `emsFetchAttendanceTrend` — attendance-helper.js, dashboard-pro.js
+- `emsFetchRegistrationPhoto` — admission.js, cloud/ems-photo-storage.js
+- `emsFetchStaffByType` — ems-user-access.js
+- `emsFetchStaffLocalFirst` — attendance.js, ems-module-perf.js, ems-user-access.js
+- `emsFetchStudentsForClass` — ems-user-access.js, finance.js
+- `emsFetchStudentsLocalFirst` — attendance.js, ems-module-perf.js, ems-user-access.js, finance.js
+- `emsFetchTodayAttendanceDetails` — attendance-helper.js
+- `emsFetchTodayAttendanceFromCache` — attendance-helper.js, dashboard.js
+- `emsFetchTodayAttendanceStats` — att-dashboard.js, attendance-helper.js, dashboard-pro.js
+- `emsFetchUsersByFilter` — cloud/ems-firebase-read-api.js, dashboard.js, ems-user-access.js, ems-user-service.js
+- `emsFillClassSelect` — ems-module-perf.js
+- `emsFillClassSelects` — complaints.js, ems-module-perf.js, exams.js
+- `emsFillSelectOptions` — ems-module-perf.js, finance.js
+- `emsFilterByDepartment` — admission.js, att-dashboard.js, attendance.js, cloud/ems-dashboard-stats.js, cloud/ems-firebase-read-api.js
+- `emsFilterCollectionsByStudentDept` — department-context.js, finance.js
+- `emsFilterUsersLocal` — ems-user-access.js
+- `emsFinalizeNativeInstantBootMode` — auth.js, ems-native-app-boot.js, ems-offline-session-cache.js
+- `emsFindFirstAllowedModuleTab` — portal-access.js
+- `emsFindUserInList` — ems-user-access.js
+- `emsFinishManualCloudSync` — ems-cloud-pull.js, ems-global-sync.js, ems-online-mode.js
+- `emsFinishTotpEnrollment` — security-mfa.js
+- `emsFirebaseEnsureModuleData` — cloud/ems-firebase-read-api.js, dashboard-pro.js, dashboard.js
+- `emsFirebaseFetchById` — cloud/ems-firebase-read-api.js
+- `emsFirebaseFetchFiltered` — cloud/ems-firebase-read-api.js
+- `emsFirebaseFetchNextPage` — cloud/ems-firebase-read-api.js
+- `emsFirebaseLoadListForUI` — admission.js, cloud/ems-firebase-read-api.js
+- `emsFirebaseProbeHasData` — cloud/ems-firebase-read-api.js
+- `emsFirestoreAlignSessionTenant` — ems-cloud-pull.js, ems-firestore-paths.js
+- `emsFirestoreCollectionColRef` — ems-firestore-paths.js, ems-registration-repository.js
+- `emsFirestoreEnsureAuthToken` — ems-cloud-pull.js, ems-firestore-paths.js, ems-registration-repository.js
+- `emsFirestoreFindTenantWithRegistrationData` — ems-cloud-pull.js, ems-firestore-paths.js, ems-registration-repository.js
+- `emsFirestoreGetDb` — ems-cloud-pull.js, ems-firestore-paths.js, ems-registration-repository.js
+- `emsFirestoreListPullCandidates` — ems-firestore-paths.js
+- `emsFirestorePathMeta` — ems-cloud-pull.js, ems-firestore-paths.js
+- `emsFirestoreProbeRegistrationCount` — ems-firestore-paths.js
+- `emsFirestoreRegistrationsColRef` — ems-firestore-paths.js
+- `emsFirestoreRegistrationsCollectionName` — ems-firestore-paths.js
+- `emsFirestoreRegistrationsPath` — ems-cloud-pull.js, ems-firestore-paths.js, ems-registration-repository.js
+- `emsFirestoreRejectedColRef` — ems-firestore-paths.js
+- `emsFirestoreRootCollection` — ems-firestore-paths.js
+- `emsFirestoreSubColRef` — admin-panel.js, attendance-helper.js, attendance.js, ems-firestore-paths.js, ems-registration-bootstrap.js
+- `emsFirestoreTenantDocRef` — admin-panel.js, attendance.js, auth.js, cloud/sync-engine.js, ems-firestore-paths.js
+- `emsForceCloudDisasterRecoverySync` — ems-cloud-pull.js, ems-diagnostics-ui.js, ems-online-mode.js, ems-registration-repository.js
+- `emsForceFullTenantDownload` — ems-cloud-pull.js, ems-online-mode.js, ems-registration-repository.js, ems-runtime-mode.js, tests/unit/ems-online-mode.test.js
+- `emsForceReloadRegistrationData` — ems-enterprise-diagnostic.js, ems-registration-bootstrap.js
+- `emsFormatKeyTtlLabel` — access-keys.js, admin-panel.js
+- `emsGenerateAccessKey` — access-keys.js
+- `emsGetAcademicYear` — cloud/ems-academic-archive.js, ems-perf-settings.js
+- `emsGetAttendanceSummary` — attendance-helper.js, ems-module-summaries.js
+- `emsGetBootMarks` — ems-boot-gate.js, ems-production-diagnostic.js
+- `emsGetComplaintsAll` — dashboard-pro.js, dashboard.js
+- `emsGetCurriculumSummaries` — ems-module-summaries.js
+- `emsGetCurriculumSummary` — curriculum.js, ems-module-summaries.js
+- `emsGetDashboardStats` — admission.js, cloud/ems-ai-context-builders.js, cloud/ems-dashboard-stats.js, dashboard.js, ems-enterprise-diagnostic.js
+- `emsGetDefaultAccessKeyTtlDays` — access-keys.js, tests/e2e/login-auth.spec.js
+- `emsGetDepartment` — department-context.js
+- `emsGetDepartmentId` — cloud/ems-ai-studio-ui.js, department-context.js, ems-enterprise-diagnostic.js
+- `emsGetDepartmentLabel` — att-dashboard.js, cloud/ems-ai-macro-builders.js, dashboard.js, department-context.js, department-selector.js
+- `emsGetDeviceId` — ems-registration-audit.js, ems-registration-drafts.js, ems-session-registry.js, ems-trusted-device.js, tests/e2e/emulator-integration.spec.js
+- `emsGetDevicePlatform` — ems-device-identity.js
+- `emsGetDirectModuleConfig` — core.js
+- `emsGetDomPageSize` — complaints.js, ems-module-perf.js, finance.js, ledger.js
+- `emsGetExaminationOverview` — dashboard-pro.js, ems-module-summaries.js
+- `emsGetExaminationSummaries` — ems-module-summaries.js
+- `emsGetExaminationSummary` — ems-module-summaries.js
+- `emsGetFinanceSummaries` — ems-module-summaries.js, finance.js
+- `emsGetFinanceSummary` — ems-module-summaries.js, finance.js
+- `emsGetIntendedPortal` — auth.js, cloud/ems-push-register.js, ems-offline-session-cache.js, ems-session-registry.js, ems-trusted-device.js
+- `emsGetLinkedStudentIds` — parent-portal.js, security-layer.js, tenant-context.js, tests/unit/ems-p6-rbac-edge.test.js
+- `emsGetLocalCacheLimit` — ems-offline-config.js, ems-registration-repository.js, ems-tenant-storage.js
+- `emsGetLoginSessionId` — ems-registration-audit.js, ems-session-registry.js
+- `emsGetMfaComplianceState` — security-mfa.js
+- `emsGetMfaStatus` — security-mfa.js
+- `emsGetNativeAccountLabel` — ems-native-app-boot.js, ems-perf-settings.js
+- `emsGetNativeGoogleDiag` — auth.js, ems-native-google-auth.js
+- `emsGetOfflineLocalUser` — auth.js, ems-offline-session-cache.js, ems-runtime-mode.js
+- `emsGetOfflineMode` — ems-offline-config.js, ems-offline-mode.js, ems-registration-repository.js
+- `emsGetOnlineStatus` — cloud/ems-ai-guard-client.js, ems-online-mode.js, ems-perf-settings.js
+- `emsGetParentAccessKeyHashes` — access-keys.js, tests/e2e/emulator-auth.spec.js
+- `emsGetRegistrationLiveSyncMeta` — cloud/ems-registration-live-sync.js, ems-enterprise-diagnostic.js, ems-production-diagnostic.js
+- `emsGetStableDeviceId` — ems-device-identity.js
+- `emsGetStaffAllowedModules` — portal-access.js, security-layer.js
+- `emsGetStaffIdForAccess` — ems-registration-drafts.js, ems-registration-permissions.js, security-layer.js
+- `emsGetStaffRecordForCurrentUser` — announcements.js, complaints.js, curriculum.js, ems-registration-audit.js, ems-registration-permissions.js
+- `emsGetStudentCount` — dashboard.js, ems-user-access.js
+- `emsGetTeacherAccessKeyHash` — access-keys.js, tests/e2e/emulator-auth.spec.js
+- `emsGetTeacherModuleList` — portal-access.js
+- `emsGetTenantId` — admin-panel.js, admission.js, attendance.js, bench/reg-cloud-search-bench.js, bench/sync-bench.js
+- `emsGetTenantResolutionMeta` — ems-tenant-resolver.js
+- `emsGetTenantRootCollection` — auth.js, cloud/sync-engine.js, ems-demo-sandbox.js, ems-firestore-paths.js, ems-offline-write.js
+- `emsGetTenantSecurityPolicy` — identity-gate.js, tenant-security.js, tests/e2e/emulator-auth.spec.js
+- `emsGetTenantSsoProviders` — tenant-sso.js
+- `emsGetUserById` — admission.js, cloud/ems-ai-context-builders.js, cloud/ems-enterprise-search.js, dashboard-pro.js, dashboard.js
+- `emsGetUserPhotoSrc` — admission.js, cloud/ems-photo-storage.js, dashboard.js, ems-idcard.js, exams.js
+- `emsGetUserPortalType` — portal-access.js
+- `emsGetUsers` — ems-user-service.js, tests/unit/ems-registration-data-flow.test.js
+- `emsGetUsersByCacheKey` — ems-user-access.js
+- `emsGetUsersMerged` — admission.js, announcements.js, att-dashboard.js, attendance.js, cloud/ems-ai-context-builders.js
+- `emsGetUsersPage` — ems-user-service.js, tests/e2e/legacy-migration-smoke.spec.js
+- `emsGetUsersSync` — announcements.js, att-dashboard.js, attendance.js, curriculum.js, dashboard-pro.js
+- `emsGlobalCloudSync` — ems-mobile-shell.js
+- `emsGroupedBarsSVG` — dashboard-pro.js
+- `emsGuardAction` — security-layer.js
+- `emsGuardRegistrationListRender` — admission.js, registration-ui.js, tests/unit/ems-student-list-consistency-regent12.test.js
+- `emsGuestAddRow` — guest-demo.js
+- `emsGuestClearOverlay` — auth.js, guest-demo.js
+- `emsGuestDeleteItem` — guest-demo.js
+- `emsGuestDeleteRow` — guest-demo.js
+- `emsGuestFetchCollection` — guest-demo.js
+- `emsGuestRenderDemo` — guest-demo.js
+- `emsGuestSaveItem` — guest-demo.js
+- `emsGuestSwitchTab` — guest-demo.js
+- `emsHandleMfaSignInError` — auth.js, security-mfa.js
+- `emsHasDesktopOfflineBootCache` — auth.js, ems-native-app-boot.js, ems-offline-session-cache.js, ems-online-mode.js
+- `emsHasNativeInstantBootCache` — auth.js, ems-boot-gate.js, ems-native-app-boot.js
+- `emsHasOfflineSession` — auth.js, ems-offline-session-cache.js
+- `emsHashAccessKey` — access-keys.js
+- `emsHideBootSpinner` — auth.js, ems-boot-gate.js
+- `emsHideDemoSandboxBanner` — ems-demo-sandbox.js
+- `emsHideLanding` — auth.js, identity-gate.js, portal-access.js
+- `emsHideLoginUiForcefully` — auth.js, portal-access.js
+- `emsHideStudentPortalComingSoon` — landing.js, portal-access.js
+- `emsHybridSyncInit` — auth.js, ems-online-mode.js, ems-runtime-mode.js
+- `emsHybridSyncManual` — ems-global-sync.js, ems-online-mode.js, ems-runtime-mode.js
+- `emsHybridSyncOnModeChange` — ems-offline-mode.js, ems-online-mode.js
+- `emsIdbColAll` — ems-idb-engine.js
+- `emsIdbColBulkPut` — ems-idb-engine.js
+- `emsIdbColClear` — ems-idb-engine.js, ems-storage-quota.js
+- `emsIdbColCount` — ems-idb-engine.js
+- `emsIdbColCountFiltered` — ems-idb-engine.js, ems-repository.js
+- `emsIdbColDelete` — ems-idb-engine.js
+- `emsIdbColGet` — ems-idb-engine.js
+- `emsIdbColPage` — ems-idb-engine.js, tests/e2e/ems-idb-scale-bench.spec.js
+- `emsIdbColPut` — ems-idb-engine.js, ems-repository.js, tests/e2e/ems-repository-idb.spec.js
+- `emsIdbGet` — cloud/ems-photo-storage.js, ems-enterprise-diagnostic.js, ems-production-diagnostic.js
+- `emsIdbKvDelete` — ems-idb-engine.js, ems-registration-repository.js
+- `emsIdbKvEntries` — ems-idb-engine.js
+- `emsIdbKvGet` — att-dashboard.js, attendance-helper.js, ems-idb-engine.js, ems-registration-audit.js, ems-registration-drafts.js
+- `emsIdbKvKeys` — attendance-helper.js, ems-idb-engine.js, ems-storage-quota.js
+- `emsIdbKvKeysByPrefix` — attendance-helper.js, ems-idb-engine.js
+- `emsIdbKvRemove` — ems-registration-drafts.js
+- `emsIdbKvSet` — ems-data-cache.js, ems-durable-storage.js, ems-idb-engine.js, ems-offline-write.js, ems-registration-audit.js
+- `emsIdbPersistRequest` — ems-idb-engine.js
+- `emsIdbPurgeLegacyKeys` — ems-tenant-storage.js, security-layer.js
+- `emsIdbReady` — ems-idb-engine.js, ems-repository.js, ems-storage-quota.js
+- `emsIdbRecordCount` — ems-idb-engine.js
+- `emsIdbRecordDelete` — ems-idb-engine.js
+- `emsIdbRecordPage` — ems-idb-engine.js
+- `emsIdbRecordPut` — ems-idb-engine.js
+- `emsIdbRestoreTenantId` — auth.js, ems-idb-engine.js
+- `emsIdbSearchIndexCancelSchedule` — ems-idb-engine.js, ems-search-index-bg.js
+- `emsIdbSearchIndexClearCollection` — ems-idb-engine.js
+- `emsIdbSearchIndexDeleteRow` — ems-idb-engine.js
+- `emsIdbSearchIndexEnsure` — ems-idb-engine.js, tests/e2e/ems-reg-page-live.spec.js
+- `emsIdbSearchIndexGetMeta` — ems-idb-engine.js
+- `emsIdbSearchIndexMaybeSchedule` — ems-registration-repository.js, ems-search-index-bg.js
+- `emsIdbSearchIndexProcessChunk` — ems-idb-engine.js
+- `emsIdbSearchIndexSchedule` — ems-idb-engine.js, ems-search-index-bg.js
+- `emsIdbSearchIndexUpsertRow` — ems-idb-engine.js
+- `emsIdbSearchIndexWaitComplete` — ems-idb-engine.js
+- `emsIdbSet` — cloud/ems-photo-storage.js
+- `emsIdbStats` — ems-perf-settings.js
+- `emsIdbStorageEstimate` — bench/p6-soak-harness.js, ems-idb-engine.js
+- `emsIdsEquivalent` — ems-user-access.js
+- `emsImportAnalyzeDuplicates` — ems-import-merge.js
+- `emsImportApplyTemplate` — ems-import-templates.js
+- `emsImportCommitDirect` — ems-import-export.js, ems-import-queue.js
+- `emsImportMergeStep5Html` — ems-import-merge.js, ems-import-wizard.js
+- `emsImportQueueChunkSize` — ems-import-queue.js
+- `emsImportQueueClearCompleted` — ems-import-queue.js
+- `emsImportQueueCommit` — ems-import-export.js, ems-import-queue.js
+- `emsImportQueueCreate` — ems-import-export.js, ems-import-queue.js
+- `emsImportQueueGet` — ems-import-queue.js
+- `emsImportQueueList` — ems-import-queue.js
+- `emsImportQueueProcess` — ems-import-export.js, ems-import-queue.js
+- `emsImportTemplatesBar` — ems-import-templates.js, ems-import-wizard.js
+- `emsInferDepartmentId` — department-context.js
+- `emsInitDepartmentContext` — department-context.js, department-selector.js
+- `emsInitFirebase` — admission.js, auth.js, cloud/ems-ai-guard-client.js, ems-cloud-pull.js, ems-firebase-init.js
+- `emsInitMfaUI` — auth.js, security-mfa.js
+- `emsInitSession` — auth.js, security-layer.js
+- `emsInvalidateAttDashboardCache` — att-dashboard.js, attendance.js, ems-offline-write.js
+- `emsInvalidateUserQueryCache` — ems-registration-repository.js, ems-user-access.js
+- `emsIsAccessKeyExpired` — access-keys.js
+- `emsIsAdmissionModuleActive` — admission.js, ems-module-perf.js, registration-ui.js, tests/helpers/wait-for-boot.js
+- `emsIsAndroidApp` — auth.js, ems-native-app-boot.js, ems-native-google-auth.js, ems-offline-mode.js
+- `emsIsAttendanceModuleActive` — att-dashboard.js, attendance.js, ems-module-perf.js
+- `emsIsBrowserMode` — ems-offline-mode.js
+- `emsIsCloudEnabled` — cloud/ems-ai-guard-client.js, cloud/ems-cloud-loader.js, ems-lazy-loader.js, ems-post-auth-loader.js, ems-runtime-mode.js
+- `emsIsCloudSignedIn` — auth.js, ems-cloud-pull.js
+- `emsIsComplaintsModuleActive` — complaints.js, ems-module-perf.js
+- `emsIsCorruptData` — core.js, ems-data-corruption.js
+- `emsIsDashboardModuleActive` — admission.js, ems-module-perf.js, registration-ui.js
+- `emsIsDemoSandbox` — auth.js, ems-demo-sandbox.js, ems-firestore-paths.js, tests/unit/ems-auth-guest-sandbox-phase1.test.js
+- `emsIsDepartmentScopedModule` — department-context.js
+- `emsIsDesktopApp` — auth.js, ems-native-app-boot.js, ems-offline-config.js, ems-offline-mode.js, ems-registration-repository.js
+- `emsIsDesktopEnvironment` — admission.js, ems-offline-policy.js, ems-registration-bootstrap.js, ems-registration-repository.js
+- `emsIsDesktopWhatsAppMode` — ems-offline-policy.js
+- `emsIsExamsModuleActive` — ems-module-perf.js, exams.js
+- `emsIsFinanceModuleActive` — ems-module-perf.js, finance.js
+- `emsIsFirebaseReady` — ems-firebase-init.js, ems-online-mode.js, tests/unit/ems-online-mode.test.js
+- `emsIsGlobalModule` — department-context.js
+- `emsIsGoogleSignInOnlyEnforced` — tenant-sso.js
+- `emsIsIdentityVerified` — identity-gate.js, tests/e2e/login-auth.spec.js, tests/helpers/wait-for-boot.js
+- `emsIsInstalledApp` — ems-offline-mode.js
+- `emsIsInstitutionWideRecord` — department-context.js
+- `emsIsLargeBlobKey` — cloud/direct-firestore.js, cloud/sync-engine.js, ems-data-cache.js, ems-durable-storage.js, ems-offline-write.js
+- `emsIsLedgerModuleActive` — ems-module-perf.js, ledger.js
+- `emsIsMfaAvailable` — security-mfa.js
+- `emsIsModuleActive` — ems-module-perf.js
+- `emsIsNativeApp` — auth.js, ems-boot-gate.js, ems-native-app-boot.js, ems-offline-session-cache.js, ems-perf-settings.js
+- `emsIsNetworkAvailable` — admin-panel.js, att-dashboard.js, attendance-helper.js, auth.js, ems-cloud-mutation.js
+- `emsIsOfflineFirstSsot` — cloud/sync-engine.js, ems-offline-policy.js, sync-engine.js
+- `emsIsOfflineLocalSession` — ems-boot-gate.js, ems-runtime-mode.js
+- `emsIsOfflineOnly` — auth.js, cloud/ems-ai-guard-client.js, ems-boot-gate.js, ems-post-auth-loader.js, ems-registration-bootstrap.js
+- `emsIsOnlineModeEnabled` — ems-cloud-pull.js, ems-online-mode.js
+- `emsIsOptionalDeptFilterOn` — department-context.js, finance.js, ledger.js
+- `emsIsParentPortalUser` — portal-access.js
+- `emsIsPhotoStorageReady` — cloud/ems-photo-storage.js, cloud/photo-migration.js
+- `emsIsPostAuthFullyReady` — ems-post-auth-loader.js
+- `emsIsPostAuthReady` — ems-post-auth-loader.js
+- `emsIsRegistrationCacheKey` — ems-tenant-storage.js
+- `emsIsRegistrationLiveSyncActive` — cloud/ems-registration-live-sync.js, ems-enterprise-diagnostic.js
+- `emsIsRegistrationRepositoryReady` — ems-registration-bootstrap.js, ems-user-access.js
+- `emsIsRegistrationSyncActive` — cloud/ems-registration-sync.js, ems-perf-settings.js
+- `emsIsRegistrationSyncPaused` — cloud/ems-registration-sync.js
+- `emsIsStaffUser` — complaints.js, curriculum.js, exams.js, ledger.js, security-layer.js
+- `emsIsStudentPortalAvailable` — portal-access.js
+- `emsIsTeacherPortalUser` — portal-access.js
+- `emsIsTenantOwner` — complaints.js, exams.js, security-layer.js
+- `emsIsUnlimitedLocalCache` — admission.js, ems-offline-config.js, ems-registration-repository.js, ems-tenant-storage.js, ems-user-service.js
+- `emsIsUserAuthenticated` — core.js, ems-boot-gate.js
+- `emsLandingRefreshBranding` — landing.js, portal-access.js
+- `emsLazyIsLoaded` — ems-lazy-loader.js
+- `emsLazyLoadModule` — auth.js, dashboard.js, ems-lazy-loader.js, parent-portal.js, tests/helpers/wait-for-boot.js
+- `emsLazyManifest` — ems-lazy-loader.js
+- `emsLeanUserForLocalStorage` — admission.js, cloud/ems-photo-storage.js, ems-registration-repository.js, ems-user-access.js
+- `emsLeanUsersForLocalStorage` — cloud/ems-photo-storage.js
+- `emsLegacyOnFile` — ems-import-legacy.js
+- `emsLegacyQuickImport` — ems-import-legacy.js
+- `emsLegacyRenderPanel` — ems-import-legacy.js, ems-import-wizard.js
+- `emsLineChartSVG` — att-dashboard.js, complaints.js, curriculum.js, dashboard-pro.js, exams.js
+- `emsListDepartments` — cloud/ems-ai-studio-ui.js, department-context.js
+- `emsLiteLoginPrepare` — auth.js, ems-registration-bootstrap.js, ems-tenant-storage.js
+- `emsLoad360UserSelect` — dashboard.js
+- `emsLoadCloudDeferred` — auth.js, cloud/ems-cloud-loader.js, ems-post-auth-loader.js, sys-settings.js
+- `emsLoadCloudStack` — admission.js, auth.js, cloud/ems-ai-guard-client.js, cloud/ems-cloud-loader.js, ems-cloud-pull.js
+- `emsLoadDashboardFilterDetails` — dashboard.js
+- `emsLoadExportLibs` — ems-deferred-libs.js, ems-import-export.js
+- `emsLoadFirebaseMessaging` — ems-deferred-libs.js, ems-post-auth-loader.js
+- `emsLoadFirebaseStorage` — cloud/ems-photo-storage.js, ems-deferred-libs.js, ems-post-auth-loader.js
+- `emsLoadMfaPolicy` — security-mfa.js
+- `emsLoadRegistrationListForUI` — registration-ui.js
+- `emsLoadTenantAccessKeySettings` — access-keys.js, tests/e2e/login-auth.spec.js
+- `emsLoadTenantNotificationDelivery` — auth.js, tenant-delivery.js
+- `emsLoadTenantSecurityPolicy` — auth.js, tenant-security.js, tests/e2e/emulator-auth.spec.js
+- `emsLoadTenantSsoPolicy` — auth.js, tenant-sso.js
+- `emsLoadXlsxLib` — ems-deferred-libs.js, ems-import-export.js, ems-import-wizard.js
+- `emsLogAudit` — admin-panel.js, admission.js, attendance.js, complaints.js, ems-audit.js
+- `emsLogSecurityEvent` — auth.js, cloud/sync-engine.js, ems-registration-drafts.js, ems-registration-permissions.js, identity-gate.js
+- `emsMarkLoginStart` — auth.js, ems-production-diagnostic.js
+- `emsMarkRepositoryReady` — ems-cloud-pull.js, ems-registration-bootstrap.js, ems-registration-repository.js, ems-user-service.js
+- `emsMayPullFromCloud` — auth.js, cloud/sync-engine.js, ems-offline-policy.js, sync-engine.js
+- `emsMayPushToCloud` — bench/sync-bench.js, ems-cloud-mutation.js, ems-offline-policy.js, ems-offline-write.js, sync-engine.js
+- `emsMobileClickTab` — ems-mobile-shell.js
+- `emsMobileCloseModulesMenu` — ems-mobile-shell.js
+- `emsMobileListPermittedModules` — ems-mobile-shell.js
+- `emsMobileModuleStatus` — ems-mobile-shell.js
+- `emsMobileOpenModulesMenu` — ems-mobile-shell.js
+- `emsMobileSelectMajor` — ems-mobile-shell.js
+- `emsMountOptionalDeptFilter` — announcements.js, department-context.js, finance.js, ledger.js
+- `emsNativeGoogleWebClientId` — ems-native-google-auth.js
+- `emsOfflineCacheAttendanceFromRemote` — attendance.js, ems-offline-write.js
+- `emsOfflineCanMutationPush` — ems-cloud-mutation.js, ems-offline-write.js
+- `emsOfflineClearDeadLetterQueue` — ems-offline-write.js, ems-sync-failure-ui.js, tests/unit/ems-sync-failure-ui.test.js
+- `emsOfflineConfigGet` — ems-offline-config.js
+- `emsOfflineConfigRequiresConflictReview` — ems-offline-config.js
+- `emsOfflineConfigSetAdmin` — ems-offline-config.js
+- `emsOfflineDeleteRegistration` — admission.js, ems-offline-write.js
+- `emsOfflineEnqueueDirectPersist` — cloud/direct-firestore.js, ems-offline-write.js
+- `emsOfflineEnqueueSyncModule` — cloud/sync-engine.js, ems-offline-write.js
+- `emsOfflineFlushAll` — cloud/direct-firestore.js, cloud/sync-engine.js, ems-cloud-mutation.js, ems-offline-write.js, ems-online-mode.js
+- `emsOfflineFlushMutationRow` — ems-offline-write.js
+- `emsOfflineFlushRow` — ems-offline-write.js
+- `emsOfflineFlushRowInternal` — ems-offline-write.js
+- `emsOfflineGetCachedAttendance` — attendance.js, ems-offline-write.js
+- `emsOfflineGetSyncFailureState` — admin-panel.js, cloud/sync-engine.js, ems-offline-write.js, ems-sync-failure-ui.js
+- `emsOfflineListAttendanceKeys` — att-dashboard.js, attendance-helper.js, ems-offline-write.js
+- `emsOfflineListAttendanceKeysAsync` — att-dashboard.js, attendance-helper.js, ems-offline-write.js
+- `emsOfflineListDeadLetter` — ems-offline-write.js
+- `emsOfflineLoadAttendanceSheetsForMonth` — attendance-helper.js
+- `emsOfflineModuleStoreHydrateAll` — ems-offline-module-store.js, ems-registration-bootstrap.js
+- `emsOfflineModuleStoreHydrateGroup` — auth.js, ems-offline-module-store.js
+- `emsOfflinePersistAttendance` — attendance.js, ems-offline-write.js
+- `emsOfflinePersistFeeRecord` — ems-offline-write.js
+- `emsOfflinePersistRegistration` — admission.js, ems-offline-write.js, ems-runtime-mode.js
+- `emsOfflineQueueUpsert` — ems-offline-write.js
+- `emsOfflineRetryFailedSync` — ems-offline-write.js, ems-sync-failure-ui.js
+- `emsOfflineSessionStubUser` — auth.js, ems-offline-session-cache.js
+- `emsOfflineWriteLocalSync` — attendance.js, ems-offline-write.js
+- `emsOnAttendanceSummaryUpdate` — dashboard.js, ems-module-summaries.js
+- `emsOnCurriculumSummaryUpdate` — curriculum.js, ems-module-summaries.js
+- `emsOnDataPanel` — admission.js, ems-import-wizard.js
+- `emsOnExaminationSummaryUpdate` — ems-module-summaries.js
+- `emsOnFinanceSummaryUpdate` — ems-module-summaries.js, finance.js
+- `emsOnSyncEvent` — cloud/sync-engine.js, sync-engine.js
+- `emsOpenAttendance` — attendance.js, auth.js
+- `emsOpenComplaints` — auth.js, complaints.js
+- `emsOpenExams` — auth.js, exams.js
+- `emsOpenFinance` — auth.js, finance.js
+- `emsOpenFinanceMonth` — dashboard-pro.js
+- `emsOpenLedger` — auth.js, ledger.js
+- `emsOpenMfaEnrollment` — security-mfa.js
+- `emsOpenRegistration` — auth.js, registration-ui.js
+- `emsOpenUnenrollModal` — security-mfa.js
+- `emsOutboxLockTabId` — ems-outbox-lock.js
+- `emsOutboxLockUsesWebLocks` — ems-outbox-lock.js
+- `emsParentAuditActor` — admin-panel.js, parent-shared.js
+- `emsParentDefaultPerm` — admin-panel.js, parent-shared.js
+- `emsParentEmptyViews` — admin-panel.js, parent-shared.js
+- `emsParentGetAllPerms` — admin-panel.js, parent-shared.js
+- `emsParentHasAnyView` — auth.js, security-layer.js
+- `emsParentMigratePerm` — admin-panel.js, parent-shared.js
+- `emsParentModuleAllowed` — auth.js, portal-access.js
+- `emsParentSaveAllPerms` — admin-panel.js, parent-shared.js
+- `emsParentTempActive` — admin-panel.js, parent-shared.js
+- `emsPauseRegistrationLiveSync` — cloud/ems-registration-live-sync.js, cloud/ems-registration-sync.js
+- `emsPauseRegistrationSync` — cloud/ems-registration-sync.js
+- `emsPayrollRequiresMakerChecker` — ledger.js, security-layer.js
+- `emsPayrollSelfPaymentBlocked` — ledger.js, security-layer.js
+- `emsPendingSyncCount` — admin-panel.js, ems-offline-write.js, ems-perf-settings.js, ems-runtime-mode.js
+- `emsPendingSyncEnqueue` — ems-offline-write.js, ems-runtime-mode.js
+- `emsPendingSyncFlush` — ems-offline-write.js, ems-runtime-mode.js
+- `emsPerfArchiveAcademicYear` — ems-perf-settings.js
+- `emsPerfCacheHit` — ems-production-diagnostic.js
+- `emsPerfCacheMiss` — ems-production-diagnostic.js
+- `emsPerfCloudPull` — ems-perf-settings.js
+- `emsPerfCloudPush` — ems-perf-settings.js
+- `emsPerfDownloadTenantBackup` — ems-perf-settings.js
+- `emsPerfHydrateIdb` — ems-perf-settings.js
+- `emsPerfMark` — ems-production-diagnostic.js
+- `emsPerfMigrationChecklist` — ems-perf-settings.js
+- `emsPerfRefreshDashboardStats` — ems-perf-settings.js
+- `emsPerfRenderNativeAccount` — ems-perf-settings.js
+- `emsPerfRenderOnlineMode` — ems-offline-policy.js, ems-perf-settings.js
+- `emsPerfSettingsRenderUI` — ems-cloud-pull.js, ems-perf-settings.js, sys-settings.js
+- `emsPerfToggleOnlineMode` — ems-perf-settings.js
+- `emsPerformanceReport` — ems-production-diagnostic.js
+- `emsPersistOfflineSession` — auth.js, ems-offline-session-cache.js, ems-tenant-storage.js
+- `emsPhotoMigrationDryRunFromUI` — cloud/photo-migration.js
+- `emsPhotoMigrationPurgeLocalFromUI` — cloud/photo-migration.js
+- `emsPhotoMigrationRenderUI` — cloud/photo-migration.js, sys-settings.js
+- `emsPhotoMigrationRun` — cloud/photo-migration.js
+- `emsPhotoMigrationRunFromUI` — cloud/photo-migration.js
+- `emsPhotoMigrationScan` — cloud/photo-migration.js
+- `emsPickDepartment` — department-selector.js
+- `emsPipelineDebug` — admission.js, auth.js, cloud/ems-dashboard-stats.js, cloud/ems-firebase-read-api.js, ems-cloud-pull.js
+- `emsPipelineDebugGetLogs` — ems-data-pipeline-debug.js
+- `emsPipelineDebugQuery` — ems-data-pipeline-debug.js, ems-registration-repository.js
+- `emsPipelineDebugSetEnabled` — ems-data-pipeline-debug.js
+- `emsPostLoginDiagMark` — auth.js
+- `emsPreWarmAndroidGoogleLogin` — ems-native-google-auth.js
+- `emsPrepareAndroidGoogleLogin` — auth.js, ems-native-google-auth.js
+- `emsPrepareFirestoreUserDoc` — admission.js, cloud/ems-photo-storage.js, ems-registration-repository.js
+- `emsPrepareManualCloudSync` — admin-panel.js, ems-cloud-pull.js, ems-global-sync.js, ems-online-mode.js
+- `emsPrintIDCard` — ems-idcard.js
+- `emsProbeCloudReachable` — auth.js, ems-offline-policy.js
+- `emsProcessPendingImport` — ems-import-wizard.js
+- `emsProductionDiagnostic` — ems-production-diagnostic.js
+- `emsProgressSVG` — complaints.js, dashboard-pro.js
+- `emsPublishDemoDataset` — guest-demo.js
+- `emsPullModuleGroup` — auth.js
+- `emsPurgeLegacyRegistrationCaches` — ems-registration-bootstrap.js, ems-tenant-storage.js, security-layer.js
+- `emsPurgeLocalPhotoBase64` — cloud/ems-photo-storage.js
+- `emsPushModuleCloudDelta` — core.js
+- `emsQuickCheck` — ems-enterprise-diagnostic.js
+- `emsReadNativeSessionSnapshot` — ems-native-app-boot.js
+- `emsReadOfflineSession` — auth.js, ems-cloud-pull.js, ems-mobile-shell.js, ems-offline-session-cache.js, ems-perf-settings.js
+- `emsReadPersistedBootTenantId` — admission.js, attendance.js, auth.js, ems-firestore-paths.js, ems-offline-write.js
+- `emsReadRepoCacheGen` — complaints.js, ems-module-perf.js, exams.js, finance.js, ledger.js
+- `emsReauthenticate` — security-mfa.js
+- `emsRecordLoginFailure` — auth.js, security-layer.js
+- `emsRecordMatchesDepartment` — cloud/ems-ai-macro-builders.js, department-context.js, ledger.js, parent-portal.js
+- `emsRecordMatchesUserId` — cloud/ems-ai-context-builders.js, dashboard.js, ems-user-access.js
+- `emsRecordNeedsDepartmentMigration` — department-context.js
+- `emsRecordTenantLoginFailure` — identity-gate.js, tenant-security.js
+- `emsRecoverBlankBootUi` — ems-boot-gate.js
+- `emsRefreshCacheRecordCap` — auth.js, ems-tenant-storage.js
+- `emsRefreshDashboardStats` — cloud/ems-dashboard-stats.js, dashboard.js, ems-perf-settings.js
+- `emsRefreshDepartmentModules` — department-context.js, department-migration.js
+- `emsRefreshLoginSsoPolicy` — landing.js, tenant-sso.js
+- `emsRefreshOfflineMode` — auth.js, ems-offline-mode.js
+- `emsRegAccordionAll` — registration-ui.js
+- `emsRegApplyFormSnapshot` — ems-registration-drafts.js
+- `emsRegApplyTableActionGuards` — admission.js, ems-registration-mobile.js, ems-registration-permissions.js
+- `emsRegAuditFlushQueue` — ems-registration-audit.js
+- `emsRegAuditSummarizeRecord` — admission.js, ems-registration-audit.js
+- `emsRegCan` — ems-registration-audit.js, ems-registration-duplicates.js, ems-registration-permissions.js
+- `emsRegCanDraftWrite` — ems-registration-drafts.js, ems-registration-permissions.js
+- `emsRegCanOverrideHardDuplicate` — admission.js, ems-registration-duplicates.js
+- `emsRegCanViewAudit` — ems-registration-audit.js
+- `emsRegCanWriteSsot` — ems-registration-permissions.js
+- `emsRegCheckDuplicates` — ems-registration-duplicates.js
+- `emsRegCheckDuplicatesAsync` — ems-registration-duplicates.js
+- `emsRegCheckFieldDuplicate` — ems-registration-duplicates.js
+- `emsRegCloudSearchBench` — bench/reg-cloud-search-bench.js
+- `emsRegCloudSearchBenchDownload` — bench/reg-cloud-search-bench.js
+- `emsRegCollectFormSnapshot` — ems-registration-drafts.js
+- `emsRegDeleteDraft` — admission.js, ems-registration-drafts.js
+- `emsRegDiffRecord` — admission.js, ems-registration-audit.js
+- `emsRegDraftDetectConflict` — ems-registration-drafts.js
+- `emsRegDraftEnabled` — ems-registration-drafts.js
+- `emsRegDraftFlushSync` — ems-registration-drafts.js
+- `emsRegDraftGetStatus` — ems-registration-drafts.js
+- `emsRegDraftInit` — admission.js, ems-registration-drafts.js, registration-ui.js
+- `emsRegDraftOfferResume` — ems-registration-drafts.js
+- `emsRegDraftPurgeSession` — ems-registration-bootstrap.js, ems-registration-drafts.js
+- `emsRegDraftSaveBeforeTabSwitch` — admission.js, ems-registration-drafts.js
+- `emsRegDraftUiConflictChoice` — ems-registration-drafts.js
+- `emsRegDraftUiOpenList` — ems-registration-drafts.js, reg-dashboard.js
+- `emsRegDraftUiResumeConfirm` — ems-registration-drafts.js
+- `emsRegDraftUiResumeDecline` — ems-registration-drafts.js
+- `emsRegDraftUiResumeType` — ems-registration-drafts.js
+- `emsRegDupNormalizeCnic` — ems-registration-duplicates.js
+- `emsRegDupNormalizeName` — ems-registration-duplicates.js
+- `emsRegDupNormalizePhone` — ems-registration-duplicates.js
+- `emsRegEnsureRepoSeeded` — admission.js
+- `emsRegFormatCombinedName` — registration-ui.js
+- `emsRegGetAuditTrail` — ems-registration-audit.js
+- `emsRegGetRecordById` — admission.js, cloud/ems-enterprise-search.js, ems-idcard.js, ems-registration-repository.js
+- `emsRegGetRole` — ems-registration-permissions.js
+- `emsRegGuardUI` — admission.js, ems-registration-permissions.js
+- `emsRegInitFormUi` — registration-ui.js
+- `emsRegListDrafts` — ems-registration-drafts.js
+- `emsRegLoadDraft` — admission.js, ems-registration-drafts.js
+- `emsRegLogAudit` — admission.js, ems-idcard.js, ems-registration-audit.js
+- `emsRegMobileApplyClasses` — ems-registration-mobile.js, registration-ui.js
+- `emsRegMobileBuildAllSectionNavs` — admission.js, ems-registration-mobile.js, registration-ui.js
+- `emsRegMobileBuildSectionNav` — ems-registration-mobile.js
+- `emsRegMobileGetViewport` — ems-registration-mobile.js
+- `emsRegMobileInit` — admission.js, ems-registration-mobile.js
+- `emsRegMobileIsMobile` — ems-registration-mobile.js
+- `emsRegMobileSyncRejectedList` — admission.js, ems-registration-mobile.js
+- `emsRegMobileSyncSavedList` — admission.js, ems-registration-mobile.js
+- `emsRegParseCombinedName` — registration-ui.js
+- `emsRegPermForSave` — admission.js, ems-registration-permissions.js
+- `emsRegRefreshPermCache` — admission.js, ems-registration-permissions.js
+- `emsRegRepoApplyMetaFromAtomic` — ems-offline-write.js, ems-registration-repository.js
+- `emsRegRepoAwaitPersistIdle` — ems-registration-repository.js
+- `emsRegRepoBulkHydrate` — ems-registration-bootstrap.js, ems-registration-repository.js
+- `emsRegRepoClearAllRejected` — admission.js, ems-registration-repository.js
+- `emsRegRepoClearSearch` — admission.js, cloud/ems-enterprise-search.js, ems-registration-repository.js, tests/e2e/ems-reg-page-live.spec.js
+- `emsRegRepoCollectClasses` — att-dashboard.js, attendance.js, ems-module-perf.js, ems-registration-repository.js
+- `emsRegRepoDeleteRegistration` — admission.js, ems-registration-repository.js
+- `emsRegRepoEnsureHydratedFromIdb` — admission.js, cloud/ems-firebase-read-api.js, ems-registration-bootstrap.js, ems-registration-repository.js
+- `emsRegRepoEnsureInitial` — cloud/ems-firebase-read-api.js, ems-registration-bootstrap.js, ems-registration-repository.js
+- `emsRegRepoEnsureMetaListener` — cloud/ems-registration-live-sync.js, ems-registration-repository.js
+- `emsRegRepoEnsureReady` — ems-registration-repository.js, ems-user-access.js
+- `emsRegRepoEnsureRejectedInitial` — admission.js, ems-registration-repository.js, reg-dashboard.js
+- `emsRegRepoFetchClassRoster` — attendance.js, ems-registration-repository.js
+- `emsRegRepoFetchMaxIdNum` — admission.js, ems-registration-repository.js
+- `emsRegRepoFlushAllToIdb` — ems-registration-repository.js
+- `emsRegRepoFlushSnapshotNow` — ems-registration-repository.js
+- `emsRegRepoFlushToIdb` — ems-registration-repository.js
+- `emsRegRepoForEach` — attendance.js, complaints.js, ems-registration-duplicates.js, ems-registration-repository.js, reg-dashboard.js
+- `emsRegRepoGetById` — admission.js, cloud/ems-firebase-read-api.js, ems-registration-repository.js, ems-user-access.js
+- `emsRegRepoGetCacheGeneration` — attendance.js, ems-module-perf.js, ems-registration-repository.js
+- `emsRegRepoGetCount` — admission.js, attendance.js, dashboard.js, ems-registration-repository.js, registration-ui.js
+- `emsRegRepoGetIdbCount` — ems-enterprise-diagnostic.js, ems-registration-repository.js
+- `emsRegRepoGetList` — admission.js, cloud/ems-firebase-read-api.js, cloud/ems-registration-live-sync.js, cloud/ems-registration-sync.js, dashboard-pro.js
+- `emsRegRepoGetListAsync` — ems-registration-repository.js, ems-user-service.js
+- `emsRegRepoGetListPage` — admission.js, dashboard-pro.js, ems-registration-repository.js, reg-dashboard.js
+- `emsRegRepoGetListReadonly` — admission.js, ems-registration-repository.js, ems-user-service.js
+- `emsRegRepoGetRejectedList` — admission.js, ems-import-export.js, ems-registration-duplicates.js, ems-registration-repository.js, ems-user-access.js
+- `emsRegRepoGetSearchResults` — admission.js, ems-registration-repository.js
+- `emsRegRepoHasMore` — admission.js, ems-enterprise-diagnostic.js, ems-registration-repository.js
+- `emsRegRepoHasMoreRejected` — admission.js, ems-registration-repository.js
+- `emsRegRepoHydrateFullFromIdb` — admission.js, cloud/ems-firebase-read-api.js, ems-registration-bootstrap.js, ems-registration-repository.js, ems-user-service.js
+- `emsRegRepoInit` — admission.js, bench/sync-bench.js, cloud/ems-firebase-read-api.js, cloud/ems-registration-live-sync.js, ems-demo-sandbox.js
+- `emsRegRepoIsLoading` — ems-registration-repository.js
+- `emsRegRepoIsReady` — ems-registration-repository.js
+- `emsRegRepoIsRejectedLoading` — admission.js, ems-registration-repository.js
+- `emsRegRepoIsSearchActive` — admission.js, ems-registration-repository.js
+- `emsRegRepoIsSsotOffline` — ems-registration-repository.js
+- `emsRegRepoLoadMore` — cloud/ems-firebase-read-api.js, ems-registration-repository.js
+- `emsRegRepoLoadMoreRejected` — ems-registration-repository.js
+- `emsRegRepoMigrateLegacyBlob` — ems-registration-repository.js
+- `emsRegRepoMirrorBulk` — ems-import-export.js, ems-registration-repository.js
+- `emsRegRepoMirrorCount` — ems-registration-repository.js
+- `emsRegRepoMirrorPut` — ems-registration-repository.js
+- `emsRegRepoMirrorRemove` — ems-registration-repository.js
+- `emsRegRepoMirrorReset` — ems-registration-repository.js
+- `emsRegRepoNotifyRemoteRefresh` — ems-registration-repository.js
+- `emsRegRepoNotifyRemoteWrite` — ems-registration-repository.js
+- `emsRegRepoPageSize` — admission.js, ems-registration-repository.js
+- `emsRegRepoPersistRegistration` — admission.js, ems-offline-write.js, ems-registration-repository.js, ems-runtime-mode.js
+- `emsRegRepoPersistToIdb` — ems-registration-repository.js
+- `emsRegRepoRebuildLocalCacheFromServer` — ems-registration-repository.js
+- `emsRegRepoRefreshFirstPage` — cloud/ems-photo-storage.js, ems-online-mode.js, ems-registration-repository.js
+- `emsRegRepoRemove` — admission.js, ems-offline-write.js, ems-registration-repository.js
+- `emsRegRepoReset` — bench/sync-bench.js, cloud/ems-registration-live-sync.js, ems-registration-repository.js, ems-tenant-storage.js, tests/e2e/ems-reg-incremental-mirror.spec.js
+- `emsRegRepoSearch` — cloud/ems-enterprise-search.js, ems-registration-repository.js
+- `emsRegRepoSetSearchResults` — cloud/ems-enterprise-search.js, ems-registration-repository.js
+- `emsRegRepoStop` — ems-registration-bootstrap.js, ems-registration-repository.js
+- `emsRegRepoUpsert` — admission.js, cloud/ems-firebase-read-api.js, department-migration.js, ems-import-export.js, ems-offline-write.js
+- `emsRegRepoVerifyHydration` — ems-registration-repository.js
+- `emsRegRequire` — admission.js, ems-idcard.js, ems-import-export.js, ems-import-wizard.js, ems-registration-permissions.js
+- `emsRegRequireSsotSave` — admission.js, ems-registration-permissions.js
+- `emsRegResolveRegistrationAction` — admission.js, ems-registration-audit.js
+- `emsRegSanitizeAuditEntryForViewer` — ems-registration-audit.js
+- `emsRegSaveDraft` — ems-registration-drafts.js
+- `emsRegSearchRouter` — admission.js, bench/reg-cloud-search-bench.js, cloud/ems-enterprise-search.js
+- `emsRegSyncCombinedName` — admission.js, ems-registration-drafts.js, registration-ui.js
+- `emsRegUpdateCombinedName` — admission.js, ems-registration-drafts.js, registration-ui.js
+- `emsRegWrapProtected` — ems-registration-permissions.js
+- `emsRegisterAttTabBoot` — att-dashboard.js
+- `emsRegisterDepartmentRefresh` — admission.js, announcements.js, attendance.js, complaints.js, curriculum.js
+- `emsRegisterLoginSession` — auth.js, ems-session-registry.js, tests/e2e/emulator-integration.spec.js
+- `emsRegisterPushTokenIfAvailable` — admin-panel.js, cloud/ems-push-register.js
+- `emsRegisterServiceWorker` — core.js
+- `emsRegistrationHeadcounts` — dashboard-pro.js, dashboard.js, ems-user-service.js, reg-dashboard.js
+- `emsRegistrationPhotoPath` — cloud/ems-photo-storage.js
+- `emsRenderDashboardInsights` — dashboard.js
+- `emsRenderDashboardPanels` — cloud/ems-dashboard-stats.js, dashboard-pro.js, dashboard.js
+- `emsRenderDepartmentSelector` — department-selector.js
+- `emsRenderDomPage` — ems-module-perf.js
+- `emsRenderImportHistory` — ems-import-legacy.js, ems-import-smart.js, ems-import-wizard.js
+- `emsRenderMiniCharts` — dashboard-pro.js
+- `emsRenderOrgSsoLoginHint` — auth.js, landing.js, tenant-sso.js
+- `emsRenderParentMfaBanner` — parent-portal.js, security-mfa.js
+- `emsReplayAttTabBoot` — att-dashboard.js, attendance.js
+- `emsRepo` — ems-repository.js, ems-user-service.js, tests/e2e/ems-idb-scale-bench.spec.js, tests/e2e/ems-repository-idb.spec.js, tests/e2e/legacy-migration-smoke.spec.js
+- `emsRepoKey` — ems-data-pipeline-debug.js, ems-production-diagnostic.js, ems-registration-repository.js, ems-tenant-storage.js
+- `emsRequestTrustedDevice` — ems-trusted-device.js
+- `emsRequireMfaCompliance` — auth.js, security-mfa.js
+- `emsRequireStaffAction` — admission.js, announcements.js, attendance.js, complaints.js, curriculum.js
+- `emsRequireTenantId` — admission.js, auth.js, bench/sync-bench.js, cloud/ems-ai-client.js, cloud/ems-ai-context-builders.js
+- `emsRequiresFirstTimeGoogleLogin` — auth.js, ems-native-app-boot.js, ems-native-google-auth.js, ems-online-mode.js
+- `emsResetCloudReachabilityProbe` — ems-native-google-auth.js, ems-offline-policy.js
+- `emsResetParentAccessKey` — access-keys.js
+- `emsResetRegistrationBoot` — ems-registration-bootstrap.js, ems-tenant-storage.js
+- `emsResetRegistrationSyncFlag` — cloud/ems-registration-sync.js, ems-registration-bootstrap.js
+- `emsResetRepositoryReady` — ems-registration-bootstrap.js, ems-tenant-storage.js, ems-user-service.js
+- `emsResetTeacherAccessKey` — access-keys.js
+- `emsResolveCacheKey` — ems-data-cache.js, ems-tenant-storage.js
+- `emsResolveCanonicalUserId` — cloud/ems-ai-context-builders.js, cloud/ems-ai-macro-builders.js, dashboard.js, ems-user-access.js
+- `emsResolveFetchLimit` — attendance.js, ems-offline-config.js, ems-registration-bootstrap.js, ems-user-access.js, ems-user-service.js
+- `emsResolveFirestoreLimit` — ems-offline-config.js, ems-user-access.js
+- `emsResolveFirestoreTenantId` — admission.js, cloud/ems-firebase-read-api.js, ems-cloud-pull.js, ems-firestore-paths.js, ems-import-export.js
+- `emsResolveLoginTenantForSso` — tenant-sso.js
+- `emsResolveRecordDepartmentId` — department-context.js
+- `emsResolveTenantContext` — auth.js, tenant-context.js
+- `emsRestoreOfflineSessionGlobals` — auth.js, ems-offline-session-cache.js
+- `emsResumeRegistrationSync` — cloud/ems-registration-sync.js
+- `emsRoleAllowsModule` — portal-access.js, tests/helpers/auth-mock.js
+- `emsRouteAfterLogin` — auth.js, identity-gate.js, portal-access.js
+- `emsRunGlobalCloudSync` — ems-global-sync.js
+- `emsRunIdentityGate` — auth.js, identity-gate.js, tests/e2e/emulator-auth.spec.js, tests/helpers/wait-for-boot.js
+- `emsRunNativeGoogleSignIn` — ems-native-google-auth.js
+- `emsRunWhenDomReady` — admin-panel.js, complaints.js, dashboard.js, ems-module-perf.js, sys-layout-builder.js
+- `emsSafeLocalGet` — attendance.js, core.js, ems-cloud-mutation.js, ems-data-cache.js, ems-enterprise-diagnostic.js
+- `emsSanitize` — admin-panel.js, auth.js, core.js, parent-portal.js, sa/sa-ui.js
+- `emsSaveMfaPolicy` — security-mfa.js
+- `emsSaveMfaPolicyUI` — security-mfa.js
+- `emsSaveModuleData` — admin-panel.js, core.js, parent-shared.js
+- `emsSaveModuleDelta` — core.js
+- `emsSaveParentAccessKey` — access-keys.js
+- `emsSaveTeacherAccessKey` — access-keys.js
+- `emsSaveTenantAccessKeySettings` — access-keys.js
+- `emsSaveTenantNotificationDelivery` — tenant-delivery.js
+- `emsSaveTenantSecurityPolicy` — tenant-security.js
+- `emsSaveTenantSsoPolicy` — tenant-sso.js
+- `emsScheduleCloudReachabilityProbe` — ems-global-sync.js, ems-offline-policy.js, ems-online-mode.js
+- `emsScheduleDesktopOfflineAutoBoot` — auth.js, ems-boot-gate.js, portal-access.js
+- `emsScheduleNativeInstantAutoBoot` — auth.js
+- `emsScheduleNativeInstantBoot` — ems-boot-gate.js, ems-native-app-boot.js
+- `emsScopedKey` — ems-production-diagnostic.js, ems-registration-repository.js, ems-tenant-storage.js
+- `emsSearchIndexDefaultFields` — ems-search-index.js
+- `emsSearchIndexLeaderGateChunk` — ems-idb-engine.js, ems-search-index-lock.js
+- `emsSearchIndexLeaderIsLeaseExpired` — bench/p6-soak-harness.js, ems-search-index-lock.js
+- `emsSearchIndexLeaderIsMine` — ems-search-index-lock.js
+- `emsSearchIndexLeaderReadLock` — bench/p6-soak-harness.js, ems-search-index-lock.js
+- `emsSearchIndexLeaderRelease` — ems-search-index-lock.js
+- `emsSearchIndexLeaderRenew` — ems-search-index-lock.js
+- `emsSearchIndexLeaderSimulateCrash` — bench/p6-soak-harness.js, ems-search-index-lock.js
+- `emsSearchIndexLeaderTryAcquire` — ems-search-index-lock.js
+- `emsSearchIndexLockTabId` — bench/p6-soak-harness.js, ems-search-index-lock.js
+- `emsSearchIndexLockUsesBroadcastChannel` — bench/p6-soak-harness.js, ems-search-index-lock.js
+- `emsSearchIndexLockUsesWebLocks` — bench/p6-soak-harness.js, ems-search-index-lock.js
+- `emsSearchIndexMinTokenLen` — ems-search-index.js
+- `emsSearchIndexNormalizeSearch` — ems-search-index.js
+- `emsSearchIndexRowDocVersion` — ems-search-index.js
+- `emsSearchIndexTokensForQuery` — ems-idb-engine.js, ems-search-index.js
+- `emsSearchIndexTokensForRow` — ems-idb-engine.js, ems-search-index.js, tests/e2e/ems-index-build-profile.spec.js
+- `emsSearchIndexVersion` — ems-idb-engine.js, ems-search-index-lock.js
+- `emsSetBootSplashMessage` — auth.js, ems-boot-gate.js, ems-registration-bootstrap.js
+- `emsSetDepartment` — department-context.js
+- `emsSetIntendedPortal` — auth.js, ems-offline-session-cache.js, landing.js, portal-access.js, tests/e2e/login-smoke.spec.js
+- `emsSetLandingAuthLoading` — auth.js, landing.js
+- `emsSetOptionalDeptFilter` — department-context.js
+- `emsShouldForceStrictOfflineBypass` — auth.js, ems-boot-gate.js, portal-access.js
+- `emsShouldUseNativeGoogleSignIn` — auth.js, ems-native-google-auth.js
+- `emsShowAccessDenied` — auth.js, identity-gate.js
+- `emsShowAdminProfileSetup` — identity-gate.js
+- `emsShowDemoSandboxBanner` — auth.js, ems-demo-sandbox.js, identity-gate.js
+- `emsShowLanding` — auth.js, ems-boot-gate.js, identity-gate.js, portal-access.js, tests/e2e/emulator-auth.spec.js
+- `emsShowPostLoginBootFailure` — auth.js
+- `emsShowRegistrationBootOverlay` — auth.js, ems-cloud-pull.js, ems-registration-bootstrap.js
+- `emsShowStudentPortalComingSoon` — landing.js, portal-access.js
+- `emsSlipApplySettingsFromUI` — ems-smart-slip.js, finance.js
+- `emsSlipBuildChallanHTML` — ems-smart-slip.js
+- `emsSlipBuildReceiptHTML` — ems-smart-slip.js
+- `emsSlipEncodePayload` — ems-smart-slip.js
+- `emsSlipEnhanceReceiptDOM` — ems-smart-slip.js, finance.js
+- `emsSlipGetSettings` — ems-smart-slip.js
+- `emsSlipLoadSettingsToUI` — ems-smart-slip.js, finance.js
+- `emsSlipPrintBatchChallans` — ems-smart-slip.js, finance.js
+- `emsSlipPrintChallan` — ems-smart-slip.js
+- `emsSlipPrintReceipt` — ems-smart-slip.js
+- `emsSlipSaveSettings` — ems-smart-slip.js
+- `emsSmartLoadProfiles` — ems-import-smart.js
+- `emsSmartRefreshSnapshotUi` — ems-import-legacy.js, ems-import-smart.js, ems-import-wizard.js
+- `emsSmartRenderPanel` — ems-import-smart.js, ems-import-wizard.js
+- `emsSmartRestoreSnapshot` — ems-import-smart.js
+- `emsSmartSaveProfile` — ems-import-smart.js
+- `emsSmartWizardLoadProfile` — ems-import-smart.js
+- `emsSmartWizardProfileBar` — ems-import-smart.js, ems-import-wizard.js
+- `emsSmartWizardSaveProfile` — ems-import-smart.js
+- `emsStaffHasAnyModule` — auth.js, security-layer.js
+- `emsStampDepartment` — admission.js, announcements.js, attendance.js, complaints.js, curriculum.js
+- `emsStartAttendanceSync` — attendance.js
+- `emsStartDashboardLive` — auth.js, dashboard.js
+- `emsStartDashboardStatsListener` — auth.js, cloud/ems-dashboard-stats.js, dashboard.js, ems-production-diagnostic.js
+- `emsStartDictObserver` — attendance.js, core.js, ems-post-auth-loader.js
+- `emsStartModuleSummariesListener` — dashboard.js, ems-module-summaries.js
+- `emsStartOfflineGuestDemo` — auth.js
+- `emsStartOfflineLocalApp` — auth.js
+- `emsStartRegistrationLiveSync` — cloud/ems-registration-live-sync.js, cloud/ems-registration-sync.js, ems-registration-bootstrap.js
+- `emsStartRegistrationSync` — cloud/ems-registration-sync.js, ems-registration-bootstrap.js
+- `emsStartRegistrationWriteSync` — cloud/ems-registration-live-sync.js, cloud/ems-registration-sync.js, ems-online-mode.js, ems-registration-bootstrap.js
+- `emsStartSessionIdleWatch` — auth.js, security-layer.js
+- `emsStartSyncEngine` — auth.js
+- `emsStartTotpEnrollment` — security-mfa.js
+- `emsStopAttendanceSync` — attendance.js
+- `emsStopDashboardLive` — auth.js, dashboard.js
+- `emsStopDashboardStatsListener` — cloud/ems-dashboard-stats.js, dashboard.js
+- `emsStopModuleSummariesListener` — dashboard.js, ems-module-summaries.js
+- `emsStopRegistrationLiveSync` — cloud/ems-registration-live-sync.js, ems-online-mode.js, ems-registration-bootstrap.js, ems-tenant-storage.js
+- `emsStopRegistrationSync` — admission.js, ems-online-mode.js, ems-registration-bootstrap.js
+- `emsStorageQuotaCheck` — bench/p6-soak-harness.js, ems-idb-engine.js, ems-storage-quota.js
+- `emsStorageQuotaClassify` — ems-storage-quota.js
+- `emsStorageQuotaCleanTemporaryFiles` — bench/p6-soak-harness.js, ems-storage-quota.js
+- `emsStorageQuotaClearTestEstimate` — bench/p6-soak-harness.js, ems-storage-quota.js
+- `emsStorageQuotaConfirmBulk` — ems-idb-engine.js, ems-import-queue.js, ems-storage-quota.js
+- `emsStorageQuotaFormatBytes` — ems-storage-quota.js
+- `emsStorageQuotaGetRecoveryHint` — ems-storage-quota.js
+- `emsStorageQuotaGetStatus` — ems-storage-quota.js
+- `emsStorageQuotaMaybeCheckOnSave` — ems-durable-storage.js, ems-idb-engine.js, ems-storage-quota.js
+- `emsStorageQuotaOnWriteFailure` — ems-durable-storage.js, ems-idb-engine.js, ems-storage-quota.js
+- `emsStorageQuotaSetTestEstimate` — bench/p6-soak-harness.js, ems-storage-quota.js
+- `emsSubmitAccessKey` — identity-gate.js
+- `emsSwUpdateBind` — bench/sw-update-bench.js, core.js, ems-sw-update.js
+- `emsSwUpdateGetState` — ems-sw-update.js
+- `emsSwUpdateHandleControllerChange` — ems-sw-update.js
+- `emsSwUpdateReloadNow` — ems-sw-update.js, tests/e2e/ems-sw-update.spec.js
+- `emsSwUpdateTestNotifyInstalledTag` — ems-sw-update.js
+- `emsSwUpdateTestSetHadController` — ems-sw-update.js
+- `emsSyncFailureDismiss` — ems-sync-failure-ui.js
+- `emsSyncFailureRefreshUi` — admission.js, cloud/sync-engine.js, ems-cloud-mutation.js, ems-offline-write.js, ems-sync-failure-ui.js
+- `emsSyncFailureRetryAll` — ems-sync-failure-ui.js
+- `emsSyncMobileHomeKpis` — ems-mobile-shell.js
+- `emsSyncStaffClaims` — auth.js, security-layer.js
+- `emsSyncStaffClaimsForMember` — security-layer.js
+- `emsTenantCacheKey` — ems-tenant-storage.js
+- `emsToggle360Btn` — dashboard.js
+- `emsToggleDepartmentMenu` — department-selector.js
+- `emsToggleImportHistory` — ems-import-wizard.js
+- `emsTouchLoginSession` — ems-session-registry.js
+- `emsTouchSession` — security-layer.js
+- `emsTrendChartSVG` — dashboard-pro.js
+- `emsTryNativeInstantBoot` — auth.js, ems-boot-gate.js, ems-native-app-boot.js
+- `emsTryNativeInstantBootImpl` — auth.js, ems-native-app-boot.js
+- `emsUnenrollMfaFactor` — security-mfa.js
+- `emsUnifiedOutboxEnqueue` — ems-offline-write.js
+- `emsUnifiedOutboxMigrateLegacy` — ems-offline-write.js
+- `emsUpdateGlobalSyncButton` — auth.js, ems-global-sync.js, ems-offline-policy.js
+- `emsUpdateLoginPortalChrome` — landing.js
+- `emsUpdateOfflineContinueButton` — auth.js, ems-boot-gate.js, landing.js, portal-access.js
+- `emsUploadRegistrationPhoto` — admission.js, cloud/ems-photo-storage.js
+- `emsUserRepository` — ems-user-access.js
+- `emsValidateEmailDomainForPortal` — tenant-sso.js, tests/e2e/emulator-auth.spec.js
+- `emsValidateLoginCountryForPortal` — tenant-security.js, tests/e2e/emulator-auth.spec.js
+- `emsValidateLoginIpForPortal` — tenant-security.js, tests/e2e/emulator-auth.spec.js
+- `emsVerifyAccessKey` — access-keys.js
+- `emsVerifyBackendServices` — auth.js, security-layer.js
+- `emsVerifyParentAccessKey` — access-keys.js
+- `emsVerifyTeacherAccessKey` — access-keys.js
+- `emsVirtualTableDestroy` — admission.js, complaints.js, curriculum.js, ems-virtual-table.js, exams.js
+- `emsVirtualTableMount` — admission.js, curriculum.js, ems-virtual-table.js, exams.js, ledger.js
+- `emsVirtualTableRefresh` — ems-virtual-table.js
+- `emsWaitForFirebaseAuthRestore` — auth.js, ems-online-mode.js
+- `emsWithOutboxFlushLock` — ems-offline-write.js, ems-outbox-lock.js
+- `emsWithUsers` — ems-user-service.js
+- `ensurePlatformUser` — auth.js, sa/platform-users.js
+- `evtBulkSelect` — attendance.js
+- `evtCancelEdit` — attendance.js
+- `evtMarkAll` — attendance.js
+- `examBuildScheduleRows` — exams.js
+- `examDownloadCSV` — exams.js
+- `examExportMarksGrid` — exams.js
+- `examExportResults` — exams.js
+- `examExportSchedule` — exams.js
+- `examFormatCurScope` — exams.js
+- `examGetCurScopeForBook` — exams.js
+- `examImportMarksCSV` — exams.js
+- `examResolveCurTerm` — exams.js
+- `examResultSearch` — exams.js
+- `examUpdateTplScopePreview` — exams.js
+- `executeCustomAction` — core.js, sys-button-builder.js
+- `exmApplyMarksLockUi` — exams.js
+- `exmBuildStudentCardHtml` — exams.js
+- `exmCanEditBookColumn` — exams.js
+- `exmEnsureLazyPickers` — exams.js
+- `exmGetCurrentTeacherName` — exams.js
+- `exmIsAdminOrOwner` — exams.js
+- `exmIsExamLocked` — exams.js
+- `exmIsTeacherOnly` — exams.js
+- `exmPrintStudentCard` — exams.js
+- `exmToggleExamLock` — exams.js
+- `exmUpdateLockUi` — exams.js
+- `finApplyReportPeriod` — finance.js
+- `finBuildFeeIndexes` — finance.js
+- `finBuildPaidByStudentIndex` — finance.js
+- `finCategoryNetAmount` — finance.js
+- `finCollectionEffectiveAmount` — finance.js, ledger.js
+- `finCollectorName` — finance.js
+- `finComputeArrearsLegacyOnm` — finance.js
+- `finComputeStudent` — ems-smart-slip.js, finance.js
+- `finDeleteBill` — finance.js
+- `finDownloadCSV` — finance.js, ledger.js
+- `finDownloadPDF` — announcements.js, finance.js, ledger.js
+- `finDuesGoPage` — finance.js
+- `finDuesSearch` — finance.js
+- `finExportBillsCSV` — finance.js
+- `finExportDues` — finance.js
+- `finExportPDF` — finance.js, parent-portal.js
+- `finExportReport` — finance.js
+- `finFilterStudents` — finance.js
+- `finGenerateMonthlyBills` — finance.js
+- `finGenerateMultiMonthBills` — finance.js
+- `finGetBills` — finance.js
+- `finGetMonthlyCharge` — finance.js
+- `finImportCollectionsCSV` — finance.js
+- `finIsCollectionActive` — finance.js
+- `finIsDateClosed` — finance.js
+- `finIsManualFeeLedgerEntry` — finance.js, ledger.js
+- `finManualFeeLedgerBlockToast` — finance.js
+- `finPrintFilteredChallanSlips` — finance.js
+- `finRenderBillsList` — finance.js
+- `finRenderDuesList` — finance.js
+- `finRenderDuesListCore` — finance.js
+- `finRenderDuesPager` — finance.js
+- `finRenderStudentLedger` — finance.js
+- `finRepDateRange` — finance.js
+- `finRequireDateOpen` — finance.js
+- `finSetupDiscount` — finance.js
+- `finSetupGross` — finance.js
+- `finSetupNetPayable` — finance.js
+- `finShowReceipt` — finance.js
+- `finVoidCollection` — finance.js
+- `firebase` — ems-firebase-init.js, ems-registration-audit.js, tests/helpers/auth-mock.js, tests/unit/ems-online-mode.test.js
+- `generateAttReport` — attendance.js
+- `generateAutoID` — admission.js
+- `generateAutoIDAsync` — admission.js
+- `generateID` — core.js
+- `generateMaster360Report` — dashboard.js, tests/unit/ems-dashboard-360-p5.test.js
+- `getAdmissionTenantId` — tests/e2e/ems-reg-incremental-mirror.spec.js, tests/e2e/ems-reg-page-live.spec.js
+- `getData` — core.js
+- `getDbOrNull` — access-keys.js, admin-panel.js, admission.js, attendance-helper.js, attendance.js
+- `getFilteredUsers` — attendance.js
+- `hasConfiguredModulePolicy` — auth.js
+- `initAdminPanel` — admin-panel.js, auth.js
+- `initGuestDemo` — auth.js, guest-demo.js
+- `initParentPortal` — auth.js, parent-portal.js
+- `initSaAdvisorUi` — sa/sa-advisor-ui.js, superadmin.js
+- `initSuperAdminPanel` — auth.js, superadmin.js, tests/e2e/superadmin-smoke.spec.js, tests/helpers/wait-for-boot.js
+- `initializeRegistrationModule` — admission.js
+- `isEditingRejected` — ems-registration-drafts.js
+- `isMadrasaAdmin` — announcements.js, auth.js, complaints.js, curriculum.js, exams.js
+- `isModuleTabAllowed` — auth.js, ems-mobile-shell.js, portal-access.js
+- `isSuperAdmin` — announcements.js, auth.js, complaints.js, curriculum.js, exams.js
+- `isSuperAdminUser` — auth.js, tests/helpers/auth-mock.js
+- `iwBack` — ems-import-wizard.js
+- `iwNext` — ems-import-wizard.js
+- `iwOnFile` — ems-import-wizard.js
+- `iwPickModule` — ems-import-wizard.js
+- `ldgActorName` — ledger.js
+- `ldgAddEmployeeDue` — ledger.js
+- `ldgAddFund` — ledger.js
+- `ldgAddLiability` — ledger.js
+- `ldgApplyEntryPeriod` — ledger.js
+- `ldgApplyPayrollDueDeductions` — ledger.js
+- `ldgApplyReportPeriod` — ledger.js
+- `ldgApprovalLevel` — ledger.js
+- `ldgApprovalsGoPage` — ledger.js
+- `ldgApproveEntry` — ledger.js
+- `ldgArchiveMonth` — ledger.js
+- `ldgAuditLog` — ledger.js
+- `ldgAuditSnapshot` — ledger.js
+- `ldgBuildPayslipBody` — ledger.js
+- `ldgCanApproveEntry` — ledger.js
+- `ldgCanUseFirestorePagination` — ledger.js
+- `ldgCancelBudgetEdit` — ledger.js
+- `ldgCancelPayrollOnLedgerReject` — ledger.js
+- `ldgComputeDueDeduction` — ledger.js
+- `ldgComputeFundBalances` — ledger.js
+- `ldgDeactivateFund` — ledger.js
+- `ldgDeleteBudget` — ledger.js
+- `ldgDeleteEmployeeDue` — ledger.js
+- `ldgDeleteEntry` — ledger.js
+- `ldgDeleteLiability` — ledger.js
+- `ldgDeleteSpecialPayment` — ledger.js
+- `ldgDownloadCSV` — ledger.js
+- `ldgDueTypeLabel` — ledger.js
+- `ldgEnsureStaffDropdowns` — ledger.js
+- `ldgExportAnnualReviewExcel` — ledger.js
+- `ldgExportArchiveSummary` — ledger.js
+- `ldgExportAuditCSV` — ledger.js
+- `ldgExportEntriesCSV` — ledger.js
+- `ldgExportEntriesExcel` — ledger.js
+- `ldgExportExcel` — ledger.js
+- `ldgExportFundPerfExcel` — ledger.js
+- `ldgExportPDF` — ledger.js
+- `ldgExportPayrollAnnualCSV` — ledger.js
+- `ldgExportPayrollAnnualExcel` — ledger.js
+- `ldgExportReportCSV` — ledger.js
+- `ldgExportReportExcel` — ledger.js
+- `ldgFetchFirestoreEntryPage` — ledger.js
+- `ldgFilterEmpAttendance` — tests/unit/payroll-phase-c.test.js
+- `ldgFinalizePayrollLedgerApproval` — ledger.js
+- `ldgFindPayrollHistoryById` — ledger.js
+- `ldgFormatAuditDiff` — ledger.js
+- `ldgFundName` — ledger.js
+- `ldgGetActiveFeeCollectionsInPeriod` — ledger.js
+- `ldgGetApprovalStageLabel` — ledger.js
+- `ldgGetApprovedEntriesInRange` — ledger.js
+- `ldgGetArchiveData` — ledger.js
+- `ldgGetEmployeeDues` — ledger.js
+- `ldgGetEntryApprovalLevel` — ledger.js
+- `ldgGetFilteredEntries` — ledger.js
+- `ldgGetFunds` — ledger.js
+- `ldgGetLiabilities` — ledger.js
+- `ldgGetPayrollHistory` — ledger.js
+- `ldgGetSalaryProfile` — dashboard.js, ledger.js
+- `ldgGetSettings` — ledger.js
+- `ldgGetSpecialPayments` — ledger.js
+- `ldgGetStaffDueBalance` — dashboard.js, ledger.js
+- `ldgGetStaffOpenDues` — ledger.js
+- `ldgGetStorage` — ledger.js
+- `ldgGetTenantLedgerRef` — ledger.js
+- `ldgHasActiveEntryFilters` — ledger.js
+- `ldgHasApprovePermission` — ledger.js
+- `ldgImportEntriesCSV` — ledger.js
+- `ldgImportWizardLoadFile` — ledger.js
+- `ldgImportWizardRun` — ledger.js
+- `ldgImportWizardShowMapping` — ledger.js
+- `ldgIsApproved` — ledger.js
+- `ldgIsApprovedEntry` — ledger.js
+- `ldgLeaveQuotaPenaltyDays` — tests/unit/payroll-phase-c.test.js
+- `ldgLoadSalaryProfile` — ledger.js
+- `ldgMarkLiabilityPaid` — ledger.js
+- `ldgNeedsApproval` — ledger.js
+- `ldgOpenEditBudget` — ledger.js
+- `ldgOpenEditEntry` — ledger.js
+- `ldgOpenImportWizard` — ledger.js
+- `ldgPaintEntryRows` — ledger.js
+- `ldgPayrollMonthAlreadyPaid` — ledger.js
+- `ldgPayrollRecordActive` — ledger.js
+- `ldgPopulateFundSelects` — ledger.js
+- `ldgPrintPayslip` — ledger.js
+- `ldgReceiveDuePayment` — ledger.js
+- `ldgRejectEntry` — ledger.js
+- `ldgRenameFund` — ledger.js
+- `ldgRenderAnnualReview` — ledger.js
+- `ldgRenderApprovals` — ledger.js
+- `ldgRenderApprovalsPager` — ledger.js
+- `ldgRenderArchivePanel` — ledger.js
+- `ldgRenderAuditLog` — ledger.js
+- `ldgRenderBudget` — ledger.js
+- `ldgRenderDashboard` — ledger.js
+- `ldgRenderDashboardCore` — ledger.js
+- `ldgRenderEmployeeDues` — ledger.js
+- `ldgRenderEntryList` — ledger.js
+- `ldgRenderEntryListLocal` — ledger.js
+- `ldgRenderFeeBridgeCard` — ledger.js
+- `ldgRenderFundPerformance` — ledger.js
+- `ldgRenderFundsTable` — ledger.js
+- `ldgRenderLiabilities` — ledger.js
+- `ldgRenderPayrollAnnualSummary` — ledger.js
+- `ldgRenderPayrollHistory` — ledger.js
+- `ldgRenderSpecialPayments` — ledger.js
+- `ldgRequireApproveModeration` — ledger.js
+- `ldgRequireEdit` — ledger.js
+- `ldgRestoreArchiveMonth` — ledger.js
+- `ldgSaveEditedEntry` — ledger.js
+- `ldgSavePayrollHistory` — ledger.js
+- `ldgSaveSalaryProfile` — ledger.js
+- `ldgSaveSettings` — ledger.js
+- `ldgSaveSpecialPayment` — ledger.js
+- `ldgSpecialTypeLabel` — ledger.js
+- `ldgSumMonth` — ledger.js
+- `ldgUploadAttachments` — ledger.js
+- `ldgViewArchivedEntries` — ledger.js
+- `ldgViewAuditDetail` — ledger.js
+- `ldgViewEntryDetail` — ledger.js
+- `loadAnnCategories` — announcements.js
+- `loadClassesList` — admission.js
+- `loadComplaintsDataFromRegistration` — complaints.js
+- `loadPeriodTeachers` — attendance.js
+- `loadPlatformUser` — auth.js, sa/platform-users.js
+- `loadSaAdmins` — sa/sa-admins.js
+- `loadSaAdvisorPanel` — sa/sa-advisor-ui.js, superadmin.js
+- `loadSaAuditLog` — sa/sa-audit.js
+- `loadSaBilling` — sa/sa-billing.js
+- `loadSaDashboard` — sa/sa-dashboard.js, superadmin.js
+- `loadSaNotifications` — sa/sa-notifications.js, superadmin.js
+- `loadSaPlatformUsers` — sa/sa-rbac.js, sa/sa-users.js, superadmin.js
+- `loadSaRbacPanel` — sa/sa-rbac.js, superadmin.js
+- `loadSaSecurityCenter` — sa/sa-security.js
+- `loadSaSystemSettings` — superadmin.js
+- `loadSuperAdminData` — auth.js, sa/sa-tenants.js, superadmin.js
+- `loadTemplateForClass` — exams.js
+- `localStorage` — tests/unit/ems-online-mode.test.js
+- `lockTerms` — admission.js
+- `logSaAudit` — sa/sa-core.js, sa/sa-rbac.js, sa/sa-users.js, superadmin.js
+- `loginWithEmail` — auth.js
+- `loginWithGoogle` — auth.js, ems-cloud-pull.js, ems-global-sync.js
+- `logoutUser` — auth.js, ems-mobile-shell.js, ems-session-registry.js, identity-gate.js, security-layer.js
+- `masterClearColumn` — attendance.js
+- `masterToggle` — attendance.js
+- `matchMedia` — ems-mobile-shell.js
+- `maybePersistModuleAccessRepair` — auth.js
+- `navigateToModule` — auth.js, ems-mobile-shell.js, portal-access.js, security-mfa.js
+- `normalizeAnnouncementAudience` — tests/unit/announcements-phase-a.test.js, tests/unit/announcements-phase-b.test.js
+- `normalizeMadrasaAccessData` — auth.js, ems-offline-session-cache.js
+- `open360ReportForUser` — dashboard.js
+- `openCardDesigner` — ems-idcard.js
+- `openComplaintDetail` — complaints.js
+- `openCustomStatusModal` — attendance.js
+- `openIDCardModal` — ems-idcard.js
+- `openImportWizard` — ems-import-wizard.js
+- `openLetterModal` — admission.js
+- `openModal` — admin-panel.js, attendance.js, complaints.js, core.js, parent-portal.js
+- `p6AdmissionRush` — bench/p6-soak-harness.js
+- `p6CountSearchIndexRows` — bench/p6-soak-harness.js
+- `p6FollowerCompleteIndex` — bench/p6-soak-harness.js
+- `p6MeasureBroadSearch` — bench/p6-soak-harness.js
+- `p6PrepareDataset` — bench/p6-soak-harness.js
+- `p6ProbeLockApis` — bench/p6-soak-harness.js
+- `p6ProbeStorageQuota` — bench/p6-soak-harness.js
+- `p6ReadIndexMeta` — bench/p6-soak-harness.js
+- `p6Ready` — bench/p6-soak-harness.js, tests/e2e/ems-p6-preprod.spec.js, tests/e2e/ems-p6-soak.spec.js
+- `p6RunFailoverAfterCrashSim` — bench/p6-soak-harness.js
+- `p6RunFailoverAfterLeaderKill` — bench/p6-soak-harness.js
+- `p6RunIndexPump` — bench/p6-soak-harness.js
+- `p6RunPartialIndexPump` — bench/p6-soak-harness.js
+- `p6SetIndexLeaseMs` — bench/p6-soak-harness.js
+- `p6WaitIndexComplete` — bench/p6-soak-harness.js
+- `parentCanView` — parent-portal.js, parent-shared.js, security-layer.js
+- `parentGetChild` — parent-shared.js
+- `parentGetMessages` — parent-portal.js, parent-shared.js
+- `parentSubmitMessage` — parent-shared.js
+- `payAllPayroll` — ledger.js
+- `paySalaryInstant` — ledger.js
+- `persistRepoBlobSync` — tests/e2e/legacy-migration-smoke.spec.js
+- `ppOpenView` — parent-portal.js
+- `ppPrintExamResult` — parent-portal.js
+- `ppPrintFeeReceipt` — parent-portal.js
+- `ppReloadCurrentView` — parent-portal.js
+- `ppSendMessage` — parent-portal.js
+- `ppSubmitAnnouncementVote` — parent-portal.js
+- `previewAnnouncement` — announcements.js
+- `printDiv` — announcements.js, attendance.js, complaints.js, ems-smart-slip.js, ems-utils.js
+- `printElement` — admission.js
+- `processRegistration` — admission.js
+- `promoApply` — exams.js
+- `promoRenderTable` — exams.js
+- `promoSelectAll` — exams.js
+- `promoSelectPassing` — exams.js
+- `promoToggle` — exams.js
+- `promoUpdateCount` — exams.js
+- `prompt` — finance.js
+- `refreshAnnData` — announcements.js, auth.js
+- `refreshExamData` — auth.js, exams.js
+- `refreshFinanceData` — auth.js, finance.js
+- `refreshLedgerData` — auth.js, ledger.js
+- `refreshSuperAdminStatus` — auth.js
+- `refreshSysSettings` — auth.js, sys-settings.js
+- `regDashNavigate` — reg-dashboard.js
+- `regInfiniteLoadMoreLocal` — admission.js
+- `regListApplyPager` — admission.js, registration-ui.js
+- `regListBuildDesktopRecoveryButtons` — admission.js, registration-ui.js
+- `regListBuildPagerHtml` — admission.js
+- `regListGoPage` — admission.js
+- `regListIsDesktopUi` — admission.js
+- `regListSearch` — admission.js
+- `regRepoDisasterRecoverySync` — admission.js, ems-diagnostics-ui.js
+- `regRepoLoadFromDisk` — admission.js
+- `regRepoLoadMore` — admission.js
+- `regRepoLoadMoreRejected` — admission.js
+- `regRepoRebuildCache` — admission.js
+- `removeEventParticipant` — attendance.js
+- `renderAnnouncementsTable` — announcements.js
+- `renderAttDashboard` — att-dashboard.js, attendance.js
+- `renderComplaintsDashboard` — complaints.js
+- `renderComplaintsTable` — complaints.js
+- `renderCustomButtons` — core.js, sys-button-builder.js, sys-settings.js
+- `renderCustomButtonsTable` — sys-button-builder.js
+- `renderDictionaryTable` — core.js, sys-terminology.js
+- `renderExamAnalysis` — exams.js
+- `renderFeeCategories` — finance.js
+- `renderFinanceDashboard` — finance.js
+- `renderRegDashboard` — admission.js, reg-dashboard.js
+- `renderRegMobileCardHtml` — admission.js
+- `renderRegRejectedMobileCardHtml` — admission.js
+- `renderRegTable` — admission.js, ems-cloud-pull.js, ems-global-sync.js, ems-online-mode.js, ems-registration-bootstrap.js
+- `renderRegTableImmediate` — admission.js
+- `renderRegTableLegacy` — admission.js, tests/unit/ems-reg-repo-page-wiring.test.js
+- `renderRegTableViaRepo` — admission.js, tests/e2e/ems-reg-incremental-mirror.spec.js, tests/e2e/ems-reg-page-live.spec.js
+- `renderRejectedTable` — admission.js, ems-registration-mobile.js
+- `renderSavedEvents` — attendance.js
+- `renderTemplateTable` — exams.js
+- `renderTimetable` — att-dashboard.js, attendance.js
+- `requestAnimationFrame` — admission.js, att-dashboard.js, attendance.js, auth.js, dashboard.js
+- `requestIdleCallback` — ems-module-perf.js, ems-search-index-bg.js
+- `resetComplaintForm` — complaints.js
+- `resetPassword` — auth.js
+- `resetRegForm` — admission.js
+- `restoreFromCloud` — cloud/backup-service.js
+- `restoreMadrasaAccess` — sa/sa-tenants.js
+- `restoreRecycle` — attendance.js
+- `resumeIdbScaleBenchAfterReload` — bench/idb-scale-bench.js
+- `runIdbScaleBench` — bench/idb-scale-bench.js, tests/e2e/ems-idb-scale-bench.spec.js
+- `runIndexBuildProfile` — bench/index-build-profile.js, tests/e2e/ems-index-build-profile.spec.js
+- `saAddPlan` — sa/sa-billing.js
+- `saAdvisorAsk` — sa/sa-advisor-ui.js
+- `saApi` — sa/sa-api.js
+- `saApprovePayment` — sa/sa-billing.js
+- `saBulkAction` — sa/sa-tenants.js
+- `saCancelReasonModal` — superadmin.js
+- `saClearLoginAttempts` — sa/sa-security.js
+- `saDefaultModules` — sa/sa-tenants.js
+- `saExportAuditCSV` — sa/sa-audit.js
+- `saExportTenantsCSV` — sa/sa-tenants.js
+- `saFetchTenantPage` — sa/sa-tenants.js, superadmin.js
+- `saFilterAuditLog` — sa/sa-audit.js
+- `saForceLogoutUser` — sa/sa-security.js
+- `saForcePasswordReset` — sa/sa-security.js
+- `saFormatDate` — sa/sa-admins.js, sa/sa-audit.js, sa/sa-security.js, sa/sa-tenants.js
+- `saGoPage` — superadmin.js
+- `saInitNavigation` — sa/sa-nav.js, superadmin.js, tests/e2e/superadmin-smoke.spec.js, tests/helpers/wait-for-boot.js
+- `saInitiateStripeCheckout` — sa/sa-billing.js
+- `saInviteAdmin` — sa/sa-admins.js
+- `saLookupUserSecurity` — sa/sa-security.js
+- `saMergeTenant` — sa/sa-billing.js
+- `saNavForPanel` — sa/sa-nav.js
+- `saOnPanelShow` — superadmin.js
+- `saOpenTenantModal` — sa/sa-tenants.js
+- `saOpenUserRolesModal` — sa/sa-rbac.js
+- `saPlatformBackup` — superadmin.js
+- `saPublishDemoDataset` — sa/sa-dashboard.js
+- `saRefreshAllPanels` — superadmin.js
+- `saRefreshPlatformHealth` — sa/sa-dashboard.js
+- `saRefreshPlatformStats` — sa/sa-billing.js, sa/sa-dashboard.js
+- `saRefreshTenantMetrics` — sa/sa-tenants.js
+- `saRejectPayment` — sa/sa-billing.js
+- `saReloadAuditOnce` — sa/sa-audit.js
+- `saRemoveAdmin` — sa/sa-admins.js
+- `saRenderPagination` — sa/sa-tenants.js, superadmin.js
+- `saRenderTenantTable` — sa/sa-tenants.js
+- `saRunBootDiagnostics` — superadmin.js
+- `saSaveBillingRow` — sa/sa-billing.js
+- `saSaveSystemSettings` — superadmin.js
+- `saSaveTenantModal` — sa/sa-tenants.js
+- `saSaveUserRoles` — sa/sa-rbac.js
+- `saSendBroadcast` — sa/sa-notifications.js
+- `saSetAccountLock` — sa/sa-security.js
+- `saSetPlatformUserStatus` — sa/sa-users.js
+- `saSetTenantPageSize` — sa/sa-tenants.js, superadmin.js
+- `saShowBootBanner` — superadmin.js
+- `saShowReasonModal` — superadmin.js
+- `saShowRecordPaymentModal` — sa/sa-billing.js
+- `saStopAuditRealtime` — superadmin.js
+- `saSubmitManualPayment` — sa/sa-billing.js
+- `saSwitchCategory` — sa/sa-nav.js, tests/e2e/superadmin-smoke.spec.js
+- `saSwitchPanel` — sa/sa-core.js, sa/sa-nav.js, superadmin.js
+- `saSyncModalEdit` — sa/sa-tenants.js
+- `saSyncNavToPanel` — sa/sa-nav.js, superadmin.js
+- `saToast` — sa/sa-advisor-ui.js
+- `saUnlockAllTenantModules` — sa/sa-tenants.js
+- `saUpdateBulkBar` — sa/sa-tenants.js, superadmin.js
+- `saveData` — core.js
+- `saveMadrasaProfile` — auth.js
+- `saveSchTemplate` — exams.js
+- `saveSuperAdminSettings` — sa/sa-tenants.js
+- `saveSymbols` — attendance.js
+- `sendSMS` — finance.js
+- `sendWhatsApp` — finance.js
+- `setCellStatus` — attendance.js
+- `setInterval` — ems-offline-write.js
+- `setupPrintHeader` — attendance.js
+- `shareAnnouncementWA` — announcements.js
+- `showToast` — admin-panel.js, admission.js, announcements.js, att-dashboard.js, attendance.js
+- `showTopAlert` — auth.js, cloud/direct-firestore.js, cloud/sync-engine.js, complaints.js, ems-data-corruption.js
+- `signupWithEmail` — auth.js
+- `staffCanAccess` — admin-panel.js
+- `staffCanDo` — admin-panel.js, ems-registration-permissions.js
+- `switchAnnTab` — announcements.js
+- `switchAttTab` — att-dashboard.js, attendance.js, core.js
+- `switchCmpTab` — complaints.js
+- `switchCurTab` — curriculum.js
+- `switchExamTab` — core.js, exams.js
+- `switchFinTab` — core.js, finance.js
+- `switchGoogleAccount` — auth.js
+- `switchLedgerTab` — ledger.js
+- `switchRegTab` — admission.js, attendance.js, core.js, ems-registration-drafts.js, registration-ui.js
+- `switchSaTab` — superadmin.js
+- `switchSysTab` — sys-settings.js
+- `switchTarTab` — training.js
+- `syncComplaintsFromCloud` — auth.js, complaints.js
+- `syncComplaintsToCloud` — complaints.js
+- `sysActorName` — curriculum.js, department-migration.js, sys-settings.js, training.js
+- `sysApplyPreset` — sys-settings.js
+- `sysApplyTheme` — core.js, ems-post-auth-loader.js, sys-settings.js
+- `sysApplyThemeFromFormLive` — sys-settings.js
+- `sysAuditLog` — cloud/ems-ai-settings.js, sys-button-builder.js, sys-field-builder.js, sys-layout-builder.js, sys-permissions.js
+- `sysBackupConfig` — sys-permissions.js, sys-settings.js
+- `sysBtnApplyActionToggles` — auth.js, sys-button-builder.js, sys-settings.js
+- `sysBtnDelete` — sys-button-builder.js
+- `sysBtnEdit` — sys-button-builder.js
+- `sysBtnExecuteAction` — sys-button-builder.js
+- `sysBtnHighlightIcon` — sys-button-builder.js
+- `sysBtnInitUI` — sys-button-builder.js, sys-settings.js
+- `sysBtnRenderAll` — core.js, sys-button-builder.js, sys-settings.js
+- `sysBtnRenderIconGrid` — sys-button-builder.js
+- `sysBtnRenderTable` — sys-button-builder.js
+- `sysBtnRenderToggleGrid` — sys-button-builder.js
+- `sysBtnResetForm` — sys-button-builder.js
+- `sysBtnSave` — sys-button-builder.js
+- `sysBtnSaveToggles` — sys-button-builder.js
+- `sysBtnTagCoreActions` — auth.js, sys-button-builder.js
+- `sysBtnToggleEnabled` — sys-button-builder.js
+- `sysBtnUpdatePreview` — sys-button-builder.js
+- `sysCan` — sys-permissions.js, sys-settings.js
+- `sysCollectThemeFromForm` — sys-settings.js
+- `sysDashRenderCustomWidgets` — auth.js, dashboard.js, sys-report-builder.js, sys-settings.js
+- `sysDeleteProfile` — sys-settings.js
+- `sysExportProfile` — sys-settings.js
+- `sysFieldApply` — ems-registration-drafts.js
+- `sysFieldApplyPreset` — sys-field-builder.js
+- `sysFieldApplyVisibility` — admission.js, sys-field-builder.js
+- `sysFieldClear` — admission.js, sys-field-builder.js
+- `sysFieldCollect` — admission.js, ems-registration-drafts.js, sys-field-builder.js
+- `sysFieldDelete` — sys-field-builder.js
+- `sysFieldEdit` — sys-field-builder.js
+- `sysFieldInitUI` — sys-field-builder.js, sys-settings.js
+- `sysFieldPopulate` — admission.js, sys-field-builder.js
+- `sysFieldRenderAll` — admission.js, sys-field-builder.js, sys-settings.js
+- `sysFieldRenderBuiltinToggles` — sys-field-builder.js
+- `sysFieldRenderTable` — sys-field-builder.js
+- `sysFieldResetForm` — sys-field-builder.js
+- `sysFieldSave` — sys-field-builder.js
+- `sysFieldSaveBuiltinVis` — sys-field-builder.js
+- `sysFieldToggle` — sys-field-builder.js
+- `sysFieldUpdatePreview` — sys-field-builder.js
+- `sysFieldUpdateSectionOptions` — sys-field-builder.js
+- `sysFormTplCollect` — sys-report-builder.js
+- `sysFormTplDelete` — sys-report-builder.js
+- `sysFormTplEdit` — sys-report-builder.js
+- `sysFormTplGetAll` — sys-report-builder.js
+- `sysFormTplPrint` — sys-report-builder.js
+- `sysFormTplRenderTable` — sys-report-builder.js, sys-settings.js
+- `sysFormTplSave` — sys-report-builder.js
+- `sysFormTplUpdateFields` — sys-report-builder.js
+- `sysGetConfig` — core.js, ems-post-auth-loader.js, sys-settings.js
+- `sysImportProfile` — sys-settings.js
+- `sysLayoutApplyAll` — sys-layout-builder.js, sys-settings.js
+- `sysLayoutApplyDashboard` — sys-layout-builder.js
+- `sysLayoutApplyModule` — auth.js, sys-layout-builder.js
+- `sysLayoutApplyRibbon` — sys-layout-builder.js
+- `sysLayoutApplyTables` — admission.js, ems-virtual-table.js, sys-layout-builder.js
+- `sysLayoutGetConfig` — ems-mobile-shell.js, sys-layout-builder.js
+- `sysLayoutGetModuleMenus` — ems-mobile-shell.js, sys-layout-builder.js
+- `sysLayoutGetRibbonLabels` — ems-mobile-shell.js, sys-layout-builder.js
+- `sysLayoutInitUI` — sys-layout-builder.js, sys-settings.js
+- `sysLayoutRenderModuleList` — sys-layout-builder.js
+- `sysLayoutRenderTableEditor` — sys-layout-builder.js
+- `sysLayoutReset` — sys-layout-builder.js
+- `sysLayoutSaveConfig` — sys-layout-builder.js
+- `sysLayoutSaveFromUI` — sys-layout-builder.js
+- `sysLoadThemeForm` — core.js, sys-settings.js
+- `sysPermApplyUI` — sys-permissions.js, sys-settings.js
+- `sysPermCollectFromUI` — sys-permissions.js
+- `sysPermGetConfig` — ems-registration-audit.js, sys-permissions.js
+- `sysPermInitUI` — sys-permissions.js, sys-settings.js
+- `sysPermResetDefaults` — sys-permissions.js
+- `sysPermSaveConfig` — sys-permissions.js
+- `sysPermSaveFromUI` — sys-permissions.js
+- `sysRenderAudit` — sys-settings.js
+- `sysRenderPresetCards` — sys-settings.js
+- `sysRenderProfiles` — core.js, sys-settings.js
+- `sysReportApplyPreset` — sys-report-builder.js
+- `sysReportCollectForm` — sys-report-builder.js
+- `sysReportDelete` — sys-report-builder.js
+- `sysReportEdit` — sys-report-builder.js
+- `sysReportExportCsv` — sys-report-builder.js
+- `sysReportGetAll` — sys-report-builder.js
+- `sysReportInitUI` — sys-report-builder.js, sys-settings.js
+- `sysReportPreview` — sys-report-builder.js
+- `sysReportPrint` — sys-report-builder.js
+- `sysReportQuery` — sys-report-builder.js
+- `sysReportRenderTable` — sys-report-builder.js, sys-settings.js
+- `sysReportResetForm` — sys-report-builder.js
+- `sysReportRun` — sys-report-builder.js
+- `sysReportSave` — sys-report-builder.js
+- `sysReportUpdateColumnGrid` — sys-report-builder.js
+- `sysRequirePerm` — sys-button-builder.js, sys-field-builder.js, sys-layout-builder.js, sys-permissions.js, sys-report-builder.js
+- `sysRestoreBackup` — sys-settings.js
+- `sysRestoreFromAudit` — sys-settings.js
+- `sysRestoreProfile` — sys-settings.js
+- `sysRulesAddFromUI` — sys-permissions.js
+- `sysRulesGetAll` — sys-permissions.js
+- `sysRulesRenderList` — sys-permissions.js
+- `sysRulesRunOnAudit` — sys-permissions.js, sys-settings.js
+- `sysRulesSaveAll` — sys-permissions.js
+- `sysSaveAndApplyTheme` — core.js, sys-settings.js
+- `sysSaveConfig` — sys-settings.js
+- `sysSaveProfile` — sys-settings.js
+- `sysTermApplyPrecise` — core.js, sys-terminology.js
+- `sysTermDeleteWord` — core.js
+- `sysTermInitTree` — sys-settings.js, sys-terminology.js
+- `sysTermRenderTree` — sys-terminology.js
+- `sysTermResetSelected` — sys-terminology.js
+- `sysTermRetagFromDict` — core.js, sys-terminology.js
+- `sysTermSaveSelected` — sys-terminology.js
+- `sysTermSelectNode` — sys-terminology.js
+- `sysTermToggleFolder` — sys-terminology.js
+- `sysViewAuditDetail` — sys-settings.js
+- `sysWidgetApplyPreset` — sys-report-builder.js
+- `sysWidgetCollectForm` — sys-report-builder.js
+- `sysWidgetCompute` — sys-report-builder.js
+- `sysWidgetDelete` — sys-report-builder.js
+- `sysWidgetEdit` — sys-report-builder.js
+- `sysWidgetGetAll` — sys-report-builder.js
+- `sysWidgetRenderTable` — sys-report-builder.js
+- `sysWidgetSave` — sys-report-builder.js
+- `tarApplyFilters` — training.js
+- `tarAudit` — training.js
+- `tarComputePersonScore` — dashboard-pro.js, dashboard.js, training.js
+- `tarDeleteRecord` — training.js
+- `tarDrillPerson` — dashboard-pro.js, training.js
+- `tarExportReport` — training.js
+- `tarFormatScore` — dashboard-pro.js, dashboard.js, training.js
+- `tarGetAlerts` — dashboard-pro.js, dashboard.js, training.js
+- `tarGetAwards` — training.js
+- `tarGetDashboardStats` — dashboard-pro.js, training.js
+- `tarGetDiscipline` — training.js
+- `tarGetEthics` — training.js
+- `tarGetPrayer` — training.js
+- `tarGetReform` — training.js
+- `tarGetSettings` — dashboard.js, training.js
+- `tarGetWarnings` — training.js
+- `tarInitModule` — auth.js, training.js
+- `tarIsTeacherOnly` — training.js
+- `tarOpenFromDashboard` — training.js
+- `tarRenderAnalytics` — training.js
+- `tarRenderAwards` — training.js
+- `tarRenderBulkPrayerGrid` — training.js
+- `tarRenderDashboard` — training.js
+- `tarRenderDiscipline` — training.js
+- `tarRenderEthics` — training.js
+- `tarRenderPrayer` — training.js
+- `tarRenderReform` — training.js
+- `tarRenderReports` — training.js
+- `tarRenderSettings` — training.js
+- `tarRenderStaffRecords` — training.js
+- `tarRenderStudentRecords` — training.js
+- `tarRenderWarnings` — training.js
+- `tarSaveAward` — training.js
+- `tarSaveBulkPrayer` — training.js
+- `tarSaveDiscipline` — training.js
+- `tarSaveEthics` — training.js
+- `tarSavePrayer` — training.js
+- `tarSaveReform` — training.js
+- `tarSaveSettings` — training.js
+- `tarSaveSettingsForm` — training.js
+- `tarSaveWarning` — training.js
+- `tarSetPrayerEntryMode` — training.js
+- `tarSyncFromRegistration` — training.js
+- `tarUpdateDashboardCard` — dashboard-pro.js, dashboard.js, training.js
+- `tarUpdateWeightSumHint` — training.js
+- `toggleAttViewMode` — attendance.js
+- `toggleDailyLock` — attendance.js
+- `toggleDashFilterView` — dashboard.js
+- `toggleDateInput` — sa/sa-tenants.js, superadmin.js
+- `ttClearFilters` — att-dashboard.js, attendance.js
+- `ttSetView` — att-dashboard.js, attendance.js
+- `ttTakeAttendance` — attendance.js
+- `updateMasterDashboard` — admission.js, announcements.js, auth.js, complaints.js, core.js
+- `updateMasterDashboardNow` — dashboard.js
+- `viewRejectedInfo` — admission.js
+- `waitForDb` — auth.js
