@@ -127,7 +127,172 @@ function attEnsureAttStateShape() {
   if (!window.currentAttState.remarks) window.currentAttState.remarks = {};
   if (!window.currentAttState.late) window.currentAttState.late = {};
   if (!window.currentAttState.dailyLocks) window.currentAttState.dailyLocks = {};
+  if (!window.currentAttState.periodRecords) window.currentAttState.periodRecords = {};
 }
+
+function attGetAttSymbols() {
+  try {
+    return JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+  } catch (e) {
+    return { P: 'P', A: 'A', L: 'L' };
+  }
+}
+
+function attReadTimetablePeriods() {
+  try {
+    var raw = localStorage.getItem('ems_att_periods');
+    var list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Timetable periods for one teacher on a JS weekday (0=Sun … 6=Sat). */
+function attTeacherPeriodsForWeekday(teacherUid, teacherName, weekday) {
+  var uid = String(teacherUid || '').trim();
+  var name = String(teacherName || '').trim();
+  var wd = Number(weekday);
+  return attReadTimetablePeriods().filter(function (p) {
+    if (!p || !p.id) return false;
+    var days = Array.isArray(p.days) ? p.days : [];
+    var onDay = days.some(function (d) { return Number(d) === wd; });
+    if (!onDay) return false;
+    var pid = String(p.teacherId || '').trim();
+    var pname = String(p.teacherName || '').trim();
+    if (uid && pid && pid === uid) return true;
+    if (name && pname && pname === name) return true;
+    return false;
+  }).slice().sort(function (a, b) {
+    return String(a.start || '').localeCompare(String(b.start || ''));
+  });
+}
+
+function attIsTeacherRegister() {
+  return !!(window.currentAttState && window.currentAttState.type === 'teachers');
+}
+
+function attPrunePeriodRecordsMap(map) {
+  if (!map || typeof map !== 'object') return {};
+  var out = {};
+  Object.keys(map).forEach(function (uid) {
+    var days = map[uid];
+    if (!days || typeof days !== 'object') return;
+    var dayOut = {};
+    Object.keys(days).forEach(function (day) {
+      var periods = days[day];
+      if (!periods || typeof periods !== 'object') return;
+      var clean = {};
+      Object.keys(periods).forEach(function (pid) {
+        var v = periods[pid];
+        if (v == null || v === '') return;
+        clean[pid] = v;
+      });
+      if (Object.keys(clean).length) dayOut[day] = clean;
+    });
+    if (Object.keys(dayOut).length) out[uid] = dayOut;
+  });
+  return out;
+}
+
+/** Roll period-hour marks into legacy single day status (old system stays in sync). */
+function attRollupPeriodDayStatus(periodMap, symbols) {
+  symbols = symbols || attGetAttSymbols();
+  var vals = [];
+  Object.keys(periodMap || {}).forEach(function (pid) {
+    var v = periodMap[pid];
+    if (v != null && v !== '') vals.push(v);
+  });
+  if (!vals.length) return '';
+  if (vals.some(function (v) { return v === symbols.A; })) return symbols.A;
+  if (vals.every(function (v) { return v === symbols.L; })) return symbols.L;
+  if (vals.some(function (v) { return v === symbols.P; })) return symbols.P;
+  if (vals.some(function (v) { return v === symbols.L; })) return symbols.L;
+  return '';
+}
+
+function attEnsurePeriodDayMap(uid, day) {
+  attEnsureAttStateShape();
+  if (!window.currentAttState.periodRecords[uid]) window.currentAttState.periodRecords[uid] = {};
+  if (!window.currentAttState.periodRecords[uid][day]) window.currentAttState.periodRecords[uid][day] = {};
+  return window.currentAttState.periodRecords[uid][day];
+}
+
+function attSyncLegacyFromPeriods(uid, day) {
+  var symbols = attGetAttSymbols();
+  var pmap = (window.currentAttState.periodRecords[uid] && window.currentAttState.periodRecords[uid][day]) || {};
+  var rolled = attRollupPeriodDayStatus(pmap, symbols);
+  if (!window.currentAttState.records[uid]) window.currentAttState.records[uid] = {};
+  if (rolled) window.currentAttState.records[uid][day] = rolled;
+  else delete window.currentAttState.records[uid][day];
+}
+
+function attApplyStatusToAllTeacherPeriods(uid, day, status, periods) {
+  var pmap = attEnsurePeriodDayMap(uid, day);
+  if (!periods || !periods.length) return;
+  periods.forEach(function (p) {
+    if (status) pmap[p.id] = status;
+    else delete pmap[p.id];
+  });
+  if (!Object.keys(pmap).length) {
+    delete window.currentAttState.periodRecords[uid][day];
+  }
+  attSyncLegacyFromPeriods(uid, day);
+}
+
+function attClearTeacherPeriodsForDay(uid, day) {
+  if (!window.currentAttState || !window.currentAttState.periodRecords) return;
+  if (window.currentAttState.periodRecords[uid]) {
+    delete window.currentAttState.periodRecords[uid][day];
+  }
+}
+
+function attEscJsStr(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function attBuildTeacherPeriodBoxesHtml(uid, teacherName, day, weekday, symbols, locked) {
+  var periods = attTeacherPeriodsForWeekday(uid, teacherName, weekday);
+  if (!periods.length) return '';
+  var pmap = (window.currentAttState.periodRecords[uid] && window.currentAttState.periodRecords[uid][day]) || {};
+  var boxes = periods.map(function (p, idx) {
+    var st = pmap[p.id] || '';
+    var cls = 'att-period-box';
+    if (st === symbols.P) cls += ' is-p';
+    else if (st === symbols.A) cls += ' is-a';
+    else if (st === symbols.L) cls += ' is-l';
+    var title = (p.name || ('گھنٹہ ' + (idx + 1)))
+      + (p.className && p.className !== '-' ? ' · ' + p.className : '')
+      + (p.bookName ? ' · ' + p.bookName : '')
+      + (p.start ? ' · ' + p.start : '');
+    var label = st || String(idx + 1);
+    if (locked) {
+      return '<span class="' + cls + '" title="' + attEscJsStr(title) + '">' + label + '</span>';
+    }
+    return '<button type="button" class="' + cls + '" title="' + attEscJsStr(title)
+      + '" data-pid="' + attEscJsStr(p.id) + '"'
+      + ' onclick="event.stopPropagation(); cycleTeacherPeriodStatus(\'' + attEscJsStr(uid) + '\', ' + day
+      + ', \'' + attEscJsStr(p.id) + '\')">' + label + '</button>';
+  }).join('');
+  var bulk = '';
+  if (!locked) {
+    bulk = '<div class="att-period-bulk">'
+      + '<button type="button" class="att-period-bulk-btn is-p" title="تمام گھنٹے حاضر"'
+      + ' onclick="event.stopPropagation(); setTeacherAllPeriods(\'' + attEscJsStr(uid) + '\', ' + day + ', \'' + symbols.P + '\')">سب ' + symbols.P + '</button>'
+      + '<button type="button" class="att-period-bulk-btn is-a" title="تمام گھنٹے غیر حاضر"'
+      + ' onclick="event.stopPropagation(); setTeacherAllPeriods(\'' + attEscJsStr(uid) + '\', ' + day + ', \'' + symbols.A + '\')">سب ' + symbols.A + '</button>'
+      + '<button type="button" class="att-period-bulk-btn is-l" title="تمام گھنٹے رخصت"'
+      + ' onclick="event.stopPropagation(); setTeacherAllPeriods(\'' + attEscJsStr(uid) + '\', ' + day + ', \'' + symbols.L + '\')">سب ' + symbols.L + '</button>'
+      + '<button type="button" class="att-period-bulk-btn is-clear" title="تمام گھنٹے صاف"'
+      + ' onclick="event.stopPropagation(); setTeacherAllPeriods(\'' + attEscJsStr(uid) + '\', ' + day + ', \'\')">×</button>'
+      + '</div>';
+  }
+  return '<div class="att-period-wrap" onclick="event.stopPropagation()">'
+    + '<div class="att-period-boxes">' + boxes + '</div>'
+    + bulk
+    + '</div>';
+}
+
 
 function attMarkLocalWrite() {
   var now = Date.now();
@@ -136,12 +301,13 @@ function attMarkLocalWrite() {
   return now;
 }
 
-/** Ignore stale Firestore snapshots right after a local lock/unlock save. */
+/** Ignore stale Firestore snapshots that would revive cleared cells. */
 function attShouldApplyRemoteSnapshot(remoteData) {
   var localTs = (window.currentAttState && window.currentAttState._localWriteTs) || _attLastLocalWriteTs || 0;
   if (!localTs) return true;
   if (Date.now() - localTs < ATT_REMOTE_GRACE_MS) return false;
-  return attRecordTimestamp(remoteData) >= localTs;
+  // Strictly newer only — equal timestamps must not revive locally cleared marks.
+  return attRecordTimestamp(remoteData) > localTs;
 }
 
 function attGetRegisterUsers() {
@@ -382,17 +548,30 @@ var _attCloudPersistTimer = null;
 var _attCloudPersistPending = null;
 var _attSaveToastShown = false;
 
-function attScheduleCloudPersist(cloudDocId, localKey, dataToSave, showToast, cloudPatch) {
+function attScheduleCloudPersist(cloudDocId, localKey, dataToSave, showToast, cloudPatch, opts) {
+  opts = opts || {};
+  var mergedPatch = cloudPatch;
+  if (_attCloudPersistPending && _attCloudPersistPending.cloudDocId === cloudDocId) {
+    mergedPatch = attMergeCloudPatches(_attCloudPersistPending.cloudPatch, cloudPatch);
+  }
   _attCloudPersistPending = {
     cloudDocId: cloudDocId,
     localKey: localKey,
     dataToSave: dataToSave,
-    cloudPatch: cloudPatch,
-    showToast: !!showToast
+    cloudPatch: mergedPatch,
+    showToast: !!showToast || !!(
+      _attCloudPersistPending && _attCloudPersistPending.showToast
+    )
   };
   if (_attCloudPersistTimer) clearTimeout(_attCloudPersistTimer);
+  var delay = opts.immediate ? 0 : 450;
   _attCloudPersistTimer = setTimeout(function () {
     _attCloudPersistTimer = null;
+    attRunPendingCloudPersist();
+  }, delay);
+}
+
+function attRunPendingCloudPersist() {
     var p = _attCloudPersistPending;
     _attCloudPersistPending = null;
     if (!p || typeof window.emsOfflinePersistAttendance !== 'function') {
@@ -405,6 +584,7 @@ function attScheduleCloudPersist(cloudDocId, localKey, dataToSave, showToast, cl
     if (p.cloudPatch && Object.keys(p.cloudPatch).length) {
       persistOpts.patch = p.cloudPatch;
     }
+    // Clears must hit Firebase like P/A/L — prefer patch with deletes / map replace.
     window.emsOfflinePersistAttendance(p.cloudDocId, p.dataToSave, persistOpts).then(function (res) {
       if (!p.showToast || typeof window.showToast !== 'function') return;
       if (res && res.ok) {
@@ -420,19 +600,44 @@ function attScheduleCloudPersist(cloudDocId, localKey, dataToSave, showToast, cl
     }).catch(function (err) {
       console.error('[EMS] save attendance', err);
     });
-  }, 450);
 }
 
 function attReadSheetLocal(localKey) {
   try {
-    var raw = typeof window.emsSafeLocalGet === 'function'
-      ? window.emsSafeLocalGet(localKey)
-      : localStorage.getItem(localKey);
+    var raw = null;
+    // att_rec_* lives in durable/IDB memory — not localStorage (emsSafeLocalGet misses clears).
+    if (typeof window.emsIsLargeBlobKey === 'function' && window.emsIsLargeBlobKey(localKey)
+        && typeof window.emsDurableReadRaw === 'function') {
+      raw = window.emsDurableReadRaw(localKey);
+    } else if (typeof window.emsCacheGetRaw === 'function') {
+      raw = window.emsCacheGetRaw(localKey);
+    } else if (typeof window.emsSafeLocalGet === 'function') {
+      raw = window.emsSafeLocalGet(localKey);
+    } else {
+      raw = localStorage.getItem(localKey);
+    }
     if (!raw) return null;
     return typeof raw === 'string' ? JSON.parse(raw) : raw;
   } catch (eRead) {
     return null;
   }
+}
+
+/** Merge field-path patches so rapid edits (incl. clears) are not dropped by debounce. */
+function attMergeCloudPatches(prevPatch, nextPatch) {
+  if (!prevPatch || !Object.keys(prevPatch).length) return nextPatch || {};
+  if (!nextPatch || !Object.keys(nextPatch).length) return prevPatch || {};
+  return Object.assign({}, prevPatch, nextPatch);
+}
+
+/** Remove a day key whether stored as number or string (JSON/Firestore). */
+function attDeleteDayEntry(map, uid, day) {
+  if (!map || !map[uid]) return;
+  var row = map[uid];
+  delete row[day];
+  delete row[String(day)];
+  var n = Number(day);
+  if (!isNaN(n)) delete row[n];
 }
 
 /** Build Firestore field-path patch (records.uid.day) vs previous persisted sheet. */
@@ -451,7 +656,7 @@ function attComputeSheetCloudPatch(prevData, newData) {
       }
     });
     Object.keys(prevDay).forEach(function (day) {
-      if (!(day in newDay) && prevDay[day]) {
+      if (!(day in newDay) && prevDay[day] != null && prevDay[day] !== '') {
         patch['records.' + uid + '.' + day] = null;
       }
     });
@@ -459,10 +664,40 @@ function attComputeSheetCloudPatch(prevData, newData) {
   Object.keys(prevRec).forEach(function (uid) {
     if (!newRec[uid]) {
       Object.keys(prevRec[uid] || {}).forEach(function (day) {
-        patch['records.' + uid + '.' + day] = null;
+        if (prevRec[uid][day] != null && prevRec[uid][day] !== '') {
+          patch['records.' + uid + '.' + day] = null;
+        }
       });
     }
   });
+
+  function diffDayMapField(field) {
+    var prevMap = prevData[field] || {};
+    var newMap = newData[field] || {};
+    var touched = false;
+    Object.keys(prevMap).forEach(function (uid) {
+      var prevDay = prevMap[uid] || {};
+      var newDay = newMap[uid] || {};
+      Object.keys(prevDay).forEach(function (day) {
+        if (!(day in newDay)) {
+          patch[field + '.' + uid + '.' + day] = null;
+          touched = true;
+        }
+      });
+    });
+    Object.keys(newMap).forEach(function (uid) {
+      var prevDay = prevMap[uid] || {};
+      var newDay = newMap[uid] || {};
+      if (JSON.stringify(prevDay) !== JSON.stringify(newDay)) touched = true;
+    });
+    if (touched && JSON.stringify(prevMap) !== JSON.stringify(newMap)) {
+      // Full map replace — Firestore deep-merge cannot revive cleared days.
+      patch[field] = newMap;
+    }
+  }
+  diffDayMapField('remarks');
+  diffDayMapField('late');
+  diffDayMapField('periodRecords');
 
   function diffNested(field) {
     var a = prevData[field];
@@ -471,8 +706,6 @@ function attComputeSheetCloudPatch(prevData, newData) {
     patch[field] = b || {};
   }
   diffNested('dailyLocks');
-  diffNested('remarks');
-  diffNested('late');
 
   if (prevData.locked !== newData.locked) patch.locked = !!newData.locked;
   if (prevData.timestamp !== newData.timestamp) patch.timestamp = newData.timestamp;
@@ -480,6 +713,32 @@ function attComputeSheetCloudPatch(prevData, newData) {
     patch.departmentId = newData.departmentId;
   }
   return patch;
+}
+
+/** Ensure × / clear always reaches Firebase (same channel as P/A/L). */
+function attAppendForcedClearPatch(patch, clearCells, newData) {
+  patch = patch || {};
+  clearCells = clearCells || [];
+  if (!clearCells.length && !attPatchHasClears(patch)) return patch;
+
+  // Firestore forbids updating parent + nested path together — replace whole maps.
+  ['records', 'remarks', 'late', 'periodRecords'].forEach(function (field) {
+    Object.keys(patch).forEach(function (k) {
+      if (k === field || k.indexOf(field + '.') === 0) delete patch[k];
+    });
+    patch[field] = (newData && newData[field]) || {};
+  });
+  if (newData && newData.timestamp != null) patch.timestamp = newData.timestamp;
+  if (newData && newData.dailyLocks) patch.dailyLocks = newData.dailyLocks;
+  if (typeof newData.locked === 'boolean') patch.locked = newData.locked;
+  return patch;
+}
+
+function attPatchHasClears(patch) {
+  if (!patch) return false;
+  return Object.keys(patch).some(function (k) {
+    return patch[k] === null && /^(records|remarks|late|periodRecords)\./.test(k);
+  });
 }
 
 function attPauseDictObserver() {
@@ -491,12 +750,7 @@ function attResumeDictObserver() {
 }
 
 function attRefreshCellUI(uid, day) {
-  var symbols = {};
-  try {
-    symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
-  } catch (e) {
-    symbols = { P: 'P', A: 'A', L: 'L' };
-  }
+  var symbols = attGetAttSymbols();
   var st = (window.currentAttState && window.currentAttState.records[uid])
     ? (window.currentAttState.records[uid][day] || '') : '';
   var printEl = document.getElementById('print-txt-' + uid + '-' + day);
@@ -526,6 +780,23 @@ function attRefreshCellUI(uid, day) {
     var late = (window.currentAttState.late[uid] && window.currentAttState.late[uid][day]) || '';
     btn.classList.toggle('active', !!(remark || late));
   });
+  // Refresh teacher period mini-boxes in place (keep legacy controls).
+  if (attIsTeacherRegister()) {
+    var locked = !!(window.currentAttState.locked || window.currentAttState.dailyLocks[day]);
+    var name = attFindTeacherNameByUid(uid);
+    var parts = String(window.currentAttState.month || '').split('-');
+    var full = parts[0] + '-' + parts[1] + '-' + (day < 10 ? '0' + day : day);
+    var wd = new Date(full).getDay();
+    var wrap = cell.querySelector('.att-period-wrap');
+    var html = attBuildTeacherPeriodBoxesHtml(uid, name, day, wd, symbols, locked);
+    if (wrap) {
+      if (html) wrap.outerHTML = html;
+      else wrap.remove();
+    } else if (html) {
+      var host = printEl.parentElement;
+      if (host) host.insertAdjacentHTML('beforeend', html);
+    }
+  }
 }
 
 var attConfigUnsub = null;
@@ -582,7 +853,7 @@ window.emsStopAttendanceSync = stopAttendanceFirestoreSync;
 
 // --- Phase B0: local-first attendance sheet helpers ---
 function attEmptyAttendanceRecord() {
-  return { locked: false, records: {}, dailyLocks: {}, remarks: {}, late: {} };
+  return { locked: false, records: {}, dailyLocks: {}, remarks: {}, late: {}, periodRecords: {} };
 }
 
 function attRecordTimestamp(rec) {
@@ -597,27 +868,45 @@ function attRecordTimestamp(rec) {
   return 0;
 }
 
+/** Drop null/empty day marks so cleared cells never reappear as status. */
+function attPruneDayStatusMap(map) {
+  if (!map || typeof map !== 'object') return {};
+  var out = {};
+  Object.keys(map).forEach(function (uid) {
+    var days = map[uid];
+    if (!days || typeof days !== 'object') return;
+    var clean = {};
+    Object.keys(days).forEach(function (day) {
+      var v = days[day];
+      if (v == null || v === '') return;
+      clean[day] = v;
+    });
+    if (Object.keys(clean).length) out[uid] = clean;
+  });
+  return out;
+}
+
 function attNormalizeRecord(data) {
   var base = attEmptyAttendanceRecord();
   if (!data || typeof data !== 'object') return base;
   return {
     locked: !!data.locked,
-    records: data.records || {},
+    records: attPruneDayStatusMap(data.records || {}),
     dailyLocks: data.dailyLocks || {},
     remarks: data.remarks || {},
     late: data.late || {},
+    periodRecords: attPrunePeriodRecordsMap(data.periodRecords || {}),
     timestamp: attRecordTimestamp(data)
   };
 }
 
 function attReconcileAttendanceRecord(localRec, remoteRec) {
-  if (!localRec || !localRec.records || !Object.keys(localRec.records).length) {
-    return attNormalizeRecord(remoteRec || localRec);
-  }
   if (!remoteRec) return attNormalizeRecord(localRec);
-  if (attRecordTimestamp(remoteRec) > attRecordTimestamp(localRec)) {
-    return attNormalizeRecord(remoteRec);
-  }
+  if (!localRec) return attNormalizeRecord(remoteRec);
+  var localTs = attRecordTimestamp(localRec);
+  var remoteTs = attRecordTimestamp(remoteRec);
+  if (remoteTs > localTs) return attNormalizeRecord(remoteRec);
+  // Local SSOT wins on equal/older remote — prevents × clears from bouncing back.
   return attNormalizeRecord(localRec);
 }
 
@@ -625,6 +914,8 @@ function attApplyAttendanceState(month, type, classId, period, keys, savedRecord
   var cloudDocId = typeof keys === 'string' ? keys : keys.cloudDocId;
   var localKey = typeof keys === 'string' ? keys : keys.localKey;
   var rec = attNormalizeRecord(savedRecord);
+  var writeTs = rec.timestamp || 0;
+  if (writeTs) _attLastLocalWriteTs = writeTs;
   window.currentAttState = {
     month: month,
     type: type,
@@ -637,8 +928,10 @@ function attApplyAttendanceState(month, type, classId, period, keys, savedRecord
     dailyLocks: rec.dailyLocks || {},
     remarks: rec.remarks || {},
     late: rec.late || {},
+    periodRecords: rec.periodRecords || {},
     targetUsers: targets || [],
-    registerRowPage: 1
+    registerRowPage: 1,
+    _localWriteTs: writeTs
   };
 }
 
@@ -765,7 +1058,10 @@ function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period) {
 
   cachePromise.then(function (localData) {
     var localRec = localData ? attNormalizeRecord(localData) : null;
-    if (localRec && (Object.keys(localRec.records || {}).length || localRec.locked)) {
+    // Any local sheet (incl. fully cleared) is SSOT — do not treat empty records as "missing".
+    if (localRec && (localRec.timestamp || localRec.locked
+        || Object.keys(localRec.records || {}).length
+        || Object.keys(localRec.dailyLocks || {}).length)) {
       openRegister(localRec, 'حاضری کا رجسٹر لوکل کیش سے لوڈ ہو گیا', 'success');
       attBackgroundReconcile(uid, keys, localRec);
       return;
@@ -884,6 +1180,7 @@ function setupLiveAttendanceListener(uid, cloudDocId) {
             window.currentAttState.dailyLocks = normalized.dailyLocks;
             window.currentAttState.remarks = normalized.remarks;
             window.currentAttState.late = normalized.late;
+            window.currentAttState.periodRecords = normalized.periodRecords || {};
             
             if(document.getElementById('smart-register-tbody') && document.getElementById('smart-register-tbody').innerHTML !== '') {
                 attQuickRefreshRegister();
@@ -1640,7 +1937,7 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
 
   if (!window.currentAttState.dailyLocks) window.currentAttState.dailyLocks = {};
 
-  let headHTML = `<tr><th style="position:sticky; right:0; top:0; background:var(--secondary); z-index:15; min-width:200px; border-right: 1px solid #cbd5e1;">طالب علم کا نام / ID</th>`;
+  let headHTML = `<tr><th style="position:sticky; right:0; top:0; background:var(--secondary); z-index:15; min-width:200px; border-right: 1px solid #cbd5e1;">${attIsTeacherRegister() ? 'استاد کا نام / ID' : 'طالب علم کا نام / ID'}</th>`;
 
   for (let d = startDay; d <= endDay; d++) {
     let currentFullDate = `${year}-${month}-${d < 10 ? '0' + d : d}`;
@@ -1688,10 +1985,16 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
 
   const frag = document.createDocumentFragment();
   if (!pageUsers.length) {
-    tbody.innerHTML = '<tr><td colspan="' + Math.max(2, endDay - startDay + 2) + '" style="text-align:center;color:#94a3b8;padding:24px;">کوئی طالب علم نہیں — درجہ اور مہینہ منتخب کر کے «رجسٹر لوڈ کریں» دبائیں</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="' + Math.max(2, endDay - startDay + 2) + '" style="text-align:center;color:#94a3b8;padding:24px;">'
+      + (attIsTeacherRegister()
+        ? 'کوئی استاد نہیں — مہینہ منتخب کر کے «رجسٹر لوڈ کریں» دبائیں'
+        : 'کوئی طالب علم نہیں — درجہ اور مہینہ منتخب کر کے «رجسٹر لوڈ کریں» دبائیں')
+      + '</td></tr>';
     var emptyPager = document.getElementById('att-register-row-pager');
     if (emptyPager) emptyPager.style.display = 'none';
   } else {
+
+  var teacherMode = attIsTeacherRegister();
 
   pageUsers.forEach((u) => {
       var uid = attGetUserId(u);
@@ -1702,6 +2005,8 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
         window.currentAttState.remarks[uid] = {};
       if (!window.currentAttState.late[uid])
         window.currentAttState.late[uid] = {};
+      if (!window.currentAttState.periodRecords[uid])
+        window.currentAttState.periodRecords[uid] = {};
 
       let uRecords = window.currentAttState.records[uid];
       let uRemarks = window.currentAttState.remarks[uid];
@@ -1723,31 +2028,37 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
         let lateTime = uLate[d] || '';
         let isGlobalLocked = window.currentAttState.locked;
         let isDailyLocked = window.currentAttState.dailyLocks[d] || false;
+        let cellLocked = !!(isGlobalLocked || isDailyLocked);
 
         let cellClass =
           isFriday || isHoliday
             ? 'col-holiday'
-            : isGlobalLocked || isDailyLocked
+            : cellLocked
             ? 'col-locked'
             : 'att-cell-clickable';
         if (remark !== '') cellClass += ' has-hidden-remark';
-        if (!isFriday && !isHoliday && !isGlobalLocked && !isDailyLocked) {
+        if (!isFriday && !isHoliday && !cellLocked) {
           if (!st) cellClass += ' att-cell-empty';
           else if (st === symbols.P) cellClass += ' att-cell-p';
           else if (st === symbols.A) cellClass += ' att-cell-a';
           else if (st === symbols.L) cellClass += ' att-cell-l';
         }
+        if (teacherMode) cellClass += ' att-cell-teacher';
 
         if (isFriday || isHoliday) {
           rowHtml += `<td class="${cellClass}">تعطیل</td>`;
         } else {
+          var periodHtml = teacherMode
+            ? attBuildTeacherPeriodBoxesHtml(uid, u.name || '', d, dateObj.getDay(), symbols, cellLocked)
+            : '';
           rowHtml += `
                 <td class="${cellClass}" onclick="cycleCellStatus(event, '${uid}', ${d})" title="کلک: حاضر → غائب → رخصت → صاف">
                     <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:40px;">
                         <span class="print-status-text" id="print-txt-${uid}-${d}">${st}</span>
                         ${lateTime ? `<div style="font-size:10px; color:#e67e22; font-weight:bold; background:#fffaf0; padding:2px 5px; border-radius:4px; margin-top:2px;">${lateTime}</div>` : ''}
+                        ${periodHtml}
                     </div>
-                    <div class="att-cell-controls">
+                    <div class="att-cell-controls" title="یومیہ حاضری (پرانا سسٹم)">
                         <button class="att-cell-btn status-p ${st === symbols.P ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.P}')">${symbols.P}</button>
                         <button class="att-cell-btn status-a ${st === symbols.A ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.A}')">${symbols.A}</button>
                         <button class="att-cell-btn status-l ${st === symbols.L ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.L}')">${symbols.L}</button>
@@ -1771,7 +2082,7 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
     tbody.parentElement.parentElement.insertBefore(pagerHost, tbody.parentElement);
   }
   if (totalUsers > rowPageSize) {
-    pagerHost.innerHTML = `<span>صفحہ ${safeRowPage} / ${totalRowPages} · ${totalUsers} طلباء</span>
+    pagerHost.innerHTML = `<span>صفحہ ${safeRowPage} / ${totalRowPages} · ${totalUsers} ${teacherMode ? 'اساتذہ' : 'طلباء'}</span>
       <button type="button" class="btn btn-sm btn-secondary" style="margin:0 6px;" ${safeRowPage <= 1 ? 'disabled' : ''} onclick="window.attRegisterRowPage(${safeRowPage - 1})">پچھلا</button>
       <button type="button" class="btn btn-sm btn-secondary" ${safeRowPage >= totalRowPages ? 'disabled' : ''} onclick="window.attRegisterRowPage(${safeRowPage + 1})">اگلا</button>`;
     pagerHost.style.display = 'block';
@@ -1831,15 +2142,91 @@ function attForEachFilteredRosterUser(fn) {
   return count;
 }
 
+function attFindTeacherNameByUid(uid) {
+  var users = attGetRegisterUsers() || [];
+  for (var i = 0; i < users.length; i++) {
+    if (attGetUserId(users[i]) === String(uid)) return users[i].name || '';
+  }
+  return '';
+}
+
+function attTeacherPeriodsForDayNum(uid, day) {
+  if (!window.currentAttState || !window.currentAttState.month) return [];
+  var parts = String(window.currentAttState.month).split('-');
+  var year = parts[0];
+  var month = parts[1];
+  var full = year + '-' + month + '-' + (day < 10 ? '0' + day : day);
+  var wd = new Date(full).getDay();
+  return attTeacherPeriodsForWeekday(uid, attFindTeacherNameByUid(uid), wd);
+}
+
+window.setTeacherAllPeriods = function (uid, day, status) {
+  if (!window.currentAttState) return;
+  if (attGuardSelfAttendanceEdit(uid)) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day])
+    return window.showToast('یہ انٹری لاک ہے!', 'warning');
+  var periods = attTeacherPeriodsForDayNum(uid, day);
+  if (!periods.length) {
+    if (status) window.setCellStatus(uid, day, status);
+    else window.clearCellStatus(uid, day);
+    return;
+  }
+  attApplyStatusToAllTeacherPeriods(uid, day, status || '', periods);
+  attRefreshCellUI(uid, day);
+  saveAttState(false, { quiet: true });
+};
+
+window.cycleTeacherPeriodStatus = function (uid, day, periodId) {
+  if (!window.currentAttState) return;
+  if (attGuardSelfAttendanceEdit(uid)) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day])
+    return window.showToast('یہ انٹری لاک ہے!', 'warning');
+  var symbols = attGetAttSymbols();
+  var pmap = attEnsurePeriodDayMap(uid, day);
+  var st = pmap[periodId] || '';
+  if (!st) pmap[periodId] = symbols.P;
+  else if (st === symbols.P) pmap[periodId] = symbols.A;
+  else if (st === symbols.A) pmap[periodId] = symbols.L;
+  else if (st === symbols.L) delete pmap[periodId];
+  else pmap[periodId] = symbols.P;
+  if (!Object.keys(pmap).length && window.currentAttState.periodRecords[uid]) {
+    delete window.currentAttState.periodRecords[uid][day];
+  }
+  attSyncLegacyFromPeriods(uid, day);
+  attRefreshCellUI(uid, day);
+  saveAttState(false, { quiet: true });
+};
+
+window.setTeacherPeriodStatus = function (uid, day, periodId, status) {
+  if (!window.currentAttState) return;
+  if (attGuardSelfAttendanceEdit(uid)) return;
+  if (window.currentAttState.locked || window.currentAttState.dailyLocks[day])
+    return window.showToast('یہ انٹری لاک ہے!', 'warning');
+  var pmap = attEnsurePeriodDayMap(uid, day);
+  if (status) pmap[periodId] = status;
+  else delete pmap[periodId];
+  if (!Object.keys(pmap).length && window.currentAttState.periodRecords[uid]) {
+    delete window.currentAttState.periodRecords[uid][day];
+  }
+  attSyncLegacyFromPeriods(uid, day);
+  attRefreshCellUI(uid, day);
+  saveAttState(false, { quiet: true });
+};
+
 window.masterToggle = function (status, day) {
   if (!window.currentAttState) return;
   if (window.currentAttState.locked || window.currentAttState.dailyLocks[day]) return;
   var selfSkipped = false;
+  var teacherMode = attIsTeacherRegister();
   attForEachFilteredRosterUser(function (uid) {
     if (attIsSelfAttendanceEditBlocked(uid)) { selfSkipped = true; return; }
     window.currentAttState.records[uid][day] = status;
     window.currentAttState.remarks[uid][day] = '';
     window.currentAttState.late[uid][day] = '';
+    if (teacherMode) {
+      var periods = attTeacherPeriodsForDayNum(uid, day);
+      if (periods.length) attApplyStatusToAllTeacherPeriods(uid, day, status, periods);
+    }
   });
   if (selfSkipped && typeof window.showToast === 'function') {
     window.showToast('آپ اپنی حاضری خود درج نہیں کر سکتے۔', 'error');
@@ -1853,16 +2240,19 @@ window.masterClearColumn = function (day) {
   if (window.currentAttState.locked || window.currentAttState.dailyLocks[day]) return;
   if (!confirm('اس دن کی تمام حاضری خالی کریں؟')) return;
   var selfSkipped = false;
+  var cleared = [];
   attForEachFilteredRosterUser(function (uid) {
     if (attIsSelfAttendanceEditBlocked(uid)) { selfSkipped = true; return; }
-    if (window.currentAttState.records[uid]) delete window.currentAttState.records[uid][day];
-    if (window.currentAttState.remarks[uid]) delete window.currentAttState.remarks[uid][day];
-    if (window.currentAttState.late[uid]) delete window.currentAttState.late[uid][day];
+    attDeleteDayEntry(window.currentAttState.records, uid, day);
+    attDeleteDayEntry(window.currentAttState.remarks, uid, day);
+    attDeleteDayEntry(window.currentAttState.late, uid, day);
+    attClearTeacherPeriodsForDay(uid, day);
+    cleared.push({ uid: uid, day: day });
   });
   if (selfSkipped && typeof window.showToast === 'function') {
     window.showToast('آپ اپنی حاضری خود درج نہیں کر سکتے۔', 'error');
   }
-  saveAttState(false);
+  saveAttState(false, { clearCells: cleared, immediateCloud: true });
   buildSmartRegister(window.currentAttState.month, getFilteredUsers());
 };
 
@@ -1873,6 +2263,10 @@ window.setCellStatus = function (uid, day, status) {
     return window.showToast('یہ انٹری لاک ہے!', 'warning');
   if (!window.currentAttState.records[uid]) window.currentAttState.records[uid] = {};
   window.currentAttState.records[uid][day] = status;
+  if (attIsTeacherRegister()) {
+    var periods = attTeacherPeriodsForDayNum(uid, day);
+    if (periods.length) attApplyStatusToAllTeacherPeriods(uid, day, status, periods);
+  }
   attRefreshCellUI(uid, day);
   saveAttState(false, { quiet: true });
 };
@@ -1882,11 +2276,13 @@ window.clearCellStatus = function (uid, day) {
   if (attGuardSelfAttendanceEdit(uid)) return;
   if (window.currentAttState.locked || window.currentAttState.dailyLocks[day])
     return window.showToast('یہ انٹری لاک ہے!', 'warning');
-  if (window.currentAttState.records[uid]) delete window.currentAttState.records[uid][day];
-  if (window.currentAttState.remarks[uid]) delete window.currentAttState.remarks[uid][day];
-  if (window.currentAttState.late[uid]) delete window.currentAttState.late[uid][day];
+  attDeleteDayEntry(window.currentAttState.records, uid, day);
+  attDeleteDayEntry(window.currentAttState.remarks, uid, day);
+  attDeleteDayEntry(window.currentAttState.late, uid, day);
+  attClearTeacherPeriodsForDay(uid, day);
   attRefreshCellUI(uid, day);
-  saveAttState(false, { quiet: true });
+  // Force Firebase map-replace + immediate flush (same outbox as P/A/L).
+  saveAttState(false, { quiet: true, clearCells: [{ uid: uid, day: day }], immediateCloud: true });
 };
 
 window.cycleCellStatus = function (ev, uid, day) {
@@ -1960,14 +2356,21 @@ function saveAttState(isLocked, opts) {
     window.currentAttState.locked = !!isLocked;
     var now = attMarkLocalWrite();
 
+    // Deep clone so durable/IDB snapshot keeps clears even if UI state mutates later.
     var dataToSave = {
         locked: !!isLocked,
-        records: window.currentAttState.records,
-        dailyLocks: window.currentAttState.dailyLocks,
-        remarks: window.currentAttState.remarks,
-        late: window.currentAttState.late,
+        records: attPruneDayStatusMap(JSON.parse(JSON.stringify(window.currentAttState.records || {}))),
+        dailyLocks: JSON.parse(JSON.stringify(window.currentAttState.dailyLocks || {})),
+        remarks: JSON.parse(JSON.stringify(window.currentAttState.remarks || {})),
+        late: JSON.parse(JSON.stringify(window.currentAttState.late || {})),
+        periodRecords: attPrunePeriodRecordsMap(JSON.parse(JSON.stringify(window.currentAttState.periodRecords || {}))),
         timestamp: now
     };
+    window.currentAttState.records = dataToSave.records;
+    window.currentAttState.dailyLocks = dataToSave.dailyLocks;
+    window.currentAttState.remarks = dataToSave.remarks;
+    window.currentAttState.late = dataToSave.late;
+    window.currentAttState.periodRecords = dataToSave.periodRecords;
     if (typeof window.emsStampDepartment === 'function') {
         window.emsStampDepartment(dataToSave);
     }
@@ -1976,6 +2379,11 @@ function saveAttState(isLocked, opts) {
     var localKey = window.currentAttState.localKey || cloudDocId;
     var prevSheet = attReadSheetLocal(localKey);
     var cloudPatch = attComputeSheetCloudPatch(prevSheet, dataToSave);
+    if (opts.clearCells && opts.clearCells.length) {
+      cloudPatch = attAppendForcedClearPatch(cloudPatch, opts.clearCells, dataToSave);
+    } else if (attPatchHasClears(cloudPatch)) {
+      cloudPatch = attAppendForcedClearPatch(cloudPatch, [], dataToSave);
+    }
     attSaveLastSession(
       window.currentAttState.month,
       window.currentAttState.type,
@@ -1996,7 +2404,14 @@ function saveAttState(isLocked, opts) {
     }
 
     if (typeof window.emsOfflinePersistAttendance === 'function') {
-        attScheduleCloudPersist(cloudDocId, localKey, dataToSave, !opts.quiet, cloudPatch);
+        attScheduleCloudPersist(
+          cloudDocId,
+          localKey,
+          dataToSave,
+          !opts.quiet,
+          cloudPatch,
+          { immediate: !!(opts.immediateCloud || (opts.clearCells && opts.clearCells.length)) }
+        );
     } else if (typeof window.showToast === 'function') {
         window.showToast('خرابی: حاضری سنک outbox تیار نہیں — مقامی محفوظ ہو گیا', 'warning');
     }

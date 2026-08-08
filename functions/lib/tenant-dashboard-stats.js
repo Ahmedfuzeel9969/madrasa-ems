@@ -45,15 +45,46 @@ function defaultFinanceSummary(monthKey) {
 }
 
 function defaultAttendanceSummary(monthKey) {
-    var today = new Date().toISOString().split('T')[0];
+    var today = pakistanDateStr();
     return {
         version: 1,
         monthKey: monthKey,
         dailyPresent: {},
         monthPresentTotal: 0,
         todayPresent: 0,
+        todayAbsent: 0,
+        todayLeave: 0,
         todayDate: today
     };
+}
+
+function pakistanDateStr(d) {
+    d = d || new Date();
+    try {
+        var fmt = new Intl.DateTimeFormat('en-CA', {
+            timeZone: 'Asia/Karachi',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        });
+        var y = '', m = '', day = '';
+        fmt.formatToParts(d).forEach(function (p) {
+            if (p.type === 'year') y = p.value;
+            if (p.type === 'month') m = p.value;
+            if (p.type === 'day') day = p.value;
+        });
+        if (y && m && day) return y + '-' + m + '-' + day;
+    } catch (e) { /* fall through */ }
+    return d.toISOString().split('T')[0];
+}
+
+function attStatusBucket(st) {
+    if (st == null || st === '') return null;
+    var s = String(st).trim().toLowerCase();
+    if (s === 'p' || s === 'present' || st === 'حاضر') return 'present';
+    if (s === 'a' || s === 'absent' || st === 'غیرحاضر' || st === 'غیر حاضر') return 'absent';
+    if (s === 'l' || s === 'leave' || st === 'رخصت') return 'leave';
+    return null;
 }
 
 function defaultStats(dateKey) {
@@ -167,8 +198,14 @@ async function recomputeAttendanceSummaryForMonth(db, tenantId, monthKey) {
         .where(admin.firestore.FieldPath.documentId(), '<=', prefix + '\uf8ff')
         .get();
 
-    var dailySets = {};
-    for (var d = 1; d <= 31; d++) dailySets[d] = new Set();
+    var dailyPresentSets = {};
+    var dailyAbsentSets = {};
+    var dailyLeaveSets = {};
+    for (var d = 1; d <= 31; d++) {
+        dailyPresentSets[d] = new Set();
+        dailyAbsentSets[d] = new Set();
+        dailyLeaveSets[d] = new Set();
+    }
 
     snap.forEach(function (doc) {
         var data = doc.data();
@@ -178,7 +215,10 @@ async function recomputeAttendanceSummaryForMonth(db, tenantId, monthKey) {
             if (!dayRec) return;
             for (var day = 1; day <= 31; day++) {
                 var st = dayRec[day] || dayRec[String(day)];
-                if (st === 'P' || st === 'حاضر') dailySets[day].add(uid);
+                var bucket = attStatusBucket(st);
+                if (bucket === 'present') dailyPresentSets[day].add(uid);
+                else if (bucket === 'absent') dailyAbsentSets[day].add(uid);
+                else if (bucket === 'leave') dailyLeaveSets[day].add(uid);
             }
         });
     });
@@ -186,18 +226,31 @@ async function recomputeAttendanceSummaryForMonth(db, tenantId, monthKey) {
     var dailyPresent = {};
     var monthPresentTotal = 0;
     for (var k = 1; k <= 31; k++) {
-        var n = dailySets[k].size;
+        var n = dailyPresentSets[k].size;
         if (n > 0) {
             dailyPresent[String(k)] = n;
             monthPresentTotal += n;
         }
     }
 
-    var today = new Date().toISOString().split('T')[0];
+    var today = pakistanDateStr();
     var todayDay = parseInt(today.substring(8, 10), 10);
-    var todayPresent = monthKey === today.substring(0, 7)
-        ? (dailyPresent[String(todayDay)] || 0)
-        : 0;
+    var isCurrentMonth = monthKey === today.substring(0, 7);
+    var todayPresent = 0;
+    var todayAbsent = 0;
+    var todayLeave = 0;
+    if (isCurrentMonth) {
+        var presentToday = dailyPresentSets[todayDay] || new Set();
+        var absentToday = dailyAbsentSets[todayDay] || new Set();
+        var leaveToday = dailyLeaveSets[todayDay] || new Set();
+        todayPresent = presentToday.size;
+        absentToday.forEach(function (id) {
+            if (!presentToday.has(id)) todayAbsent++;
+        });
+        leaveToday.forEach(function (id) {
+            if (!presentToday.has(id) && !absentToday.has(id)) todayLeave++;
+        });
+    }
 
     var payload = {
         version: 1,
@@ -205,6 +258,8 @@ async function recomputeAttendanceSummaryForMonth(db, tenantId, monthKey) {
         dailyPresent: dailyPresent,
         monthPresentTotal: monthPresentTotal,
         todayPresent: todayPresent,
+        todayAbsent: todayAbsent,
+        todayLeave: todayLeave,
         todayDate: today,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()
     };

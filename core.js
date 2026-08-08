@@ -273,11 +273,21 @@ window.emsPushModuleCloudDelta = function (key, oldStr, newStr, options) {
 window.emsSaveModuleData = function (key, value, options) {
     options = options || {};
     var str = (typeof value === 'string') ? value : JSON.stringify(value);
-    var oldStr = originalGetItem(key);
+    var oldStr = null;
+    var isBlob = typeof window.emsIsLargeBlobKey === 'function' && window.emsIsLargeBlobKey(key);
 
-    window._emsSuppressSync = true;
-    originalSetItem.call(localStorage, key, str);
-    window._emsSuppressSync = false;
+    if (isBlob && typeof window.emsDurableReadRaw === 'function' && typeof window.emsDurableWriteRaw === 'function') {
+        oldStr = window.emsDurableReadRaw(key);
+        window.emsDurableWriteRaw(key, str);
+    } else {
+        oldStr = originalGetItem(key);
+        window._emsSuppressSync = true;
+        originalSetItem.call(localStorage, key, str);
+        window._emsSuppressSync = false;
+    }
+    if (typeof window.emsCacheInvalidate === 'function') {
+        window.emsCacheInvalidate(key);
+    }
     if (window.EmsCachePolicy && typeof window.EmsCachePolicy.markDirty === 'function') {
         window.EmsCachePolicy.markDirty(key);
     }

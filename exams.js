@@ -1,10 +1,49 @@
     // ================= 9. امتحانات (Exams - Final Pro Plan) =================
 
+  /** Durable-aware read — exam keys live in IDB/memory, not localStorage. */
+  function exmReadRaw(key) {
+    if (!key) return null;
+    if (typeof window.emsCacheGetRaw === 'function') {
+      var cached = window.emsCacheGetRaw(key);
+      if (cached != null && cached !== '') return cached;
+    }
+    if (typeof window.emsDurableReadRaw === 'function'
+        && typeof window.emsIsLargeBlobKey === 'function'
+        && window.emsIsLargeBlobKey(key)) {
+      var durable = window.emsDurableReadRaw(key);
+      if (durable != null && durable !== '') return durable;
+    }
+    if (typeof window.emsSafeLocalGet === 'function') return window.emsSafeLocalGet(key);
+    try { return localStorage.getItem(key); } catch (e) { return null; }
+  }
+
+  function exmReadJson(key, fallback) {
+    try {
+      var raw = exmReadRaw(key);
+      if (raw == null || raw === '') {
+        return fallback !== undefined ? fallback : null;
+      }
+      return JSON.parse(raw);
+    } catch (e) {
+      return fallback !== undefined ? fallback : null;
+    }
+  }
+
   function emsSaveKey(key, val, opts) {
     var options = Object.assign({ mutation: true, autoDelta: true }, opts || {});
+    var str = typeof val === 'string' ? val : JSON.stringify(val);
+    // Keep durable SSOT in sync for blob keys (library/types/templates/marks/locks).
+    if (typeof window.emsDurableWriteRaw === 'function'
+        && typeof window.emsIsLargeBlobKey === 'function'
+        && window.emsIsLargeBlobKey(key)) {
+      window.emsDurableWriteRaw(key, str);
+    }
+    if (typeof window.emsCacheInvalidate === 'function') {
+      window.emsCacheInvalidate(key);
+    }
     var p = window.emsSaveModuleData
-      ? window.emsSaveModuleData(key, val, options)
-      : (localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val)), Promise.resolve());
+      ? window.emsSaveModuleData(key, str, options)
+      : (localStorage.setItem(key, str), Promise.resolve());
     if (typeof window.emsLogAudit === 'function') {
       return Promise.resolve(p).then(function (res) {
         window.emsLogAudit('exams', 'save', key, { storageKey: key });
@@ -61,7 +100,7 @@
 
   function exmReadLocks() {
     try {
-      return JSON.parse(localStorage.getItem(EXM_LOCKS_KEY)) || {};
+      return exmReadJson(EXM_LOCKS_KEY, {});
     } catch (e) {
       return {};
     }
@@ -322,7 +361,7 @@
 
   function renderSettingsData() {
 
-      let examTypes = JSON.parse(localStorage.getItem('ems_exam_types')) || ['ماہانہ امتحان', 'ششماہی امتحان', 'سالانہ امتحان'];
+      let examTypes = exmReadJson('ems_exam_types', ['ماہانہ امتحان', 'ششماہی امتحان', 'سالانہ امتحان']);
 
       emsSaveKey('ems_exam_types', JSON.stringify(examTypes));
 
@@ -350,7 +389,8 @@
 
 
 
-      let libBooks = JSON.parse(localStorage.getItem('ems_library_books')) || [];
+      let libBooks = exmReadJson('ems_library_books', []);
+      if (!Array.isArray(libBooks)) libBooks = [];
 
       const libTbody = document.querySelector('#table-lib-books tbody');
 
@@ -358,10 +398,14 @@
 
           libTbody.innerHTML = '';
 
-          libBooks.forEach(book => {
-
-              libTbody.innerHTML += `<tr><td>${book}</td><td><button class="icon-btn edit" onclick="editLibBook('${book}')"><i class="fas fa-edit"></i></button> <button class="icon-btn delete" onclick="deleteLibBook('${book}')"><i class="fas fa-trash"></i></button></td></tr>`;
-
+          libBooks.forEach(function (book) {
+              var safeAttr = String(book).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+              var safeText = typeof window.emsSanitize === 'function'
+                  ? window.emsSanitize(String(book))
+                  : String(book).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+              libTbody.innerHTML += '<tr><td>' + safeText + '</td><td>' +
+                  '<button class="icon-btn edit" onclick="editLibBook(\'' + safeAttr + '\')"><i class="fas fa-edit"></i></button> ' +
+                  '<button class="icon-btn delete" onclick="deleteLibBook(\'' + safeAttr + '\')"><i class="fas fa-trash"></i></button></td></tr>';
           });
 
       }
@@ -382,33 +426,71 @@
 
       if(!name) return;
 
-      let types = JSON.parse(localStorage.getItem('ems_exam_types')) || [];
+      let types = exmReadJson('ems_exam_types', ['ماہانہ امتحان', 'ششماہی امتحان', 'سالانہ امتحان']);
 
       if(!types.includes(name)) { types.push(name); emsSaveKey('ems_exam_types', JSON.stringify(types)); document.getElementById('set-exam-name').value = ''; refreshExamData(); }
 
   });
 
-  window.deleteExamType = function(name) { if(confirm("حذف کریں؟")) { let types = JSON.parse(localStorage.getItem('ems_exam_types')); emsSaveKey('ems_exam_types', JSON.stringify(types.filter(t => t !== name))); refreshExamData(); } };
+  window.deleteExamType = function(name) { if(confirm("حذف کریں؟")) { let types = exmReadJson('ems_exam_types', []); emsSaveKey('ems_exam_types', JSON.stringify(types.filter(t => t !== name))); refreshExamData(); } };
 
-  window.editExamType = function(oldName) { let newName = prompt("نیا نام لکھیں:", oldName); if(newName && newName.trim() !== '') { let types = JSON.parse(localStorage.getItem('ems_exam_types')); types[types.indexOf(oldName)] = newName.trim(); emsSaveKey('ems_exam_types', JSON.stringify(types)); refreshExamData(); } };
+  window.editExamType = function(oldName) { let newName = prompt("نیا نام لکھیں:", oldName); if(newName && newName.trim() !== '') { let types = exmReadJson('ems_exam_types', []); types[types.indexOf(oldName)] = newName.trim(); emsSaveKey('ems_exam_types', JSON.stringify(types)); refreshExamData(); } };
 
 
 
-  document.getElementById('btn-add-lib-book')?.addEventListener('click', () => {
-
-      let name = document.getElementById('set-lib-book').value.trim();
-
-      if(!name) return;
-
-      let books = JSON.parse(localStorage.getItem('ems_library_books')) || [];
-
-      if(!books.includes(name)) { books.push(name); emsSaveKey('ems_library_books', JSON.stringify(books)); document.getElementById('set-lib-book').value = ''; refreshExamData(); }
-
+  document.getElementById('btn-add-lib-book')?.addEventListener('click', function () {
+      window.exmAddLibraryBook();
+  });
+  document.getElementById('set-lib-book')?.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+          e.preventDefault();
+          window.exmAddLibraryBook();
+      }
   });
 
-  window.deleteLibBook = function(name) { if(confirm("حذف کریں؟")) { let books = JSON.parse(localStorage.getItem('ems_library_books')); emsSaveKey('ems_library_books', JSON.stringify(books.filter(b => b !== name))); refreshExamData(); } };
+  window.exmAddLibraryBook = function (nameOpt) {
+      var input = document.getElementById('set-lib-book');
+      var name = (nameOpt != null ? String(nameOpt) : (input ? input.value : '')).trim();
+      if (!name) {
+          if (typeof window.showToast === 'function') window.showToast('کتاب کا نام لکھیں', 'warning');
+          return false;
+      }
+      var books = exmReadJson('ems_library_books', []);
+      if (!Array.isArray(books)) books = [];
+      if (books.includes(name)) {
+          if (typeof window.showToast === 'function') window.showToast('یہ کتاب پہلے سے موجود ہے', 'warning');
+          return false;
+      }
+      books.push(name);
+      emsSaveKey('ems_library_books', JSON.stringify(books));
+      if (input) input.value = '';
+      if (typeof window.refreshExamData === 'function') window.refreshExamData();
+      if (typeof window.showToast === 'function') window.showToast('کتاب محفوظ ہو گئی', 'success');
+      return true;
+  };
 
-  window.editLibBook = function(oldName) { let newName = prompt("نیا نام لکھیں:", oldName); if(newName && newName.trim() !== '') { let books = JSON.parse(localStorage.getItem('ems_library_books')); books[books.indexOf(oldName)] = newName.trim(); emsSaveKey('ems_library_books', JSON.stringify(books)); refreshExamData(); } };
+  window.deleteLibBook = function (name) {
+      if (!confirm('حذف کریں؟')) return;
+      var books = exmReadJson('ems_library_books', []);
+      if (!Array.isArray(books)) books = [];
+      emsSaveKey('ems_library_books', JSON.stringify(books.filter(function (b) { return b !== name; })));
+      if (typeof window.refreshExamData === 'function') window.refreshExamData();
+      if (typeof window.showToast === 'function') window.showToast('کتاب حذف ہو گئی', 'success');
+  };
+
+  window.editLibBook = function (oldName) {
+      var newName = prompt('نیا نام لکھیں:', oldName);
+      if (!newName || newName.trim() === '') return;
+      newName = newName.trim();
+      var books = exmReadJson('ems_library_books', []);
+      if (!Array.isArray(books)) books = [];
+      var idx = books.indexOf(oldName);
+      if (idx < 0) return;
+      books[idx] = newName;
+      emsSaveKey('ems_library_books', JSON.stringify(books));
+      if (typeof window.refreshExamData === 'function') window.refreshExamData();
+      if (typeof window.showToast === 'function') window.showToast('کتاب اپڈیٹ ہو گئی', 'success');
+  };
 
 
 
@@ -418,7 +500,7 @@
 
       if(!tabsContainer) return;
 
-      const templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      const templates = exmReadJson('ems_exam_templates', []);
 
       tabsContainer.innerHTML = '';
 
@@ -460,7 +542,7 @@
 
 
 
-      let templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      let templates = exmReadJson('ems_exam_templates', []);
 
       let classTpl = templates.find(t => t.class === cls);
 
@@ -492,7 +574,7 @@
 
       if(!tbody) return;
 
-      let templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      let templates = exmReadJson('ems_exam_templates', []);
 
       let classTpl = templates.find(t => t.class === cls);
 
@@ -522,7 +604,7 @@
 
       if(confirm("کیا آپ واقعی شیٹ سے یہ کتاب ہٹانا چاہتے ہیں؟")) {
 
-          let templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+          let templates = exmReadJson('ems_exam_templates', []);
 
           let classTpl = templates.find(t => t.class === cls);
 
@@ -538,7 +620,7 @@
   const SCH_DAYS_URDU = ['اتوار', 'پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ'];
 
   window.examBuildScheduleRows = function (aggregate, cls, examName) {
-      let templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      let templates = exmReadJson('ems_exam_templates', []);
       let rows = [];
       let src = aggregate ? templates : templates.filter(t => t.class === cls);
       examName = examName || (document.getElementById('sch-exam-name') || {}).value || 'سالانہ امتحان';
@@ -568,7 +650,7 @@
       let rows = window.examBuildScheduleRows(aggregate, cls, examName);
       if(rows.length === 0) return showToast("ماسٹر شیٹ میں کوئی کتاب نہیں ملی!", "error");
 
-      let templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      let templates = exmReadJson('ems_exam_templates', []);
       let classTpl = templates.find(t => t.class === cls) || { customHeader: '', fontSize: 16, textAlign: 'right', showBorder: true };
 
       document.getElementById('sch-format-toolbar').style.display = 'flex';
@@ -651,7 +733,7 @@
 
       if(!activeSchClass) return;
 
-      let templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      let templates = exmReadJson('ems_exam_templates', []);
 
       let classTpl = templates.find(t => t.class === activeSchClass);
 
@@ -794,7 +876,7 @@
   window.exmBuildStudentCardHtml = function (res, examName) {
       if (!res) return '<p style="text-align:center;color:red;">نتيجہ دستیاب نہیں</p>';
       examName = examName || res.examName || 'امتحان';
-      var templates = JSON.parse(localStorage.getItem('ems_exam_templates') || '[]');
+      var templates = exmReadJson('ems_exam_templates', []);
       var tplBooks = (templates.find(function (t) { return t.class === res.class; }) || {}).books || [];
       var brandHeader = (typeof window.attBrandHeaderHTML === 'function') ? window.attBrandHeaderHTML() : '';
       var brandFooter = (typeof window.attSignFooterHTML === 'function') ? window.attSignFooterHTML() : '';
@@ -907,7 +989,7 @@
 
 
 
-      let templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      let templates = exmReadJson('ems_exam_templates', []);
 
       let classTpl = templates.find(t => t.class === cls);
 
@@ -965,7 +1047,7 @@
 
 
 
-      const dbMarks = JSON.parse(localStorage.getItem(DB.exams)) || [];
+      const dbMarks = exmReadJson(DB.exams, []);
 
       const frStudentSelect = document.getElementById('fr-student');
 
@@ -1188,7 +1270,7 @@
           return showToast("یہ نتیجہ لاک ہو چکا ہے — محفوظ نہیں ہو سکتا", "error");
       }
 
-      let dbMarks = JSON.parse(localStorage.getItem(DB.exams)) || [];
+      let dbMarks = exmReadJson(DB.exams, []);
 
 
 
@@ -1270,7 +1352,7 @@
 
 
 
-      const dbMarks = JSON.parse(localStorage.getItem(DB.exams)) || [];
+      const dbMarks = exmReadJson(DB.exams, []);
 
       let classResults = dbMarks.filter(m => m.examName === examName && m.class === cls);
 
@@ -1286,7 +1368,7 @@
 
       let html = '';
 
-      let templates = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      let templates = exmReadJson('ems_exam_templates', []);
 
       let tplBooks = templates.find(t => t.class === cls)?.books || [];
 
@@ -1448,7 +1530,7 @@
   window.examExportResults = function () {
       var examName = document.getElementById('res-exam-name').value;
       var cls = document.getElementById('res-class').value;
-      var dbMarks = JSON.parse(localStorage.getItem(DB.exams)) || [];
+      var dbMarks = exmReadJson(DB.exams, []);
       var list = dbMarks.filter(function (m) { return m.examName === examName && (!cls || m.class === cls); });
       if (!list.length) return showToast("منتخب امتحان کا کوئی نتیجہ موجود نہیں!", "error");
       var allBooks = [];
@@ -1474,7 +1556,7 @@
       if (!box) return;
       var examName = document.getElementById('ana-exam-name').value;
       var cls = document.getElementById('ana-class').value;
-      var dbMarks = JSON.parse(localStorage.getItem(DB.exams)) || [];
+      var dbMarks = exmReadJson(DB.exams, []);
       var list = dbMarks.filter(function (m) { return (!examName || m.examName === examName) && (!cls || m.class === cls); });
       if (!list.length) { box.innerHTML = '<p style="color:#dc2626;">منتخب کسوٹی پر کوئی نتیجہ موجود نہیں۔</p>'; return; }
 
@@ -1504,7 +1586,7 @@
               bookSum[b] = (bookSum[b] || 0) + Number(r.marks[b] || 0); bookCnt[b] = (bookCnt[b] || 0) + 1;
           });
       });
-      var tpls = JSON.parse(localStorage.getItem('ems_exam_templates')) || [];
+      var tpls = exmReadJson('ems_exam_templates', []);
       tpls.forEach(function (t) { (t.books || []).forEach(function (b) { bookMax[b.name] = b.marks; }); });
       var bookItems = Object.keys(bookSum).map(function (b) {
           var avgB = bookSum[b] / bookCnt[b]; var mx = bookMax[b] || 100;
@@ -1599,7 +1681,7 @@
       var examName = document.getElementById('promo-exam-name').value;
       var fromClass = document.getElementById('promo-from-class').value;
       if (!fromClass) return showToast("موجودہ درجہ منتخب کریں!", "error");
-      var dbMarks = JSON.parse(localStorage.getItem(DB.exams)) || [];
+      var dbMarks = exmReadJson(DB.exams, []);
       var users = exmGetUsers();
       var students = users.filter(function (u) { return u.type === 'student' && u.class === fromClass; });
       if (!students.length) return showToast("اس درجے میں کوئی طالب علم نہیں!", "error");
@@ -1739,3 +1821,145 @@ if (typeof window.emsRegisterDepartmentRefresh === 'function') {
 document.getElementById('btn-exm-lock-toggle')?.addEventListener('click', function () {
   if (typeof window.exmToggleExamLock === 'function') window.exmToggleExamLock();
 });
+
+/**
+ * Manual cloud pull — ALL Exams department keys:
+ * settings (types/books), master sheet/templates, marks, locks.
+ * forceFull + forceApply so dirty local cannot block cloud recovery.
+ */
+window.EMS_EXAMS_CLOUD_KEYS = [
+  'ems_full_exams',
+  'ems_exam_types',
+  'ems_library_books',
+  'ems_exam_templates',
+  'ems_exam_locks'
+];
+
+window.emsExamsLocalKeyStats = function () {
+  var stats = {};
+  var total = 0;
+  (window.EMS_EXAMS_CLOUD_KEYS || []).forEach(function (key) {
+    var n = 0;
+    try {
+      var raw = exmReadRaw(key);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) n = parsed.length;
+        else if (parsed && typeof parsed === 'object') n = Object.keys(parsed).length;
+        else if (typeof parsed === 'string') n = parsed ? 1 : 0;
+        else n = 1;
+      }
+    } catch (e) { n = 0; }
+    stats[key] = n;
+    total += n;
+  });
+  return { byKey: stats, total: total };
+};
+
+function exmPullModuleDataFallback(tenantId, key) {
+  var db = typeof window.getDbOrNull === 'function' ? window.getDbOrNull() : null;
+  if (!db || !tenantId || !key) return Promise.resolve(false);
+  var docId = 'Exams__' + key;
+  var ref = typeof window.emsFirestoreSubColRef === 'function'
+    ? window.emsFirestoreSubColRef(db, tenantId, 'ModuleData').doc(docId)
+    : db.collection('All_Madrasas').doc(tenantId).collection('ModuleData').doc(docId);
+
+  return ref.get({ source: 'server' }).then(function (doc) {
+    if (!doc.exists) return false;
+    var d = doc.data() || {};
+    if (d.data == null) return false;
+    var remoteStr = typeof d.data === 'string' ? d.data : JSON.stringify(d.data);
+    if (window.EmsDirect && typeof window.EmsDirect.applyRemote === 'function') {
+      return window.EmsDirect.applyRemote(key, remoteStr, true);
+    }
+    try {
+      if (window._emsOriginalSetItem) {
+        window._emsOriginalSetItem.call(localStorage, key, remoteStr);
+      } else {
+        localStorage.setItem(key, remoteStr);
+      }
+      if (typeof window.emsCacheInvalidate === 'function') window.emsCacheInvalidate(key);
+      return true;
+    } catch (eWrite) {
+      return false;
+    }
+  }).catch(function () { return false; });
+}
+
+window.emsPullExamsFromCloud = function (tenantId, opts) {
+  opts = opts || {};
+  tenantId = tenantId
+    || (typeof window.emsGetTenantId === 'function' && window.emsGetTenantId())
+    || window.CURRENT_MADRASA_TENANT_ID
+    || null;
+  if (!tenantId) {
+    return Promise.resolve({ ok: false, reason: 'no_tenant', count: 0, source: 'exams_cloud_pull' });
+  }
+
+  var pullOpts = { forceFull: true, delta: false, forceApply: true };
+  var keys = window.EMS_EXAMS_CLOUD_KEYS.slice();
+  var byKey = {};
+  keys.forEach(function (k) { byKey[k] = false; });
+
+  var chain;
+  if (window.EmsDirect && typeof window.EmsDirect.pullGroup === 'function') {
+    chain = window.EmsDirect.pullGroup('Exams', pullOpts);
+  } else if (typeof window.emsPullModuleGroup === 'function') {
+    chain = window.emsPullModuleGroup('Exams');
+  } else {
+    return Promise.resolve({
+      ok: false,
+      source: 'no_fn',
+      count: 0,
+      error: 'Exams cloud pull not loaded'
+    });
+  }
+
+  return Promise.resolve(chain).then(function (r) {
+    if (r && r.keys) {
+      Object.keys(r.keys).forEach(function (k) { byKey[k] = !!r.keys[k]; });
+    } else if (r && r.pulled) {
+      keys.forEach(function (k) { byKey[k] = true; });
+    }
+
+    // Legacy ModuleData fallback for config blobs not yet in Exams_Config
+    var blobKeys = ['ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks'];
+    var fb = Promise.resolve();
+    blobKeys.forEach(function (key) {
+      fb = fb.then(function () {
+        if (byKey[key]) return null;
+        return exmPullModuleDataFallback(tenantId, key).then(function (ok) {
+          if (ok) byKey[key] = true;
+        });
+      });
+    });
+    return fb.then(function () { return r; });
+  }).then(function (r) {
+    var stats = window.emsExamsLocalKeyStats();
+    var pulledKeys = Object.keys(byKey).filter(function (k) { return byKey[k]; });
+    if (typeof window.refreshExamData === 'function') {
+      try { window.refreshExamData(); } catch (eRefresh) { /* ignore */ }
+    }
+    return {
+      ok: true,
+      count: stats.total,
+      marksCount: (stats.byKey && stats.byKey.ems_full_exams) || 0,
+      pulled: (r && r.pulled) || pulledKeys.length,
+      keysPulled: pulledKeys,
+      keysExpected: keys,
+      byKey: byKey,
+      keyStats: stats.byKey,
+      source: 'exams_cloud_pull',
+      tenantId: tenantId,
+      coverage: 'all_exams_subsections'
+    };
+  }).catch(function (err) {
+    return {
+      ok: false,
+      error: err && err.message ? err.message : String(err),
+      count: 0,
+      source: 'exams_cloud_pull',
+      tenantId: tenantId
+    };
+  });
+};

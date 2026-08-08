@@ -1251,6 +1251,60 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 .att-cell-btn.status-clear { color: #64748b; border-color: #cbd5e1; font-weight: bold; }
 .att-cell-btn.status-clear.active { background: #f1f5f9; color: #475569; border-color: #94a3b8; }
 
+/* استاد — نظام الاوقات گھنٹے کے چھوٹے باکس */
+.att-period-wrap {
+  width: 100%;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.att-period-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  justify-content: center;
+  max-width: 110px;
+}
+.att-period-box {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 3px;
+  border: 1px solid #94a3b8;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  cursor: pointer;
+  color: #334155;
+}
+.att-period-box.is-p { background: #10b981; color: #fff; border-color: #059669; }
+.att-period-box.is-a { background: #ef4444; color: #fff; border-color: #dc2626; }
+.att-period-box.is-l { background: #f59e0b; color: #fff; border-color: #d97706; }
+.att-period-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  justify-content: center;
+}
+.att-period-bulk-btn {
+  font-size: 9px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  cursor: pointer;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.att-period-bulk-btn.is-p { color: #047857; border-color: #6ee7b7; }
+.att-period-bulk-btn.is-a { color: #b91c1c; border-color: #fca5a5; }
+.att-period-bulk-btn.is-l { color: #b45309; border-color: #fcd34d; }
+.att-period-bulk-btn.is-clear { color: #64748b; }
+#smart-register-table td.att-cell-teacher { min-width: 118px; vertical-align: top; }
+
 #smart-register-table td.att-cell-clickable { cursor: pointer; }
 #smart-register-table td.att-cell-empty { background: #fff !important; }
 #smart-register-table td.att-cell-p { background: #ecfdf5 !important; }
@@ -1289,6 +1343,8 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
     
     /* پرنٹ میں بٹنز چھپا دیں اور صرف ٹیکسٹ ظاہر کریں */
     .att-cell-btn { display: none !important; }
+    .att-period-bulk { display: none !important; }
+    .att-period-box { border-color: #000 !important; }
     .print-status-text { display: inline-block !important; font-weight: bold; font-size: 14px; }
     
     #smart-register-table { border: 2px solid #000; }

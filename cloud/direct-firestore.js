@@ -305,7 +305,16 @@
         });
     }
 
-    function applyRemoteDecision(localKey, remoteStr, remoteAt) {
+    function applyRemoteDecision(localKey, remoteStr, remoteAt, opts) {
+        opts = opts || {};
+        if (opts.forceApply === true) {
+            applyLocal(localKey, remoteStr);
+            if (global.EmsCachePolicy) {
+                global.EmsCachePolicy.markSynced(localKey, remoteAt || Date.now());
+            }
+            return true;
+        }
+
         var local = null;
         if (typeof global.emsCacheGetRaw === 'function') {
             local = global.emsCacheGetRaw(localKey);
@@ -387,16 +396,18 @@
     }
 
     function pullBlob(ref, cfg, localKey, opts) {
+        opts = opts || {};
         return ref.collection(cfg.collection).doc(cfg.docId).get({ source: 'server' }).then(function (doc) {
             if (!doc.exists || doc.data().data == null) return false;
             var remoteAt = global.EmsCachePolicy
                 ? global.EmsCachePolicy.remoteDocTimestamp(doc.data())
                 : 0;
-            return applyRemoteDecision(localKey, doc.data().data, remoteAt);
+            return applyRemoteDecision(localKey, doc.data().data, remoteAt, opts);
         });
     }
 
     function pullModuleDataBlob(ref, cfg, localKey, opts) {
+        opts = opts || {};
         var docId = moduleDataDocId(cfg, localKey);
         return ref.collection('ModuleData').doc(docId).get({ source: 'server' }).then(function (doc) {
             if (!doc.exists || doc.data().data == null) return false;
@@ -406,7 +417,7 @@
             var remoteStr = typeof doc.data().data === 'string'
                 ? doc.data().data
                 : JSON.stringify(doc.data().data);
-            return applyRemoteDecision(localKey, remoteStr, remoteAt);
+            return applyRemoteDecision(localKey, remoteStr, remoteAt, opts);
         });
     }
 
@@ -439,7 +450,7 @@
                 if (!Array.isArray(existing)) existing = [];
                 merged = mergeArrayById(existing, incoming, idField);
             }
-            return applyRemoteDecision(localKey, JSON.stringify(merged), maxRemoteAt || Date.now());
+            return applyRemoteDecision(localKey, JSON.stringify(merged), maxRemoteAt || Date.now(), opts);
         });
     }
 
@@ -473,7 +484,7 @@
                 if (typeof existing !== 'object' || Array.isArray(existing)) existing = {};
                 merged = mergeMapByKey(existing, incoming);
             }
-            return applyRemoteDecision(localKey, JSON.stringify(merged), maxRemoteAt || Date.now());
+            return applyRemoteDecision(localKey, JSON.stringify(merged), maxRemoteAt || Date.now(), opts);
         });
     }
 
@@ -612,11 +623,15 @@
         pullGroup: function (groupName, opts) {
             opts = Object.assign({ delta: true, forceFull: false }, opts || {});
             var keys = GROUPS[groupName] || [];
-            var chain = Promise.resolve({ pulled: 0 });
+            var chain = Promise.resolve({ pulled: 0, keys: {}, details: [] });
             keys.forEach(function (key) {
                 chain = chain.then(function (acc) {
                     return pullKey(key, opts).then(function (ok) {
-                        if (ok) acc.pulled++;
+                        acc.keys[key] = !!ok;
+                        if (ok) {
+                            acc.pulled++;
+                            acc.details.push(key);
+                        }
                         return acc;
                     });
                 });

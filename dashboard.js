@@ -982,16 +982,20 @@ function emsRenderAttendanceSnapshot() {
     if (typeof window.emsFetchTodayAttendanceStats !== 'function') return;
     window.emsFetchTodayAttendanceStats().then(function (stats) {
         var present = stats.present || 0;
-        var absent = Math.max(0, totalStudents - present);
-        var rate = totalStudents > 0 ? Math.round((present / totalStudents) * 100) : 0;
-        setTxt('dash-att-present', present);
-        setTxt('dash-att-absent', absent);
-        setTxt('dash-att-rate', rate + '%');
+        var absent = stats.absent != null ? (stats.absent || 0) : 0;
+        var leave = stats.leave || 0;
+        var markedTotal = stats.markedTotal != null
+            ? stats.markedTotal
+            : (present + absent + leave);
+        var rate = markedTotal > 0 ? Math.min(100, Math.round((present / markedTotal) * 100)) : null;
+        setTxt('dash-att-present', markedTotal > 0 ? present : '—');
+        setTxt('dash-att-absent', markedTotal > 0 ? absent : '—');
+        setTxt('dash-att-rate', rate == null ? 'حاضری نہیں لی گئی' : (rate + '%'));
         setTxt('dash-att-source', stats.source === 'summary' ? 'Summary' : (stats.source === 'firestore' ? 'Firestore' : (stats.source === 'cache' ? 'کیشے' : '—')));
         var ring = document.getElementById('dash-att-ring');
         if (ring) {
-            var deg = Math.round((rate / 100) * 360);
-            var col = rate >= 75 ? 'var(--success)' : (rate >= 50 ? 'var(--warning)' : 'var(--danger)');
+            var deg = rate == null ? 0 : Math.round((rate / 100) * 360);
+            var col = rate == null ? '#e2e8f0' : (rate >= 75 ? 'var(--success)' : (rate >= 50 ? 'var(--warning)' : 'var(--danger)'));
             ring.style.background = 'conic-gradient(' + col + ' ' + deg + 'deg, #e2e8f0 ' + deg + 'deg)';
         }
     });

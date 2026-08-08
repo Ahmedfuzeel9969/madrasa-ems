@@ -152,16 +152,232 @@
         };
     }
 
+    function attDashReadDayObservation(dayRec, dayNum) {
+        if (!dayRec || typeof dayRec !== 'object') {
+            return { hasKey: false, status: '' };
+        }
+        var hasKey = Object.prototype.hasOwnProperty.call(dayRec, dayNum)
+            || Object.prototype.hasOwnProperty.call(dayRec, String(dayNum));
+        if (!hasKey) return { hasKey: false, status: '' };
+        var st = dayRec[dayNum];
+        if (st == null || st === '') st = dayRec[String(dayNum)];
+        if (st == null) st = '';
+        return { hasKey: true, status: String(st).trim() };
+    }
+
+    function attDashNormalizeStatusBucket(st) {
+        if (attDashStatusPresent(st)) return 'P';
+        if (attDashStatusAbsent(st)) return 'A';
+        if (attDashStatusLeave(st)) return 'L';
+        return '';
+    }
+
+    /** Newer ts wins; on tie prefer period=all; clear/tombstone beats stale mark. */
+    function attDashMarkCandidateBetter(cand, incumbent) {
+        if (!incumbent) return true;
+        if (!cand) return false;
+        if (cand.ts !== incumbent.ts) return cand.ts > incumbent.ts;
+        if (cand.isAll !== incumbent.isAll) return !!cand.isAll;
+        if (cand.cleared !== incumbent.cleared) return !!cand.cleared;
+        return false;
+    }
+
+    /**
+     * One final P/A/L (or unmarked) per studentId for a date.
+     * Dedupes period=all vs period sheets + local/cloud versions by timestamp.
+     */
+    function attDashBuildFinalMarksForDay(dateStr, sheets, rosterUsers) {
+        var dayNum = dayNumOf(dateStr);
+        var roster = Object.create(null);
+        (rosterUsers || []).forEach(function (u) {
+            var id = attDashGetUserId(u);
+            if (!id) return;
+            roster[id] = {
+                classId: String(u.class || u.className || u.grade || '').trim() || 'نامعلوم',
+                role: attDashNormType(u) || 'student',
+                user: u
+            };
+        });
+
+        var best = Object.create(null);
+        (sheets || []).forEach(function (sh) {
+            if (!sh || !sh.data) return;
+            var sheetTs = attDashSheetTimestamp(sh.data);
+            var isAll = !sh.period || sh.period === 'all';
+            var rec = sh.data.records || {};
+            Object.keys(rec).forEach(function (uid) {
+                if (!roster[uid]) return;
+                var role = roster[uid].role;
+                if (role === 'student' && sh.type && sh.type !== 'students') return;
+                if (role === 'teacher' && sh.type && sh.type !== 'teachers') return;
+                if (role === 'staff' && sh.type && sh.type !== 'staff') return;
+                if (role === 'student' && sh.classId && sh.classId !== roster[uid].classId) return;
+
+                var dayRec = rec[uid];
+                var obs = attDashReadDayObservation(dayRec, dayNum);
+                var cand;
+                if (isAll) {
+                    // Daily register sheet is authoritative: missing day key = clear tombstone.
+                    cand = {
+                        uid: uid,
+                        ts: sheetTs,
+                        isAll: true,
+                        hasObservation: true,
+                        cleared: !obs.hasKey || !attDashNormalizeStatusBucket(obs.status),
+                        status: obs.hasKey ? attDashNormalizeStatusBucket(obs.status) : '',
+                        sheetKey: sh.key || '',
+                        period: 'all'
+                    };
+                } else {
+                    if (!obs.hasKey) return;
+                    var bucket = attDashNormalizeStatusBucket(obs.status);
+                    cand = {
+                        uid: uid,
+                        ts: sheetTs,
+                        isAll: false,
+                        hasObservation: true,
+                        cleared: !bucket,
+                        status: bucket,
+                        sheetKey: sh.key || '',
+                        period: sh.period || ''
+                    };
+                }
+                if (attDashMarkCandidateBetter(cand, best[uid])) best[uid] = cand;
+            });
+        });
+
+        var marks = Object.create(null);
+        Object.keys(roster).forEach(function (uid) {
+            var b = best[uid];
+            marks[uid] = {
+                status: (b && !b.cleared && b.status) ? b.status : '',
+                classId: roster[uid].classId,
+                role: roster[uid].role,
+                ts: b ? b.ts : 0,
+                sourceKey: b ? b.sheetKey : ''
+            };
+        });
+        return { roster: roster, marks: marks, dayNum: dayNum, dateStr: dateStr };
+    }
+
+    function attDashAssertStatsInvariant(stats, ctx) {
+        var p = stats.present || 0;
+        var a = stats.absent || 0;
+        var l = stats.leave || 0;
+        var unmarked = stats.notMarked || 0;
+        var total = stats.total || 0;
+        var marked = p + a + l;
+        if (marked > total) {
+            var msg = '[EMS] att-dash invariant: marked(' + marked + ') > target(' + total + ') — ' + (ctx || '');
+            console.error(msg, { present: p, absent: a, leave: l, unmarked: unmarked, total: total });
+            stats.diagnosticError = msg;
+            stats.invariantBroken = true;
+        }
+        if (p + a + l + unmarked !== total) {
+            // Repair unmarked rather than silently publishing bad math
+            stats.notMarked = Math.max(0, total - marked);
+            if (p + a + l + stats.notMarked !== total) {
+                stats.invariantBroken = true;
+                stats.diagnosticError = (stats.diagnosticError || '') +
+                    ' | P+A+L+unmarked !== target';
+                console.error('[EMS] att-dash invariant failed', stats);
+            }
+        }
+        return stats;
+    }
+
+    function attDashStatsFromFinalMarks(finalDataset, rosterUsers) {
+        var total = (rosterUsers || []).length;
+        var present = 0;
+        var absent = 0;
+        var leave = 0;
+        var marks = (finalDataset && finalDataset.marks) || {};
+        Object.keys(marks).forEach(function (uid) {
+            var st = marks[uid] && marks[uid].status;
+            if (st === 'P') present++;
+            else if (st === 'A') absent++;
+            else if (st === 'L') leave++;
+        });
+        var rateInfo = attDashComputeRate(present, absent, leave);
+        var notMarked = Math.max(0, total - rateInfo.markedTotal);
+        var stats = {
+            present: present,
+            absent: absent,
+            leave: leave,
+            notMarked: notMarked,
+            total: total,
+            markedTotal: rateInfo.markedTotal,
+            rate: rateInfo.rate,
+            notTaken: rateInfo.notTaken,
+            lockedSheets: 0,
+            source: 'local',
+            rows: marks
+        };
+        return attDashAssertStatsInvariant(stats, 'stats-from-final');
+    }
+
+    function attDashClassBreakdownFromFinal(finalDataset, rosterUsers) {
+        var byClass = Object.create(null);
+        (rosterUsers || []).forEach(function (u) {
+            if (attDashNormType(u) !== 'student') return;
+            var cls = String(u.class || u.className || u.grade || 'نامعلوم').trim() || 'نامعلوم';
+            if (!byClass[cls]) {
+                byClass[cls] = {
+                    className: cls,
+                    total: 0,
+                    present: 0,
+                    absent: 0,
+                    leave: 0
+                };
+            }
+            byClass[cls].total++;
+        });
+        var marks = (finalDataset && finalDataset.marks) || {};
+        Object.keys(marks).forEach(function (uid) {
+            var m = marks[uid];
+            if (!m || m.role !== 'student') return;
+            var cls = m.classId || 'نامعلوم';
+            if (!byClass[cls]) return;
+            if (m.status === 'P') byClass[cls].present++;
+            else if (m.status === 'A') byClass[cls].absent++;
+            else if (m.status === 'L') byClass[cls].leave++;
+        });
+        return Object.keys(byClass).sort().map(function (k) {
+            var row = byClass[k];
+            var rateInfo = attDashComputeRate(row.present, row.absent, row.leave);
+            row.notMarked = Math.max(0, row.total - rateInfo.markedTotal);
+            row.markedTotal = rateInfo.markedTotal;
+            row.rate = rateInfo.rate;
+            row.notTaken = rateInfo.notTaken;
+            attDashAssertStatsInvariant({
+                present: row.present,
+                absent: row.absent,
+                leave: row.leave,
+                notMarked: row.notMarked,
+                total: row.total,
+                markedTotal: row.markedTotal
+            }, 'class:' + k);
+            return row;
+        });
+    }
+
     function attDashApplyStatsKpis(stats) {
         var notTaken = stats.rate == null || stats.notTaken;
         setTxt('att-dash-present', notTaken ? '—' : stats.present);
         setTxt('att-dash-absent', notTaken ? '—' : stats.absent);
         setTxt('att-dash-leave', notTaken ? '—' : stats.leave);
         setTxt('att-dash-rate', notTaken ? 'حاضری نہیں لی گئی' : (stats.rate + '%'));
+        if (stats.invariantBroken && typeof global.showToast === 'function') {
+            global.showToast('حاضری شماریات میں تضاد — تفصیل کنسول میں', 'error');
+        }
     }
 
     function attDashMergeRemoteStats(localStats, remote, users) {
         if (!remote) return localStats;
+        // Local normalized sheets are SSOT — never stack cloud summary on top (double-count).
+        if (localStats && localStats.markedTotal > 0) {
+            return localStats;
+        }
         var rosterIds = Object.create(null);
         (users || []).forEach(function (u) {
             var id = attDashGetUserId(u);
@@ -195,22 +411,25 @@
         }
 
         var rateInfo = attDashComputeRate(present, absent, leave);
-        var total = localStats.total || 0;
-        return Object.assign({}, localStats, {
+        var total = (users && users.length) || localStats.total || 0;
+        return attDashAssertStatsInvariant({
             present: present,
             absent: absent,
             leave: leave,
             notMarked: Math.max(0, total - rateInfo.markedTotal),
+            total: total,
             markedTotal: rateInfo.markedTotal,
             rate: rateInfo.rate,
             notTaken: rateInfo.notTaken,
+            lockedSheets: localStats.lockedSheets || 0,
             source: remote.source || 'cloud'
-        });
+        }, 'remote-merge');
     }
 
     function attDashSheetTimestamp(data) {
         if (!data) return 0;
         if (data.timestamp) return Number(data.timestamp) || 0;
+        if (data.clientUpdatedAt) return Number(data.clientUpdatedAt) || 0;
         if (data.updatedAt) {
             var t = data.updatedAt;
             if (typeof t === 'number') return t;
@@ -358,8 +577,29 @@
         return Array.isArray(users) ? users : [];
     }
 
+    /** Match register eligibility — inactive/rejected must not inflate roster totals. */
+    function attDashIsEligibleRegistration(u) {
+        if (!u || !attDashGetUserId(u)) return false;
+        if (typeof global.attFilterEligibleUsers === 'function') {
+            return global.attFilterEligibleUsers([u]).length > 0;
+        }
+        if (typeof global.EmsQueryUtils !== 'undefined'
+            && typeof global.EmsQueryUtils.isActiveRegistrationStatus === 'function') {
+            var st = String(u.status == null ? '' : u.status).trim().toLowerCase();
+            if (st === 'pending') return true;
+            return global.EmsQueryUtils.isActiveRegistrationStatus(u.status);
+        }
+        var s = String(u.status == null ? '' : u.status).trim().toLowerCase();
+        if (!s) return true;
+        if (s === 'rejected' || s === 'suspended' || s === 'withdrawn'
+            || s === 'inactive' || s === 'deleted' || s === 'withdrawn/transferred') {
+            return false;
+        }
+        return true;
+    }
+
     function attDashGetUsers() {
-        var users = attDashGetUsersRaw();
+        var users = attDashGetUsersRaw().filter(attDashIsEligibleRegistration);
         if (typeof global.emsFilterByDepartment === 'function') {
             users = global.emsFilterByDepartment(users);
         }
@@ -449,7 +689,7 @@
         return attDashCollectSheets(monthStr);
     }
 
-    /** Count P/A/L for a given day from sheets + user roster (explicit absent; unmarked excluded from rate). */
+    /** Count P/A/L for a given day from sheets + user roster (deduped final-state). */
     function attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets) {
         users = users || attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter);
         var total = users.length;
@@ -460,62 +700,17 @@
             };
         }
 
-        var dayNum = dayNumOf(dateStr);
         sheets = sheets || [];
-        var presentIds = Object.create(null);
-        var absentIds = Object.create(null);
-        var leaveIds = Object.create(null);
         var lockedSheets = 0;
-
         sheets.forEach(function (sh) {
-            if (roleFilter === 'student' && sh.type !== 'students') return;
-            if (roleFilter === 'teacher' && sh.type !== 'teachers') return;
-            if (roleFilter === 'staff' && sh.type !== 'staff') return;
-            if (classFilter && sh.classId && sh.classId !== classFilter) return;
             if (sh.data && sh.data.locked) lockedSheets++;
-            var rec = (sh.data && sh.data.records) || {};
-            Object.keys(rec).forEach(function (uid) {
-                var dayRec = rec[uid];
-                if (!dayRec) return;
-                var st = dayRec[dayNum] || dayRec[String(dayNum)];
-                if (attDashStatusPresent(st)) presentIds[uid] = true;
-                else if (attDashStatusAbsent(st)) absentIds[uid] = true;
-                else if (attDashStatusLeave(st)) leaveIds[uid] = true;
-            });
         });
 
-        var rosterIds = Object.create(null);
-        users.forEach(function (u) {
-            var id = attDashGetUserId(u);
-            if (id) rosterIds[id] = true;
-        });
-
-        var present = 0, absent = 0, leave = 0;
-        Object.keys(presentIds).forEach(function (id) {
-            if (rosterIds[id]) present++;
-        });
-        Object.keys(absentIds).forEach(function (id) {
-            if (rosterIds[id] && !presentIds[id]) absent++;
-        });
-        Object.keys(leaveIds).forEach(function (id) {
-            if (rosterIds[id] && !presentIds[id] && !absentIds[id]) leave++;
-        });
-
-        var rateInfo = attDashComputeRate(present, absent, leave);
-        var notMarked = Math.max(0, total - rateInfo.markedTotal);
-
-        return {
-            present: present,
-            absent: absent,
-            leave: leave,
-            notMarked: notMarked,
-            total: total,
-            markedTotal: rateInfo.markedTotal,
-            rate: rateInfo.rate,
-            notTaken: rateInfo.notTaken,
-            lockedSheets: lockedSheets,
-            source: 'local'
-        };
+        var finalDataset = attDashBuildFinalMarksForDay(dateStr, sheets, users);
+        var stats = attDashStatsFromFinalMarks(finalDataset, users);
+        stats.lockedSheets = lockedSheets;
+        stats.source = 'local';
+        return stats;
     }
 
     function attDashClassBreakdown(dateStr, roleFilter, classFilter, sheets) {
@@ -523,54 +718,13 @@
         if (attDashIsFutureDate(dateStr)) return [];
 
         var users = attDashFilterUsers(attDashGetUsers(), 'student', classFilter || '');
-        var byClass = Object.create(null);
-        users.forEach(function (u) {
-            var cls = String(u.class || u.className || u.grade || 'نامعلوم').trim() || 'نامعلوم';
-            if (classFilter && cls !== classFilter) return;
-            if (!byClass[cls]) {
-                byClass[cls] = {
-                    className: cls,
-                    total: 0,
-                    present: 0,
-                    absent: 0,
-                    leave: 0,
-                    rosterIds: Object.create(null)
-                };
-            }
-            var uid = attDashGetUserId(u);
-            if (uid) byClass[cls].rosterIds[uid] = true;
-            byClass[cls].total++;
-        });
-
-        var dayNum = dayNumOf(dateStr);
         sheets = sheets || [];
-        sheets.forEach(function (sh) {
-            if (sh.type !== 'students') return;
-            var cls = sh.classId || '';
-            if (!cls || !byClass[cls]) return;
-            if (classFilter && cls !== classFilter) return;
-            var rec = (sh.data && sh.data.records) || {};
-            Object.keys(rec).forEach(function (uid) {
-                if (!byClass[cls].rosterIds[uid]) return;
-                var dayRec = rec[uid];
-                if (!dayRec) return;
-                var st = dayRec[dayNum] || dayRec[String(dayNum)];
-                if (attDashStatusPresent(st)) byClass[cls].present++;
-                else if (attDashStatusAbsent(st)) byClass[cls].absent++;
-                else if (attDashStatusLeave(st)) byClass[cls].leave++;
-            });
-        });
-
-        return Object.keys(byClass).sort().map(function (k) {
-            var row = byClass[k];
-            var rateInfo = attDashComputeRate(row.present, row.absent, row.leave);
-            row.notMarked = Math.max(0, row.total - rateInfo.markedTotal);
-            row.markedTotal = rateInfo.markedTotal;
-            row.rate = rateInfo.rate;
-            row.notTaken = rateInfo.notTaken;
-            delete row.rosterIds;
-            return row;
-        });
+        var finalDataset = attDashBuildFinalMarksForDay(dateStr, sheets, users);
+        var rows = attDashClassBreakdownFromFinal(finalDataset, users);
+        if (classFilter) {
+            rows = rows.filter(function (r) { return r.className === classFilter; });
+        }
+        return rows;
     }
 
     function attDashMonthlySummary(monthStr, roleFilter, classFilter, sheets) {
@@ -680,15 +834,25 @@
     }
 
     function attDashDateOffset(daysAgo) {
-        var d = new Date();
-        d.setDate(d.getDate() - daysAgo);
+        var base = todayStr();
+        var d = new Date(base + 'T12:00:00+05:00');
+        d.setTime(d.getTime() - (Number(daysAgo) || 0) * 86400000);
         return attDashLocalDateParts(d).dateStr;
     }
 
     function attDashWeekdayLabel(dateStr) {
         var ur = ['اتوار', 'پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ'];
-        var d = new Date(dateStr + 'T12:00:00');
-        return ur[d.getDay()] || dateStr.substring(5);
+        try {
+            var d = new Date(String(dateStr) + 'T12:00:00+05:00');
+            var short = new Intl.DateTimeFormat('en-US', {
+                timeZone: ATT_DASH_TZ,
+                weekday: 'short'
+            }).format(d);
+            var map = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+            if (map[short] != null) return ur[map[short]];
+        } catch (eWd) { /* fall through */ }
+        var fallback = new Date(String(dateStr) + 'T12:00:00+05:00');
+        return ur[fallback.getUTCDay()] || dateStr.substring(5);
     }
 
     /** Last N days attendance rate trend — offline-first from local sheets. */
@@ -944,9 +1108,8 @@
         attDashPopulateClassFilter();
         var f = attDashReadFilters();
         var rawUsers = attDashGetUsersRaw();
-        var users = typeof global.emsFilterByDepartment === 'function'
-            ? global.emsFilterByDepartment(rawUsers)
-            : rawUsers;
+        // Eligible + department-scoped roster (inactive/suspended/expelled excluded).
+        var users = attDashGetUsers();
         attDashUpdateDeptHint(rawUsers, users, f);
         var allUsers = attDashFilterUsers(users, f.roleFilter, f.classFilter);
         var monthStr = monthOf(f.dateStr);
@@ -971,6 +1134,22 @@
         setTxt('att-dash-date-label', f.dateStr);
 
         var stats = attDashStatsForDay(f.dateStr, f.roleFilter, f.classFilter, allUsers, sheets);
+        var classRows = attDashClassBreakdown(f.dateStr, f.roleFilter, f.classFilter, sheets);
+        // Single pipeline snapshot for print/debug — summary and class-wise must match.
+        global._attDashLastCalc = {
+            dateStr: f.dateStr,
+            roleFilter: f.roleFilter,
+            classFilter: f.classFilter,
+            target: stats.total,
+            present: stats.present,
+            absent: stats.absent,
+            leave: stats.leave,
+            unmarked: stats.notMarked,
+            markedTotal: stats.markedTotal,
+            classRows: classRows,
+            invariantBroken: !!stats.invariantBroken,
+            rows: stats.rows || null
+        };
         attDashApplyStatsKpis(stats);
         setTxt('att-dash-locked', stats.lockedSheets);
         setTxt('att-dash-source', stats.source === 'local' ? 'مقامی' : '—');
@@ -982,7 +1161,6 @@
         setTxt('att-dash-active-days', monthSummary.activeDays);
         setTxt('att-dash-month-marks', fmt(monthSummary.totalMarks));
 
-        var classRows = attDashClassBreakdown(f.dateStr, f.roleFilter, f.classFilter, sheets);
         attDashRenderClassTable(classRows);
         attDashRenderClassHighlights(classRows);
 
@@ -1086,6 +1264,16 @@
             '<h3 style="margin:5px 0;color:#64748b;">حاضری تجزیات — خلاصہ</h3>' +
             '<p style="margin:0;color:#94a3b8;font-size:13px;">' + now + '</p></div>' +
             '<table style="width:100%;border-collapse:collapse;font-size:15px;margin-bottom:24px;">' + rows + '</table>' +
+            (global._attDashLastCalc
+                ? '<p style="font-size:13px;color:#64748b;">نشان زد: ' + (global._attDashLastCalc.markedTotal || 0)
+                    + ' · نشان زد نہیں: ' + (global._attDashLastCalc.unmarked || 0)
+                    + ' · invariant: P+A+L+unmarked='
+                    + ((global._attDashLastCalc.present || 0) + (global._attDashLastCalc.absent || 0)
+                        + (global._attDashLastCalc.leave || 0) + (global._attDashLastCalc.unmarked || 0))
+                    + ' / target ' + (global._attDashLastCalc.target || 0)
+                    + (global._attDashLastCalc.invariantBroken ? ' ⚠️ تضاد' : ' ✓')
+                    + '</p>'
+                : '') +
             (classTable ? '<h3>درجہ وار تفصیل</h3>' + classTable.closest('table').outerHTML : '') +
             '</div>';
         var w = global.open('', '_blank');
@@ -1219,6 +1407,13 @@
     } else {
         attBindRibbonDelegation();
     }
+
+    // Test/diagnostic exports — same final-state pipeline as dashboard + print.
+    global.attDashBuildFinalMarksForDay = attDashBuildFinalMarksForDay;
+    global.attDashStatsFromFinalMarks = attDashStatsFromFinalMarks;
+    global.attDashClassBreakdownFromFinal = attDashClassBreakdownFromFinal;
+    global.attDashAssertStatsInvariant = attDashAssertStatsInvariant;
+    global.attDashMarkCandidateBetter = attDashMarkCandidateBetter;
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', attDashBindControls);

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260712_saas_lockdown_masterpiece';
+    var CACHE_BUST = '20260806_exams_lib_save';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 

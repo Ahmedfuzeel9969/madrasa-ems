@@ -35,8 +35,25 @@
         ]);
     }
 
+    /** Pakistan calendar day — must match att-dashboard ATT_DASH_TZ. */
     function todayParts() {
-        var todayStr = new Date().toISOString().split('T')[0];
+        var todayStr = '';
+        try {
+            var fmt = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Karachi',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
+            var y = '', m = '', day = '';
+            fmt.formatToParts(new Date()).forEach(function (p) {
+                if (p.type === 'year') y = p.value;
+                if (p.type === 'month') m = p.value;
+                if (p.type === 'day') day = p.value;
+            });
+            if (y && m && day) todayStr = y + '-' + m + '-' + day;
+        } catch (eTz) { /* fall through */ }
+        if (!todayStr) todayStr = new Date().toISOString().split('T')[0];
         return {
             todayStr: todayStr,
             todayMonth: todayStr.substring(0, 7),
@@ -556,6 +573,148 @@
             var pct = Math.min(100, Math.round(((stats.present || 0) / markedTotal) * 100));
             el.innerText = pct + '%';
             el.title = stats.source === 'firestore' ? 'Firestore حاضری' : (stats.source === 'summary' ? 'Summary حاضری' : 'کیشے (fallback)');
+        });
+    };
+
+    function attSheetTimestamp(rec) {
+        if (!rec) return 0;
+        if (rec.timestamp) return Number(rec.timestamp) || 0;
+        if (rec.updatedAt) {
+            var t = rec.updatedAt;
+            if (typeof t === 'number') return t;
+            if (t && typeof t.toMillis === 'function') return t.toMillis();
+            if (typeof t === 'string') return Date.parse(t) || 0;
+        }
+        return 0;
+    }
+
+    function attReconcileLocalRemote(localRec, remoteRec) {
+        if (!remoteRec) return localRec || null;
+        if (!localRec) return remoteRec;
+        return attSheetTimestamp(remoteRec) > attSheetTimestamp(localRec) ? remoteRec : localRec;
+    }
+
+    /** Cloud doc id → tenant-scoped durable key (att_rec_{tid}_…). */
+    function attLocalKeyFromCloudDocId(tenantId, cloudDocId) {
+        if (!cloudDocId) return cloudDocId;
+        if (cloudDocId.indexOf('att_rec_') !== 0) return cloudDocId;
+        var tid = tenantId || getTenantId() || 'local';
+        var rest = cloudDocId.slice('att_rec_'.length);
+        if (rest.indexOf(tid + '_') === 0) return cloudDocId;
+        return 'att_rec_' + tid + '_' + rest;
+    }
+
+    /**
+     * Manual cloud pull for Attendance department only.
+     * Pulls ModuleData settings group + all Attendance sheet docs into local SSOT.
+     * Newer local sheets are kept (timestamp reconcile) so clears are not revived.
+     */
+    global.emsPullAttendanceFromCloud = function (tenantId, opts) {
+        opts = opts || {};
+        tenantId = tenantId || getTenantId();
+        if (!tenantId) {
+            return Promise.resolve({ ok: false, reason: 'no_tenant', count: 0, source: 'attendance_cloud_pull' });
+        }
+
+        var db = getDb();
+        if (!db && typeof global.getDbOrNull === 'function') db = global.getDbOrNull();
+        if (!db) {
+            return Promise.resolve({
+                ok: false,
+                reason: 'firestore_unavailable',
+                count: 0,
+                source: 'attendance_cloud_pull'
+            });
+        }
+
+        var settingsP = Promise.resolve({ pulled: 0 });
+        if (typeof global.emsPullModuleGroup === 'function') {
+            settingsP = global.emsPullModuleGroup('Attendance').catch(function () {
+                return { pulled: 0 };
+            });
+        }
+
+        var col = typeof global.emsFirestoreSubColRef === 'function'
+            ? global.emsFirestoreSubColRef(db, tenantId, 'Attendance')
+            : db.collection('All_Madrasas').doc(tenantId).collection('Attendance');
+
+        if (!col) {
+            return Promise.resolve({
+                ok: false,
+                reason: 'firestore_unavailable',
+                count: 0,
+                source: 'attendance_cloud_pull'
+            });
+        }
+
+        return settingsP.then(function (settingsRes) {
+            return col.get().then(function (snap) {
+                var docs = [];
+                snap.forEach(function (doc) {
+                    var id = doc.id;
+                    if (!id || id.indexOf('att_rec_') !== 0) return;
+                    docs.push({ id: id, data: doc.data() || {} });
+                });
+
+                var cached = 0;
+                var updated = 0;
+                var keptLocal = 0;
+                var chain = Promise.resolve();
+
+                docs.forEach(function (item) {
+                    chain = chain.then(function () {
+                        var localKey = attLocalKeyFromCloudDocId(tenantId, item.id);
+                        var getLocal = typeof global.emsOfflineGetCachedAttendance === 'function'
+                            ? global.emsOfflineGetCachedAttendance(item.id, { localKey: localKey })
+                            : Promise.resolve(null);
+
+                        return getLocal.then(function (local) {
+                            var remoteWins = !local || attSheetTimestamp(item.data) > attSheetTimestamp(local);
+                            if (!remoteWins) {
+                                keptLocal++;
+                                return null;
+                            }
+                            var merged = attReconcileLocalRemote(local, item.data);
+                            if (typeof global.emsOfflineCacheAttendanceFromRemote !== 'function') {
+                                cached++;
+                                updated++;
+                                return null;
+                            }
+                            return global.emsOfflineCacheAttendanceFromRemote(item.id, merged, {
+                                localKey: localKey
+                            }).then(function () {
+                                cached++;
+                                updated++;
+                            });
+                        });
+                    });
+                });
+
+                return chain.then(function () {
+                    if (typeof global.emsInvalidateAttDashboardCache === 'function') {
+                        global.emsInvalidateAttDashboardCache();
+                    }
+                    return {
+                        ok: true,
+                        count: docs.length,
+                        sheets: docs.length,
+                        cached: cached,
+                        updated: updated,
+                        keptLocal: keptLocal,
+                        settingsPulled: (settingsRes && settingsRes.pulled) || 0,
+                        source: 'attendance_cloud_pull',
+                        tenantId: tenantId
+                    };
+                });
+            });
+        }).catch(function (err) {
+            return {
+                ok: false,
+                error: err && err.message ? err.message : String(err),
+                count: 0,
+                source: 'attendance_cloud_pull',
+                tenantId: tenantId
+            };
         });
     };
 

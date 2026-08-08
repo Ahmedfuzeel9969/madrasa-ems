@@ -1268,6 +1268,7 @@
                                 <span id="att-dash-live-dot"></span>
                                 <span id="att-dash-live-text">مقامی ڈیٹا</span>
                             </span>
+                            <button type="button" class="btn btn-warning btn-sm" id="btn-att-cloud-pull" data-ems-cloud-pull="attendance" data-ems-busy-label="ڈاؤن لوڈ…" data-ems-probe-label="براہ کرم انتظار…" title="Firebase سے صرف حاضری ڈیٹا بحالی" aria-label="Pull attendance data from Firebase cloud"><i class="fas fa-cloud-download-alt" aria-hidden="true"></i> کلاؤڈ سے بحالی</button>
                             <button type="button" class="btn btn-secondary btn-sm" onclick="window.emsExportAttDashboard()"><i class="fas fa-file-pdf"></i> پرنٹ / PDF</button>
                         </div>
                     </div>
@@ -2109,6 +2110,8 @@
                             <button class="reg-tab" onclick="switchExamTab('exam-win-result', this)"><i class="fas fa-trophy"></i> نتائج و رپورٹ کارڈ</button>
                             <button class="reg-tab" onclick="switchExamTab('exam-win-analysis', this)"><i class="fas fa-chart-pie"></i> تجزیہ و شماریات</button>
                             <button class="reg-tab" onclick="switchExamTab('exam-win-promote', this)"><i class="fas fa-arrow-up-right-dots"></i> ترقی (Promotion)</button>
+                            <span class="reg-tabs-sep"></span>
+                            <button type="button" class="btn btn-warning btn-sm" id="btn-exam-cloud-pull" data-ems-cloud-pull="exams" data-ems-busy-label="ڈاؤن لوڈ…" data-ems-probe-label="براہ کرم انتظار…" title="Firebase سے شعبہ امتحانات کے تمام ذیلی شعبوں کا ڈیٹا (ترتیبات، کتب، ماسٹر شیٹ، نمبرز، لاکس)" aria-label="Pull all exams subsection data from Firebase cloud" style="margin:4px 6px;"><i class="fas fa-cloud-download-alt" aria-hidden="true"></i> کلاؤڈ سے بحالی</button>
                         </div>
                     </div>
         
@@ -6248,11 +6251,11 @@
     <script defer src="tenant-context.js?v=20260705sync1"></script>
     <script defer src="ems-tenant-storage.js?v=20260704pull3"></script>
     <script defer src="ems-firestore-paths.js?v=20260704pull3"></script>
-    <script defer src="ems-cloud-pull.js?v=20260707_sync_hardening_v1"></script>
+    <script defer src="ems-cloud-pull.js?v=20260806_exams_lib_save"></script>
     <script defer src="ems-tenant-resolver.js?v=20260704pull3"></script>
     <script defer src="department-context.js?v=20260620dept4"></script>
     <script defer src="ems-sw-update.js?v=20260708_sw_update_v1"></script>
-    <script defer src="core.js?v=20260708_sw_update_v1"></script>
+    <script defer src="core.js?v=20260806_exams_lib_save"></script>
     <script defer src="portal-access.js?v=20260717_white_screen_fix"></script>
     <script defer src="landing.js?v=20260710_remove_guest_portal"></script>
     <script defer src="ems-offline-session-cache.js?v=20260705desktopfix6"></script>
@@ -6260,8 +6263,8 @@
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
     <script defer src="auth.js?v=20260717_post_login_boot_fix"></script>
     <script defer src="ems-boot-gate.js?v=20260717_white_screen_fix"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260711_exams_masterpiece"></script>
-    <script defer src="ems-lazy-loader.js?v=20260711_exams_masterpiece"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260806_exams_lib_save"></script>
+    <script defer src="ems-lazy-loader.js?v=20260806_exams_lib_save"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>

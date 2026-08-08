@@ -10,15 +10,16 @@ describe('Attendance dashboard calculation fixes', function () {
         var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
         expect(js).toContain('function attDashStatusAbsent');
         expect(js).toContain('function attDashComputeRate');
-        expect(js).toMatch(/attDashStatsForDay[\s\S]{0,2500}attDashStatusAbsent/);
+        expect(js).toContain('function attDashBuildFinalMarksForDay');
+        expect(js).toMatch(/attDashStatsForDay[\s\S]{0,1200}attDashBuildFinalMarksForDay/);
         expect(js).not.toMatch(/attDashStatsForDay[\s\S]{0,1800}total - present - leave/);
         expect(js).toMatch(/attDashComputeRate[\s\S]{0,400}markedTotal <= 0[\s\S]{0,120}rate: null/);
     });
 
     it('class breakdown respects roster membership and classFilter', function () {
         var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
-        expect(js).toMatch(/attDashClassBreakdown[\s\S]{0,1200}rosterIds/);
-        expect(js).toMatch(/attDashClassBreakdown[\s\S]{0,1800}classFilter/);
+        expect(js).toMatch(/attDashClassBreakdown[\s\S]{0,800}attDashClassBreakdownFromFinal/);
+        expect(js).toMatch(/attDashClassBreakdown[\s\S]{0,1200}classFilter/);
         expect(js).not.toMatch(/attDashClassBreakdown[\s\S]{0,2000}row\.total - row\.present - row\.leave/);
     });
 
@@ -42,5 +43,19 @@ describe('Attendance dashboard calculation fixes', function () {
         expect(helper).toContain('function countDayMarksFromDoc');
         expect(helper).toMatch(/emsApplyDashboardAttendance[\s\S]{0,600}markedTotal <= 0/);
         expect(helper).toMatch(/emsApplyDashboardAttendance[\s\S]{0,800}Math\.min\(100/);
+        expect(helper).toMatch(/todayParts[\s\S]{0,400}Asia\/Karachi/);
+    });
+
+    it('filters inactive registrations out of dashboard roster', function () {
+        var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
+        expect(js).toContain('function attDashIsEligibleRegistration');
+        expect(js).toMatch(/attDashGetUsers[\s\S]{0,500}filter\(attDashIsEligibleRegistration\)/);
+        expect(js).toContain("s === 'inactive'");
+    });
+
+    it('main dashboard snapshot uses marked denominator not residual absent', function () {
+        var js = fs.readFileSync(path.join(ROOT, 'dashboard.js'), 'utf8');
+        expect(js).not.toMatch(/emsRenderAttendanceSnapshot[\s\S]{0,800}totalStudents - present/);
+        expect(js).toMatch(/emsRenderAttendanceSnapshot[\s\S]{0,1200}markedTotal/);
     });
 });

@@ -32,11 +32,61 @@
         return null;
     }
 
-    function firestorePathFor(tenantId) {
+    function firestorePathFor(tenantId, scope) {
+        if (scope === 'attendance') {
+            return tenantId ? ('All_Madrasas/' + tenantId + '/Attendance') : '—';
+        }
+        if (scope === 'exams') {
+            return tenantId ? ('All_Madrasas/' + tenantId + '/ExamResults') : '—';
+        }
         if (typeof global.emsFirestoreRegistrationsPath === 'function') {
             return global.emsFirestoreRegistrationsPath(tenantId);
         }
         return tenantId ? ('All_Madrasas/' + tenantId + '/Registrations') : '—';
+    }
+
+    function localAttendanceSheetCount() {
+        try {
+            if (typeof global.emsOfflineListAttendanceKeys === 'function') {
+                var month = '';
+                try {
+                    month = new Intl.DateTimeFormat('en-CA', {
+                        timeZone: 'Asia/Karachi',
+                        year: 'numeric',
+                        month: '2-digit'
+                    }).format(new Date()).slice(0, 7);
+                } catch (eM) {
+                    month = new Date().toISOString().slice(0, 7);
+                }
+                var keys = global.emsOfflineListAttendanceKeys(month) || [];
+                return keys.length;
+            }
+        } catch (e) { /* ignore */ }
+        return 0;
+    }
+
+    function localExamsRecordCount() {
+        if (typeof global.emsExamsLocalKeyStats === 'function') {
+            var s = global.emsExamsLocalKeyStats();
+            return (s && s.total) || 0;
+        }
+        try {
+            var raw = null;
+            if (typeof global.emsCacheGet === 'function') {
+                var cached = global.emsCacheGet('ems_full_exams', null);
+                if (Array.isArray(cached)) return cached.length;
+            }
+            raw = localStorage.getItem('ems_full_exams');
+            if (!raw) return 0;
+            var parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed.length : 0;
+        } catch (e) {
+            return 0;
+        }
+    }
+
+    function isDeptPullScope(scope) {
+        return scope === 'attendance' || scope === 'exams';
     }
 
     function getPreflight() {
@@ -221,7 +271,11 @@
                 }
             }
             var localEl = document.getElementById('ems-cloud-pull-confirm-local');
-            if (localEl) localEl.textContent = String(localRecordCount());
+            if (localEl) {
+                localEl.textContent = String(
+                    opts.localCount != null ? opts.localCount : localRecordCount()
+                );
+            }
             var btnOk = document.getElementById('ems-cloud-pull-confirm-go');
             var btnCancel = document.getElementById('ems-cloud-pull-confirm-cancel');
             function cleanup() {
@@ -276,14 +330,102 @@
         return Promise.resolve({ ok: false, source: 'no_fn', count: 0, error: 'Cloud pull not loaded' });
     }
 
+    function pullAttendance(tenantId, pullOpts) {
+        pullOpts = pullOpts || {};
+        if (typeof global.emsPullAttendanceFromCloud === 'function') {
+            return global.emsPullAttendanceFromCloud(tenantId, {
+                source: pullOpts.source || 'cloud_pull_execute'
+            });
+        }
+        if (typeof global.emsPullModuleGroup === 'function') {
+            return global.emsPullModuleGroup('Attendance').then(function (r) {
+                return {
+                    ok: true,
+                    count: (r && r.pulled) || 0,
+                    settingsOnly: true,
+                    source: 'attendance_settings_fallback'
+                };
+            });
+        }
+        console.error('[EMS] cloud pull: attendance pull function not loaded');
+        return Promise.resolve({
+            ok: false,
+            source: 'no_fn',
+            count: 0,
+            error: 'Attendance cloud pull not loaded'
+        });
+    }
+
+    function pullExams(tenantId, pullOpts) {
+        pullOpts = pullOpts || {};
+        if (typeof global.emsPullExamsFromCloud === 'function') {
+            return global.emsPullExamsFromCloud(tenantId, {
+                source: pullOpts.source || 'cloud_pull_execute'
+            });
+        }
+        if (global.EmsDirect && typeof global.EmsDirect.pullGroup === 'function') {
+            return global.EmsDirect.pullGroup('Exams', { forceFull: true, delta: false, forceApply: true }).then(function (r) {
+                return {
+                    ok: true,
+                    count: localExamsRecordCount() || ((r && r.pulled) || 0),
+                    pulled: (r && r.pulled) || 0,
+                    keysPulled: (r && r.details) || [],
+                    byKey: (r && r.keys) || {},
+                    source: 'exams_direct_fallback'
+                };
+            });
+        }
+        if (typeof global.emsPullModuleGroup === 'function') {
+            return global.emsPullModuleGroup('Exams').then(function (r) {
+                return {
+                    ok: true,
+                    count: localExamsRecordCount() || ((r && r.pulled) || 0),
+                    pulled: (r && r.pulled) || 0,
+                    source: 'exams_module_fallback'
+                };
+            });
+        }
+        console.error('[EMS] cloud pull: exams pull function not loaded');
+        return Promise.resolve({
+            ok: false,
+            source: 'no_fn',
+            count: 0,
+            error: 'Exams cloud pull not loaded'
+        });
+    }
+
     function countFromResult(res) {
         if (res && res.count != null) return res.count;
+        if (res && res.sheets != null) return res.sheets;
         if (res && res.memoryCount != null) return res.memoryCount;
         return localRecordCount();
     }
 
-    function refreshUIAfterPull(res) {
+    function refreshUIAfterPull(res, scope) {
         var n = countFromResult(res);
+        if (scope === 'attendance') {
+            if (typeof global.emsInvalidateAttDashboardCache === 'function') {
+                global.emsInvalidateAttDashboardCache();
+            }
+            if (typeof global.renderAttDashboard === 'function') {
+                try { global.renderAttDashboard(); } catch (eAtt) { /* ignore */ }
+            }
+            try {
+                var loadBtn = document.getElementById('btn-load-smart-register');
+                if (loadBtn && global.currentAttState && global.currentAttState.dbKey) {
+                    loadBtn.click();
+                }
+            } catch (eReload) { /* ignore */ }
+            if (typeof global.updateMasterDashboard === 'function') global.updateMasterDashboard();
+            return;
+        }
+        if (scope === 'exams') {
+            if (typeof global.refreshExamData === 'function') {
+                try { global.refreshExamData(); } catch (eEx) { /* ignore */ }
+            }
+            if (typeof global.updateMasterDashboard === 'function') global.updateMasterDashboard();
+            return;
+        }
         if (typeof global.emsMarkRepositoryReady === 'function') {
             global.emsMarkRepositoryReady(n, { bootComplete: n > 0, empty: n === 0 });
         }
@@ -293,7 +435,7 @@
         if (typeof global.emsDiagnosticsUIRun === 'function') global.emsDiagnosticsUIRun();
     }
 
-    function toastOutcome(res, tenantId, path) {
+    function toastOutcome(res, tenantId, path, scope) {
         if (typeof global.showToast !== 'function') return;
         var n = countFromResult(res);
         if (res && res.reason === 'cancelled') return;
@@ -308,11 +450,26 @@
             global.showToast(reasons[res.reason] || res.error || 'کلاؤڈ بحالی ناکام', 'error');
             return;
         }
+        var unit = 'ریکارڈ';
+        if (scope === 'attendance') unit = 'حاضری شیٹ';
+        else if (scope === 'exams') unit = 'امتحانی آئٹم';
         if (n > 0 && res && res.ok !== false) {
-            global.showToast('✅ کلاؤڈ بحالی مکمل: ' + n + ' ریکارڈ', 'success');
+            if (scope === 'exams') {
+                var keysN = (res.keysPulled && res.keysPulled.length)
+                    || (res.pulled)
+                    || 0;
+                var expected = (res.keysExpected && res.keysExpected.length) || 5;
+                global.showToast(
+                    '✅ امتحانات کلاؤڈ بحالی مکمل: ' + n + ' ' + unit +
+                    ' · ' + keysN + '/' + expected + ' ذخیرے (ترتیبات، ماسٹر شیٹ، نمبرز، لاکس)',
+                    'success'
+                );
+            } else {
+                global.showToast('✅ کلاؤڈ بحالی مکمل: ' + n + ' ' + unit, 'success');
+            }
         } else if (n === 0) {
             global.showToast(
-                '⚠️ Firebase path ' + (path || firestorePathFor(tenantId)) + ' پر ڈاؤن لوڈ ناکام — ' +
+                '⚠️ Firebase path ' + (path || firestorePathFor(tenantId, scope)) + ' پر ڈاؤن لوڈ ناکام — ' +
                 ((res && res.error) || 'کوئی ریکارڈ محفوظ نہیں'),
                 'warning'
             );
@@ -386,21 +543,26 @@
 
             updateProbeUI(true, 'Firebase سے ریکارڈز تلاش…');
 
+            var pullScope = opts.scope || 'registrations';
+
             return resolvePullTarget().then(function (target) {
             if (target && target.reason === 'firestore_unavailable') {
                 throw new Error('Firestore دستیاب نہیں — آن لائن موڈ آن کریں');
             }
             var pullTenant = (target && target.tenantId) || opts.tenantId || resolveTenantId();
             if (!pullTenant) {
-                toastOutcome({ ok: false, reason: 'no_tenant' }, null);
+                toastOutcome({ ok: false, reason: 'no_tenant' }, null, null, pullScope);
                 return { ok: false, reason: 'no_tenant' };
             }
-            var pullPath = (target && target.path) || firestorePathFor(pullTenant);
+            var pullPath = isDeptPullScope(pullScope)
+                ? firestorePathFor(pullTenant, pullScope)
+                : ((target && target.path) || firestorePathFor(pullTenant, pullScope));
 
             if (typeof global.emsPipelineDebug === 'function') {
                 global.emsPipelineDebug('cloud_pull_probe', {
                     tenantId: pullTenant,
                     firestorePath: pullPath,
+                    scope: pullScope,
                     probeSource: target && target.source,
                     probeCount: target && target.count,
                     hasData: target && target.hasData
@@ -412,14 +574,19 @@
             clearTriggerInflight(triggerBtn);
             updateProbeUI(false);
 
+            var confirmLocalCount = null;
+            if (pullScope === 'attendance') confirmLocalCount = localAttendanceSheetCount();
+            else if (pullScope === 'exams') confirmLocalCount = localExamsRecordCount();
+
             return showConfirmModal({
                 skipConfirm: !!opts.skipConfirm,
-                deltaPull: opts.scope === 'all',
+                deltaPull: pullScope === 'all',
                 tenantId: pullTenant,
                 firestorePath: pullPath,
-                cloudCount: target && target.count,
+                cloudCount: isDeptPullScope(pullScope) ? null : (target && target.count),
                 cloudTruncated: target && target.truncated,
-                probeError: target && target.error
+                probeError: target && target.error,
+                localCount: confirmLocalCount
             }).then(function (confirmed) {
                 if (!confirmed) return { ok: false, reason: 'cancelled' };
 
@@ -431,19 +598,32 @@
                 } else if (typeof global.emsActivateTenantStorage === 'function') {
                     global.emsActivateTenantStorage(pullTenant);
                 }
-                if (typeof global.emsShowRegistrationBootOverlay === 'function') {
+                if (!isDeptPullScope(pullScope) && typeof global.emsShowRegistrationBootOverlay === 'function') {
                     global.emsShowRegistrationBootOverlay(true, 'کلاؤڈ سے ڈیٹا ڈاؤن لوڈ…');
                 }
 
                 var tbody = document.querySelector('#reg-users-table tbody');
-                if (tbody && opts.scope !== 'all') {
+                if (tbody && pullScope !== 'all' && !isDeptPullScope(pullScope)) {
                     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;">کلاؤڈ سے ڈیٹا ڈاؤن لوڈ ہو رہا ہے…<br><small>' + pullPath + '</small></td></tr>';
                 }
 
-                updateProgressUI({ message: 'Firebase سے ڈاؤن لوڈ…', percent: 18, path: pullPath });
+                var progressMsg = 'Firebase سے ڈاؤن لوڈ…';
+                if (pullScope === 'attendance') progressMsg = 'حاضری ڈیٹا ڈاؤن لوڈ…';
+                else if (pullScope === 'exams') progressMsg = 'امتحانات ڈیٹا ڈاؤن لوڈ…';
+                updateProgressUI({
+                    message: progressMsg,
+                    percent: 18,
+                    path: pullPath
+                });
 
-                if (opts.scope === 'all' && typeof global.emsCloudPullNow === 'function') {
+                if (pullScope === 'all' && typeof global.emsCloudPullNow === 'function') {
                     return global.emsCloudPullNow();
+                }
+                if (pullScope === 'attendance') {
+                    return pullAttendance(pullTenant, { source: 'cloud_pull_execute' });
+                }
+                if (pullScope === 'exams') {
+                    return pullExams(pullTenant, { source: 'cloud_pull_execute' });
                 }
                 return pullRegistrations(pullTenant, { source: 'cloud_pull_execute' });
             }).then(function (res) {
@@ -451,10 +631,11 @@
                 lastResult = Object.assign({}, res || {}, {
                     tenantId: pullTenant,
                     firestorePath: pullPath,
+                    scope: pullScope,
                     at: Date.now()
                 });
-                refreshUIAfterPull(lastResult);
-                toastOutcome(lastResult, pullTenant, pullPath);
+                refreshUIAfterPull(lastResult, pullScope);
+                toastOutcome(lastResult, pullTenant, pullPath, pullScope);
                 try {
                     global.dispatchEvent(new CustomEvent('ems:cloud-pull-complete', { detail: lastResult }));
                 } catch (e) { /* ignore */ }

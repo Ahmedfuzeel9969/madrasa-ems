@@ -465,6 +465,12 @@
         return ensureQueueDocIdMap().then(function () {
             return findQueueRowByDocId(type, docId).then(function (existing) {
                 if (existing && existing.id != null) row.id = existing.id;
+                // Merge attendance field patches so clears are not dropped by later edits.
+                if (existing && type === 'attendance_patch'
+                    && existing.payload && typeof existing.payload === 'object'
+                    && row.payload && typeof row.payload === 'object') {
+                    row.payload = Object.assign({}, existing.payload, row.payload);
+                }
                 return enqueue(row);
             });
         });
@@ -480,7 +486,8 @@
         var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
         return checkRemoteVersion(ref, payload).then(function (gate) {
             if (!gate.proceed) return gate;
-            return flushOp(ref.set(payload, { merge: true }), {
+            // merge:false — cleared days must not survive Firestore deep-merge
+            return flushOp(ref.set(payload, { merge: false }), {
                 type: 'attendance', docId: row.docId, tenantId: tid
             });
         });
@@ -496,14 +503,27 @@
         if (!patch || !Object.keys(patch).length) {
             return Promise.resolve({ ok: false, error: 'empty_patch', code: 'INVALID_ROW' });
         }
-        patch.clientUpdatedAt = Date.now();
-        patch._version = (typeof patch._version === 'number' ? patch._version : 0) + 1;
-        var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
+        // If a top-level map is replaced, drop conflicting nested delete paths.
+        ['records', 'remarks', 'late', 'periodRecords'].forEach(function (field) {
+            if (!patch[field] || typeof patch[field] !== 'object') return;
+            Object.keys(patch).forEach(function (k) {
+                if (k.indexOf(field + '.') === 0) delete patch[k];
+            });
+        });
+        // null sentinel → FieldValue.delete() so cleared cells are removed.
         try {
             if (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) {
+                Object.keys(patch).forEach(function (path) {
+                    if (patch[path] === null) {
+                        patch[path] = firebase.firestore.FieldValue.delete();
+                    }
+                });
                 patch.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
             }
         } catch (eTs) { /* ignore */ }
+        patch.clientUpdatedAt = Date.now();
+        patch._version = (typeof patch._version === 'number' ? patch._version : 0) + 1;
+        var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
         return checkRemoteVersion(ref, patch).then(function (gate) {
             if (!gate.proceed) return gate;
             return flushOp(ref.update(patch), { type: 'attendance_patch', docId: row.docId }).then(function (res) {
