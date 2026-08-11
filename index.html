@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260716_mobile_nav_single">
+    <link rel="stylesheet" href="style.css?v=20260809_pdf1">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -1204,7 +1204,7 @@
                 <img id="full-size-image" src="" style="width: 100%; max-height: 400px; object-fit: contain; margin-bottom: 15px; border-radius: 6px; border: 1px solid #cbd5e1;">
                 <div class="btn-action-group" style="justify-content: center;">
                     <button class="btn btn-primary" onclick="printSpecificImage()"><i class="fas fa-print"></i> پرنٹ کریں</button>
-                    <button class="btn btn-secondary" onclick="printSpecificImage()"><i class="fas fa-file-pdf"></i> پی ڈی ایف (PDF)</button>
+                    <button class="btn btn-secondary" onclick="downloadSpecificImagePDF()"><i class="fas fa-file-pdf"></i> پی ڈی ایف (PDF)</button>
                     <button class="btn btn-danger" onclick="closeModal('image-preview-modal')"><i class="fas fa-times"></i> بند کریں</button>
                 </div>
             </div>
@@ -1795,7 +1795,15 @@
                         <div id="custom-teacher-input-area" style="display:none; margin-top:10px;"><input type="text" id="custom-teacher-name" class="input-control" placeholder="نئے استاد کا نام لکھیں..."></div>
                     </div>
                     <div class="input-group"><label>متعلقہ درجہ (Class)</label><select id="new-period-class" class="input-control att-dynamic-class"><option value="">درجہ...</option></select></div>
-                    <div class="input-group"><label>کتاب / مضمون</label><input type="text" id="new-period-book" class="input-control" placeholder="مثلاً: بخاری شریف"></div>
+                    <div class="input-group">
+                        <label>کتاب / مضمون <small style="color:#64748b;font-weight:normal;">(مرکزی کتب خانہ — امتحانات و نصاب)</small></label>
+                        <select id="new-period-book" class="input-control att-dynamic-lib" onchange="attOnPeriodBookSelectChange()">
+                            <option value="">کتب خانہ سے منتخب کریں (امتحانات / نصاب)...</option>
+                        </select>
+                        <div id="new-period-book-custom-wrap" style="display:none;margin-top:8px;">
+                            <input type="text" id="new-period-book-custom" class="input-control" placeholder="نئی کتاب کا نام لکھیں...">
+                        </div>
+                    </div>
                     <div class="input-group"><label>گھنٹہ (مثلاً: پہلا گھنٹہ)</label><input type="text" id="new-period-name" class="input-control"></div>
                     <div class="input-group"><label>مقام (کمرہ/ہال)</label><input type="text" id="new-period-location" class="input-control" placeholder="مثلاً: کمرہ نمبر 3"></div>
                     <div class="input-group"><label>وقت (شروع - ختم)</label><div style="display:flex; gap:5px;"><input type="time" id="new-period-start" class="input-control"><input type="time" id="new-period-end" class="input-control"></div></div>
@@ -2160,8 +2168,27 @@
                         <div class="form-grid" style="background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 20px;">
                             <div class="input-group">
                                 <label>درجہ</label>
-                                <select id="tpl-class-select" class="input-control exm-dynamic-class"><option value="">پہلے درجہ منتخب کریں</option></select>
+                                <select id="tpl-class-select" class="input-control exm-dynamic-class"><option value="">پہلے درجہ منتخب کریں</option><option value="__ALL_CLASSES__">تمام درجات</option></select>
                             </div>
+                            <div class="input-group" id="tpl-settings-toggle-wrap" style="display:none; justify-content:flex-end; align-self:end; flex-direction:row; gap:8px; flex-wrap:wrap;">
+                                <button type="button" class="btn btn-secondary" onclick="window.printDiv('tpl-matrix-printable')">
+                                    <i class="fas fa-print"></i> پرنٹ جدول
+                                </button>
+                                <button type="button" class="btn btn-secondary" id="btn-tpl-extra-settings" onclick="window.exmToggleTplExtraSettings()">
+                                    <i class="fas fa-cog"></i> اضافی سیٹنگز
+                                </button>
+                            </div>
+                            <div class="input-group" id="tpl-sheet-name-wrap" style="grid-column:1/-1;">
+                                <label>شیٹ کا نام</label>
+                                <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+                                    <input type="text" id="tpl-sheet-name" class="input-control" style="flex:1; min-width:220px;" placeholder="مثلاً: سالانہ امتحان — درجہ اولیٰ">
+                                    <button type="button" class="btn btn-success" id="btn-save-tpl-sheet" onclick="window.exmSaveTplSheet()">
+                                        <i class="fas fa-save"></i> شیٹ محفوظ کریں
+                                    </button>
+                                </div>
+                                <small style="display:block; margin-top:6px; color:#64748b;">ہر درجے کی ماسٹر شیٹ کا الگ نام محفوظ کریں۔ ڈیلیٹ صرف اسی شیٹ سے کتاب ہٹاتا ہے — لائبریری/نظام الاوقات سے نہیں۔</small>
+                            </div>
+                            <div id="tpl-extra-form-fields" style="display:contents;">
                             <div class="input-group">
                                 <label>کتاب (لائبریری سے)</label>
                                 <select id="tpl-book-select" class="input-control exm-dynamic-lib"><option value="">کتاب منتخب کریں</option></select>
@@ -2206,13 +2233,97 @@
                             <div class="input-group" style="justify-content: flex-end;">
                                 <button class="btn btn-primary" id="btn-add-tpl-book"><i class="fas fa-plus"></i> شیٹ میں شامل کریں</button>
                             </div>
+                            </div>
                         </div>
         
-                        <div class="table-responsive">
+                        <div id="tpl-detail-table-wrap" class="table-responsive">
                             <table class="data-table" id="tpl-books-table">
                                 <thead><tr><th>درجہ</th><th>کتاب</th><th>نصاب حصہ</th><th>کل نمبرات</th><th>تاریخ</th><th>وقت</th><th>کمرہ</th><th>نگران</th><th>استاد</th><th>نوعیت</th><th>ایکشن</th></tr></thead>
                                 <tbody><tr><td colspan="11" style="text-align:center;">اوپر درجہ منتخب کریں</td></tr></tbody>
                             </table>
+                        </div>
+
+                        <div id="tpl-all-matrix-wrap" style="display:none;">
+                            <div id="tpl-matrix-extra-settings" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end; margin-bottom:14px;">
+                                <div class="input-group" style="flex:1; min-width:220px;">
+                                    <label>عنوان الجدول</label>
+                                    <input type="text" id="tpl-matrix-title" class="input-control" placeholder="جدول اختبار الفترة الأولى 1448ھ — 2026م">
+                                </div>
+                                <div class="input-group" style="min-width:180px;">
+                                    <label>الزمن / وقت امتحان</label>
+                                    <input type="text" id="tpl-matrix-time" class="input-control" placeholder="8:15 — 11:30">
+                                </div>
+                                <button type="button" class="btn btn-secondary" onclick="window.printDiv('tpl-matrix-printable')"><i class="fas fa-print"></i> پرنٹ جدول</button>
+                            </div>
+                            <div id="tpl-matrix-printable" dir="rtl" style="background:#fff; padding:18px; border:2px solid #1e3a5f; border-radius:6px;">
+                                <div id="tpl-matrix-brand"></div>
+                                <div id="tpl-matrix-heading" style="text-align:center; margin:8px 0 14px;"></div>
+                                <div class="table-responsive" style="overflow-x:auto;">
+                                    <table id="tpl-matrix-table" class="tpl-exam-matrix" style="width:100%; border-collapse:collapse; table-layout:fixed; font-family:'Noto Nastaliq Urdu', serif;"></table>
+                                </div>
+                            </div>
+                            <style>
+                                #exam-win-template:not(.tpl-extra-open) #tpl-extra-form-fields { display: none !important; }
+                                #exam-win-template:not(.tpl-extra-open) #tpl-matrix-extra-settings { display: none !important; }
+                                #exam-win-template:not(.tpl-extra-open) .tpl-matrix-ctrl,
+                                #exam-win-template:not(.tpl-extra-open) .tpl-matrix-del { display: none !important; }
+                                #exam-win-template:not(.tpl-extra-open) .tpl-paper-date-print { display: block !important; }
+                                #exam-win-template:not(.tpl-extra-open) .tpl-matrix-paper-head { cursor: default; }
+                                #exam-win-template.tpl-extra-open .tpl-paper-date-print { display: none; }
+                                #exam-win-template.tpl-extra-open .tpl-exam-matrix .tpl-matrix-del { display: inline-block; }
+                                .tpl-exam-matrix th, .tpl-exam-matrix td {
+                                    border: 1.5px solid #1e3a5f;
+                                    padding: 8px 6px;
+                                    text-align: center;
+                                    vertical-align: middle;
+                                    font-size: 13px;
+                                    color: #0f172a;
+                                }
+                                .tpl-exam-matrix thead th {
+                                    background: #e8eef5;
+                                    font-weight: 700;
+                                    font-size: 12px;
+                                    line-height: 1.45;
+                                }
+                                .tpl-exam-matrix .tpl-matrix-class {
+                                    background: #f1f5f9;
+                                    font-weight: 700;
+                                    white-space: nowrap;
+                                    width: 120px;
+                                }
+                                .tpl-exam-matrix .tpl-matrix-cell {
+                                    min-height: 42px;
+                                    word-break: break-word;
+                                }
+                                .tpl-exam-matrix .tpl-matrix-del {
+                                    display: inline-block;
+                                    margin-top: 4px;
+                                }
+                                .tpl-exam-matrix .tpl-matrix-ctrl input[type="date"],
+                                .tpl-exam-matrix .tpl-matrix-ctrl input[type="number"] {
+                                    border: 1px solid #94a3b8;
+                                    border-radius: 4px;
+                                    background: #fff;
+                                }
+                                .tpl-exam-matrix .tpl-matrix-paper-head {
+                                    cursor: grab;
+                                    user-select: none;
+                                }
+                                .tpl-exam-matrix .tpl-matrix-paper-head.tpl-paper-dragging {
+                                    opacity: 0.55;
+                                }
+                                .tpl-exam-matrix .tpl-matrix-paper-head.tpl-paper-drag-over {
+                                    outline: 2px dashed #2563eb;
+                                    background: #dbeafe;
+                                }
+                                @media print {
+                                    .tpl-exam-matrix .tpl-matrix-del,
+                                    .tpl-exam-matrix .tpl-matrix-ctrl { display: none !important; }
+                                    .tpl-exam-matrix .tpl-paper-date-print { display: block !important; }
+                                    #tpl-matrix-extra-settings { display: none !important; }
+                                    #tpl-settings-toggle-wrap { display: none !important; }
+                                }
+                            </style>
                         </div>
                     </div>
         
@@ -2226,7 +2337,7 @@
                             </div>
                             <div class="input-group">
                                 <label>درجہ (ماسٹر شیٹ)</label>
-                                <select id="sch-class-select" class="input-control exm-dynamic-class"><option value="">منتخب کریں...</option></select>
+                                <select id="sch-class-select" class="input-control exm-dynamic-class"><option value="">منتخب کریں...</option><option value="__ALL_CLASSES__">تمام درجات</option></select>
                             </div>
                             <div class="input-group" style="justify-content: center;">
                                 <label class="checkbox-label" style="padding:8px 10px;"><input type="checkbox" id="sch-aggregate"> اجتماعی نقشہ (تمام درجات)</label>
@@ -2273,6 +2384,49 @@
                                 <button class="btn btn-outline" onclick="window.examExportSchedule()"><i class="fas fa-file-excel"></i> Excel/CSV</button>
                             </div>
                         </div>
+
+                        <div id="sch-matrix-wrap" style="display:none;">
+                            <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; margin-bottom:12px;">
+                                <button type="button" class="btn btn-outline" onclick="window.examExportSchedule()"><i class="fas fa-file-excel"></i> Excel/CSV</button>
+                                <button type="button" class="btn btn-secondary" onclick="window.printDiv('sch-matrix-printable')"><i class="fas fa-print"></i> پرنٹ جدول</button>
+                            </div>
+                            <div id="sch-matrix-printable" dir="rtl" style="background:#fff; padding:18px; border:2px solid #1e3a5f; border-radius:6px;">
+                                <div id="sch-matrix-brand"></div>
+                                <div id="sch-matrix-heading" style="text-align:center; margin:8px 0 14px;"></div>
+                                <div class="table-responsive" style="overflow-x:auto;">
+                                    <table id="sch-matrix-table" class="tpl-exam-matrix" style="width:100%; border-collapse:collapse; table-layout:fixed; font-family:'Noto Nastaliq Urdu', serif;"></table>
+                                </div>
+                            </div>
+                            <style>
+                                #sch-matrix-wrap .tpl-exam-matrix th,
+                                #sch-matrix-wrap .tpl-exam-matrix td {
+                                    border: 1.5px solid #1e3a5f;
+                                    padding: 8px 6px;
+                                    text-align: center;
+                                    vertical-align: middle;
+                                    font-size: 13px;
+                                    color: #0f172a;
+                                }
+                                #sch-matrix-wrap .tpl-exam-matrix thead th {
+                                    background: #e8eef5;
+                                    font-weight: 700;
+                                    font-size: 12px;
+                                    line-height: 1.45;
+                                }
+                                #sch-matrix-wrap .tpl-exam-matrix .tpl-matrix-class {
+                                    background: #f1f5f9;
+                                    font-weight: 700;
+                                    white-space: nowrap;
+                                    width: 120px;
+                                }
+                                #sch-matrix-wrap .tpl-matrix-ctrl,
+                                #sch-matrix-wrap .tpl-matrix-del { display: none !important; }
+                                #sch-matrix-wrap .tpl-paper-date-print { display: block !important; }
+                                @media print {
+                                    #sch-matrix-wrap > div:first-child { display: none !important; }
+                                }
+                            </style>
+                        </div>
         
                         <div id="sch-printable-area" style="background: #fff; padding: 20px; border: 2px solid #2c3e50; border-radius: 8px; display: none;">
                             <div id="sch-brand-header"></div>
@@ -2304,8 +2458,21 @@
                                 <label>درجہ (ماسٹر شیٹ)</label>
                                 <select id="mrk-class" class="input-control exm-dynamic-class"><option value="">منتخب کریں...</option></select>
                             </div>
+                            <div class="input-group">
+                                <label>نتیجے کی تاریخ</label>
+                                <input type="date" id="mrk-result-date" class="input-control" onchange="window.exmRefreshResultDateOptions('mrk')">
+                            </div>
+                            <div class="input-group">
+                                <label>محفوظ شدہ نتائج</label>
+                                <select id="mrk-result-session" class="input-control" onchange="window.exmOnResultSessionPick('mrk')">
+                                    <option value="">— نیا / دستی تاریخ —</option>
+                                </select>
+                            </div>
                             <div class="input-group" style="justify-content: flex-end;">
                                 <button class="btn btn-primary" id="btn-generate-mark-sheet"><i class="fas fa-table"></i> ایکسل گرڈ تیار کریں</button>
+                            </div>
+                            <div style="grid-column:1/-1;font-size:12px;color:#64748b;">
+                                نیا نتیجہ = نئی تاریخ منتخب کر کے محفوظ کریں۔ پرانا نتیجہ تبدیل کیے بغیر لامحدود تواریخ محفوظ ہو سکتی ہیں۔
                             </div>
                         </div>
         
@@ -2392,6 +2559,16 @@
                                 <label>درجہ</label>
                                 <select id="res-class" class="input-control exm-dynamic-class"><option value="">منتخب کریں</option></select>
                             </div>
+                            <div class="input-group">
+                                <label>نتیجے کی تاریخ</label>
+                                <input type="date" id="res-result-date" class="input-control" onchange="window.exmRefreshResultDateOptions('res')">
+                            </div>
+                            <div class="input-group">
+                                <label>محفوظ شدہ نتائج</label>
+                                <select id="res-result-session" class="input-control" onchange="window.exmOnResultSessionPick('res')">
+                                    <option value="">— نیا / دستی تاریخ —</option>
+                                </select>
+                            </div>
                             <div class="input-group" id="res-student-container" style="display: none;">
                                 <label>طالب علم</label>
                                 <select id="res-student" class="input-control exm-dynamic-student"><option value="">منتخب کریں</option></select>
@@ -2427,14 +2604,43 @@
                                 <select id="ana-exam-name" class="input-control exm-dynamic-examnames"></select>
                             </div>
                             <div class="input-group">
-                                <label>درجہ (اختیاری)</label>
-                                <select id="ana-class" class="input-control exm-dynamic-class"><option value="">تمام درجات</option></select>
+                                <label>تجزیہ کی قسم</label>
+                                <select id="ana-scope-mode" class="input-control" onchange="window.exmUpdateAnaScopeUi()">
+                                    <option value="one">ایک درجہ</option>
+                                    <option value="multi">ایک سے زیادہ درجات</option>
+                                    <option value="all">تمام درجات (ایک ساتھ)</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label>نتیجے کی تاریخ</label>
+                                <input type="date" id="ana-result-date" class="input-control" onchange="window.exmRefreshResultDateOptions('ana')">
+                            </div>
+                            <div class="input-group">
+                                <label>محفوظ شدہ نتائج</label>
+                                <select id="ana-result-session" class="input-control" onchange="window.exmOnResultSessionPick('ana')">
+                                    <option value="">— نیا / دستی تاریخ —</option>
+                                </select>
+                            </div>
+                            <div class="input-group" style="justify-content:center;">
+                                <label class="checkbox-label" style="padding:8px 10px;"><input type="checkbox" id="ana-all-dates"> تمام تواریخ شامل کریں</label>
+                            </div>
+                            <div class="input-group" id="ana-class-one-wrap">
+                                <label>درجہ</label>
+                                <select id="ana-class" class="input-control exm-dynamic-class"><option value="">درجہ منتخب کریں...</option></select>
+                            </div>
+                            <div class="input-group" id="ana-class-multi-wrap" style="display:none; grid-column:1/-1;">
+                                <label>درجات منتخب کریں (ایک سے زیادہ)</label>
+                                <div id="ana-class-multi-list" style="display:flex; flex-wrap:wrap; gap:8px 14px; padding:10px 12px; background:#fff; border:1px solid #cbd5e1; border-radius:6px; max-height:160px; overflow:auto;"></div>
+                                <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="window.exmAnaMultiSelectAll(true)">سب منتخب</button>
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="window.exmAnaMultiSelectAll(false)">سب ختم</button>
+                                </div>
                             </div>
                             <div class="input-group" style="justify-content: flex-end;">
                                 <button class="btn btn-primary" id="btn-run-analysis"><i class="fas fa-chart-bar"></i> تجزیہ چلائیں</button>
                             </div>
                         </div>
-                        <div id="exam-analysis-content"><p style="color:#94a3b8;">امتحان منتخب کر کے "تجزیہ چلائیں" پر کلک کریں۔</p></div>
+                        <div id="exam-analysis-content"><p style="color:#94a3b8;">امتحان اور تجزیہ کی قسم منتخب کر کے "تجزیہ چلائیں" پر کلک کریں۔</p></div>
                 </div>
 
                     <div id="exam-win-promote" class="premium-card exam-tab-content" style="display: none;">
@@ -2492,7 +2698,7 @@
                     <div id="cur-win-plan" class="premium-card cur-tab-content">
                         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px;">
                             <h2 style="margin:0;"><i class="fas fa-calendar-alt"></i> سالانہ، ششماہی و ماہانہ نصاب</h2>
-                            <button class="btn btn-secondary btn-sm" id="cur-btn-sync-lib"><i class="fas fa-sync"></i> کتب خانے سے sync</button>
+                            <button class="btn btn-secondary btn-sm" id="cur-btn-sync-lib" title="امتحانات کی مرکزی کتب خانہ سے کتابیں لائیں"><i class="fas fa-sync"></i> مرکزی کتب خانہ سے sync</button>
                             <button class="btn btn-outline btn-sm" id="cur-btn-auto-lines" title="صفحات × سطور"><i class="fas fa-calculator"></i> سطور حساب</button>
                             <button class="btn btn-outline btn-sm" id="cur-btn-auto-months" title="12 ماہ میں تقسیم"><i class="fas fa-magic"></i> ماہانہ تقسیم</button>
                         </div>
@@ -2500,7 +2706,7 @@
                             <div style="background:#f8fafc; padding:16px; border-radius:8px; border:1px solid #e2e8f0;">
                                 <div class="form-grid" style="grid-template-columns:1fr 1fr;">
                                     <div class="input-group" style="grid-column:1/-1;">
-                                        <label>کتاب (کتب خانے سے خودکار)</label>
+                                        <label>کتاب (امتحانات کی مرکزی کتب خانہ سے خودکار)</label>
                                         <select id="cur-plan-book-select" class="input-control"><option value="">کتاب منتخب کریں</option></select>
                                         <input type="hidden" id="cur-plan-edit-id">
                                     </div>
@@ -6238,8 +6444,8 @@
     <script defer src="ems-online-mode.js?v=20260708_search_index_v3"></script>
     <script defer src="cloud/ems-cloud-manifest.js?v=20260711_exams_masterpiece"></script>
     <script defer src="cloud/ems-cloud-loader.js?v=20260708_search_index_v3"></script>
-    <script defer src="ems-deferred-libs.js?v=20260706xlsx1"></script>
-    <script defer src="ems-utils.js?v=20260620p5"></script>
+    <script defer src="ems-deferred-libs.js?v=20260809_pdf1"></script>
+    <script defer src="ems-utils.js?v=20260809_att_print_bw"></script>
     <script defer src="ems-sync-cursor-idb.js?v=20260708_cursor_idb_v1"></script>
     <script defer src="cache-policy.js?v=20260708_cursor_idb_v1"></script>
     <script defer src="ems-master-data.js?v=20260619m"></script>
@@ -6250,37 +6456,44 @@
     <script defer src="ems-demo-sandbox.js?v=20260710_curriculum_bulletproof"></script>
     <script defer src="tenant-context.js?v=20260705sync1"></script>
     <script defer src="ems-tenant-storage.js?v=20260704pull3"></script>
-    <script defer src="ems-firestore-paths.js?v=20260704pull3"></script>
-    <script defer src="ems-cloud-pull.js?v=20260806_exams_lib_save"></script>
-    <script defer src="ems-tenant-resolver.js?v=20260704pull3"></script>
+    <script defer src="ems-firestore-paths.js?v=20260809_tenant_loop"></script>
+    <script defer src="ems-cloud-pull.js?v=20260809_att_print_bw"></script>
+    <script defer src="ems-tenant-resolver.js?v=20260809_tenant_loop"></script>
     <script defer src="department-context.js?v=20260620dept4"></script>
     <script defer src="ems-sw-update.js?v=20260708_sw_update_v1"></script>
-    <script defer src="core.js?v=20260806_exams_lib_save"></script>
-    <script defer src="portal-access.js?v=20260717_white_screen_fix"></script>
+    <script defer src="core.js?v=20260809_att_print_bw"></script>
+    <script defer src="portal-access.js?v=20260809_tenant_loop"></script>
     <script defer src="landing.js?v=20260710_remove_guest_portal"></script>
     <script defer src="ems-offline-session-cache.js?v=20260705desktopfix6"></script>
     <script defer src="ems-offline-policy.js?v=20260707_sync_hardening_v1"></script>
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
-    <script defer src="auth.js?v=20260717_post_login_boot_fix"></script>
-    <script defer src="ems-boot-gate.js?v=20260717_white_screen_fix"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260806_exams_lib_save"></script>
-    <script defer src="ems-lazy-loader.js?v=20260806_exams_lib_save"></script>
+    <script defer src="auth.js?v=20260809_tenant_loop"></script>
+    <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260811_att_cur_lib"></script>
+    <script defer src="ems-lazy-loader.js?v=20260811_att_cur_lib"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>
     <script defer src="ems-global-sync.js?v=20260707_sync_hardening_v1"></script>
     <script>
     setTimeout(function () {
-        if (document.body.classList.contains('ems-authenticated')) return;
+        if (document.body.classList.contains('ems-authenticated')
+            && !document.body.classList.contains('ems-locked')) return;
         if (typeof window.emsRecoverBlankBootUi === 'function') {
             window.emsRecoverBlankBootUi();
         }
-        if (!document.documentElement.classList.contains('ems-booting')) return;
-        var msg = document.getElementById('ems-boot-splash-msg');
-        if (msg) {
-            msg.textContent = 'لوڈنگ میں تاخیر — نیٹ ورک چیک کریں، یا ایپ بند کر کے دوبارہ کھولیں';
+        /* Still stuck on splash with no real UI — force login (never keep infinite spinner). */
+        if (document.documentElement.classList.contains('ems-booting')
+            || document.getElementById('ems-boot-splash')) {
+            if (typeof window.emsForceShowLoginShell === 'function') {
+                window.emsForceShowLoginShell('لوڈنگ میں تاخیر — لاگ ان صفحہ کھول دیا گیا۔');
+            } else if (typeof window.emsShowLanding === 'function') {
+                document.documentElement.classList.remove('ems-booting', 'ems-offline-no-signin');
+                if (typeof window.emsDismissBootSplash === 'function') window.emsDismissBootSplash();
+                window.emsShowLanding();
+            }
         }
-    }, 12000);
+    }, 10000);
     </script>
 </body>
 </html>

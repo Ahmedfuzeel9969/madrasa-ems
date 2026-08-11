@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260708_sw_update_v1';
+var EMS_SW_BUILD_TAG = '20260809_tenant_loop';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

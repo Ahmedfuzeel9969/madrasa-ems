@@ -1252,7 +1252,30 @@ function attRegisterTabBootHandlers() {
   window.emsRegisterAttTabBoot('att-timetable', function () {
     if (!_attDropdownReady) loadAttDropdowns();
     if (typeof loadSettingsData === 'function') loadSettingsData();
-    if (typeof window.renderTimetable === 'function') window.renderTimetable();
+    function afterLibReady() {
+      var migrateResult = attMigratePeriodBooksToLibrary();
+      if (migrateResult && migrateResult.added > 0 && typeof window.showToast === 'function') {
+        window.showToast(
+          migrateResult.added + ' کتاب/مضمون مرکزی کتب خانے میں شامل ہو گئیں (امتحانات و نصاب — تکرار کے بغیر)',
+          'success'
+        );
+      }
+      try { attSyncLibraryToCurriculum({ skipUi: true }); } catch (eCur) { /* ignore */ }
+      if (typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
+        try { window.exmSyncTimetableBooksToMasterSheet({ silent: true }); } catch (eTpl) { /* ignore */ }
+      }
+      if (typeof window.renderTimetable === 'function') window.renderTimetable();
+    }
+    if (typeof window.curEnsureLibraryReady === 'function') {
+      window.curEnsureLibraryReady().then(afterLibReady).catch(afterLibReady);
+    } else if (typeof window.emsDurableEnsureKey === 'function') {
+      Promise.resolve(window.emsDurableEnsureKey(ATT_LIB_BOOKS_KEY))
+        .then(function () { return window.emsDurableEnsureKey(ATT_CUR_PLANS_KEY); })
+        .then(afterLibReady)
+        .catch(afterLibReady);
+    } else {
+      afterLibReady();
+    }
   });
   window.emsRegisterAttTabBoot('att-reports-panel', function () {
     var toEl = document.getElementById('rep-att-to');
@@ -1471,16 +1494,302 @@ function loadPeriods() {
 
 window._attEditingPeriodId = null;
 
+var ATT_LIB_BOOKS_KEY = 'ems_library_books';
+var ATT_CUR_PLANS_KEY = 'ems_curriculum_plans';
+var ATT_BOOK_ADD_NEW = '__ADD_NEW__';
+
 function attFormatBookName(bookName) {
   if (!bookName || bookName === '-') return '';
   return bookName;
 }
 
+function attNormalizeLibraryBookDisplay(name) {
+  return String(name == null ? '' : name).trim().replace(/\s+/g, ' ');
+}
+
+/** Same name once — trim/space-collapse + Unicode NFC + case-fold. */
+function attLibraryBookDedupeKey(name) {
+  var s = attNormalizeLibraryBookDisplay(name);
+  if (!s) return '';
+  try { s = s.normalize('NFC'); } catch (eNfc) { /* ignore */ }
+  try { return s.toLocaleLowerCase('ur'); } catch (eUr) {
+    try { return s.toLowerCase(); } catch (eLow) { return s; }
+  }
+}
+
+/** Durable-aware read of مرکزی کتب خانہ (same SSOT as Exams / Curriculum). */
+function attReadLibraryBooks() {
+  var books = [];
+  try {
+    if (typeof window.emsCacheGetRaw === 'function') {
+      var cached = window.emsCacheGetRaw(ATT_LIB_BOOKS_KEY);
+      if (cached) {
+        var parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) books = parsed;
+      }
+    }
+  } catch (eCache) { /* ignore */ }
+  if (!books.length && typeof window.emsDurableReadRaw === 'function') {
+    try {
+      var raw = window.emsDurableReadRaw(ATT_LIB_BOOKS_KEY);
+      if (raw) {
+        var parsedDurable = JSON.parse(raw);
+        if (Array.isArray(parsedDurable)) books = parsedDurable;
+      }
+    } catch (eDurable) { /* ignore */ }
+  }
+  if (!books.length) {
+    try {
+      var ls = JSON.parse(localStorage.getItem(ATT_LIB_BOOKS_KEY) || '[]');
+      if (Array.isArray(ls)) books = ls;
+    } catch (eLs) { /* ignore */ }
+  }
+  return books
+    .map(function (b) { return attNormalizeLibraryBookDisplay(b); })
+    .filter(Boolean);
+}
+window.attReadLibraryBooks = attReadLibraryBooks;
+
+/** Book names from شعبہ نصاب plans (same names that appear in curriculum library UI). */
+function attReadCurriculumPlanBooks() {
+  var plans = null;
+  try {
+    if (typeof window.curGetPlans === 'function') {
+      plans = window.curGetPlans();
+    }
+  } catch (eCur) { plans = null; }
+  if (!Array.isArray(plans) || !plans.length) {
+    var raw = null;
+    try {
+      if (typeof window.emsCacheGetRaw === 'function') raw = window.emsCacheGetRaw(ATT_CUR_PLANS_KEY);
+    } catch (eCache) { /* ignore */ }
+    if ((raw == null || raw === '') && typeof window.emsDurableReadRaw === 'function') {
+      try { raw = window.emsDurableReadRaw(ATT_CUR_PLANS_KEY); } catch (eDur) { /* ignore */ }
+    }
+    if (raw == null || raw === '') {
+      try { raw = localStorage.getItem(ATT_CUR_PLANS_KEY); } catch (eLs) { /* ignore */ }
+    }
+    if (raw) {
+      try {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) plans = parsed;
+      } catch (eParse) { plans = []; }
+    }
+  }
+  if (!Array.isArray(plans)) plans = [];
+  var byKey = {};
+  var out = [];
+  plans.forEach(function (p) {
+    var name = attNormalizeLibraryBookDisplay(p && p.bookName);
+    if (!name || name === '-') return;
+    var key = attLibraryBookDedupeKey(name);
+    if (!key || byKey[key]) return;
+    byKey[key] = true;
+    out.push(name);
+  });
+  return out;
+}
+
+/** Push مرکزی کتب خانہ names into نصاب plans (mirrors exams master-sheet sync). */
+function attSyncLibraryToCurriculum(opts) {
+  opts = opts || {};
+  function run() {
+    if (typeof window.curSyncFromLibrary === 'function') {
+      try { window.curSyncFromLibrary(); } catch (eSync) { /* ignore */ }
+    }
+    if (opts.skipUi) return;
+    if (typeof window.curRenderPlanning === 'function'
+        && document.getElementById('module-curriculum')
+        && document.getElementById('module-curriculum').classList.contains('active')) {
+      try { window.curRenderPlanning(); } catch (eUi) { /* ignore */ }
+    }
+  }
+  if (typeof window.curEnsureLibraryReady === 'function') {
+    return window.curEnsureLibraryReady().then(run).catch(run);
+  }
+  run();
+  return Promise.resolve();
+}
+window.attSyncLibraryToCurriculum = attSyncLibraryToCurriculum;
+
+function attWriteLibraryBooks(books, opts) {
+  opts = opts || {};
+  var list = Array.isArray(books) ? books : [];
+  var str = JSON.stringify(list);
+  if (typeof window.emsSaveModuleData === 'function') {
+    window.emsSaveModuleData(ATT_LIB_BOOKS_KEY, str, { mutation: true, autoDelta: true });
+  } else if (typeof window.emsDurableWriteRaw === 'function') {
+    window.emsDurableWriteRaw(ATT_LIB_BOOKS_KEY, str);
+    try { localStorage.setItem(ATT_LIB_BOOKS_KEY, str); } catch (eWrite) { /* ignore */ }
+  } else {
+    try { localStorage.setItem(ATT_LIB_BOOKS_KEY, str); } catch (eLs) { /* ignore */ }
+  }
+  if (typeof window.emsCacheInvalidate === 'function') {
+    try { window.emsCacheInvalidate(ATT_LIB_BOOKS_KEY); } catch (eInv) { /* ignore */ }
+  }
+  if (!opts.skipRefresh && typeof window.refreshExamData === 'function') {
+    try { window.refreshExamData(); } catch (eRefresh) { /* ignore */ }
+  }
+  if (!opts.skipCurSync) {
+    try { attSyncLibraryToCurriculum({ skipUi: !!opts.skipCurUi }); } catch (eCur) { /* ignore */ }
+  }
+  return list;
+}
+
+function attEnsureLibraryBook(name) {
+  name = attNormalizeLibraryBookDisplay(name);
+  if (!name || name === '-') return name;
+  var books = attReadLibraryBooks();
+  var key = attLibraryBookDedupeKey(name);
+  for (var i = 0; i < books.length; i++) {
+    if (attLibraryBookDedupeKey(books[i]) === key) return books[i];
+  }
+  books.push(name);
+  attWriteLibraryBooks(books);
+  return name;
+}
+
+/** Unique کتاب/مضمون names already stored on timetable periods. */
+function attCollectUniquePeriodBooks() {
+  var periods = [];
+  try {
+    periods = JSON.parse(localStorage.getItem('ems_att_periods') || '[]') || [];
+  } catch (eParse) { periods = []; }
+  if (!Array.isArray(periods)) periods = [];
+  var byKey = {};
+  var out = [];
+  periods.forEach(function (p) {
+    var name = attNormalizeLibraryBookDisplay(attFormatBookName(p && p.bookName));
+    if (!name || name === '-') return;
+    var key = attLibraryBookDedupeKey(name);
+    if (!key || byKey[key]) return;
+    byKey[key] = true;
+    out.push(name);
+  });
+  return out;
+}
+
+/**
+ * Merge timetable + نصاب plan کتاب/مضمون into مرکزی کتب خانہ (deduped).
+ * Idempotent — safe to run on every timetable open.
+ */
+function attMigratePeriodBooksToLibrary(opts) {
+  opts = opts || {};
+  var fromPeriods = attCollectUniquePeriodBooks();
+  var fromCurriculum = attReadCurriculumPlanBooks();
+  var existing = attReadLibraryBooks();
+  var byKey = {};
+  var merged = [];
+  existing.forEach(function (b) {
+    var name = attNormalizeLibraryBookDisplay(b);
+    if (!name) return;
+    var key = attLibraryBookDedupeKey(name);
+    if (!key || byKey[key]) return;
+    byKey[key] = true;
+    merged.push(name);
+  });
+  var added = 0;
+  function addName(name) {
+    var key = attLibraryBookDedupeKey(name);
+    if (!key || byKey[key]) return;
+    byKey[key] = true;
+    merged.push(name);
+    added++;
+  }
+  fromPeriods.forEach(addName);
+  fromCurriculum.forEach(addName);
+  var changed = added > 0 || merged.length !== existing.length;
+  if (changed) {
+    attWriteLibraryBooks(merged, {
+      skipRefresh: !!opts.skipRefresh,
+      skipCurSync: opts.skipCurSync != null ? !!opts.skipCurSync : !!opts.skipRefresh
+    });
+  }
+  return { added: added, total: merged.length, changed: changed };
+}
+
+window.attMigratePeriodBooksToLibrary = attMigratePeriodBooksToLibrary;
+
+function attEscapeBookOption(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function attFillPeriodBookSelect(selectedName) {
+  var sel = document.getElementById('new-period-book');
+  if (!sel || sel.tagName !== 'SELECT') return;
+  /* Merge timetable + نصاب books into مرکزی کتب خانہ before painting options */
+  attMigratePeriodBooksToLibrary({ skipRefresh: true, skipCurSync: true });
+  var selected = attFormatBookName(selectedName);
+  var books = attReadLibraryBooks().slice().sort(function (a, b) {
+    try { return a.localeCompare(b, 'ur'); } catch (e) { return a < b ? -1 : a > b ? 1 : 0; }
+  });
+  if (selected && books.indexOf(selected) < 0) books.unshift(selected);
+  var html = '<option value="">کتب خانہ سے منتخب کریں (امتحانات / نصاب)...</option>';
+  books.forEach(function (b) {
+    var safe = attEscapeBookOption(b);
+    html += '<option value="' + safe + '">' + safe + '</option>';
+  });
+  html += '<option value="' + ATT_BOOK_ADD_NEW + '">＋ نئی کتاب شامل کریں...</option>';
+  sel.innerHTML = html;
+  sel.value = selected || '';
+  var wrap = document.getElementById('new-period-book-custom-wrap');
+  if (wrap) wrap.style.display = 'none';
+  var custom = document.getElementById('new-period-book-custom');
+  if (custom) custom.value = '';
+}
+
+window.attOnPeriodBookSelectChange = function () {
+  var sel = document.getElementById('new-period-book');
+  var wrap = document.getElementById('new-period-book-custom-wrap');
+  if (!wrap) return;
+  var isAdd = !!(sel && sel.value === ATT_BOOK_ADD_NEW);
+  wrap.style.display = isAdd ? 'block' : 'none';
+  if (!isAdd) {
+    var custom = document.getElementById('new-period-book-custom');
+    if (custom) custom.value = '';
+  } else {
+    var input = document.getElementById('new-period-book-custom');
+    if (input) {
+      try { input.focus(); } catch (eFocus) { /* ignore */ }
+    }
+  }
+};
+
+window.attRefreshPeriodBookSelect = function () {
+  var sel = document.getElementById('new-period-book');
+  if (!sel || sel.tagName !== 'SELECT') return;
+  var cur = sel.value || '';
+  var custom = document.getElementById('new-period-book-custom');
+  var customVal = custom ? custom.value : '';
+  var selected = cur === ATT_BOOK_ADD_NEW ? '' : cur;
+  attFillPeriodBookSelect(selected);
+  if (cur === ATT_BOOK_ADD_NEW) {
+    sel.value = ATT_BOOK_ADD_NEW;
+    window.attOnPeriodBookSelectChange();
+    if (custom) custom.value = customVal;
+  }
+};
+
+function attResolvePeriodBookName() {
+  var sel = document.getElementById('new-period-book');
+  var v = sel ? String(sel.value || '').trim() : '';
+  if (v === ATT_BOOK_ADD_NEW) {
+    var custom = document.getElementById('new-period-book-custom');
+    return custom ? String(custom.value || '').trim() : '';
+  }
+  return v;
+}
+
 function attResetPeriodForm() {
-  ['new-period-name', 'new-period-book', 'new-period-location', 'custom-teacher-name'].forEach(function (id) {
+  ['new-period-name', 'new-period-location', 'custom-teacher-name'].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.value = '';
   });
+  attFillPeriodBookSelect('');
   var cls = document.getElementById('new-period-class');
   if (cls) cls.value = '';
   ['new-period-start', 'new-period-end'].forEach(function (id) {
@@ -1518,7 +1827,7 @@ function attFillPeriodForm(p) {
   };
   setVal('new-period-name', p.name);
   setVal('new-period-class', p.className && p.className !== '-' ? p.className : '');
-  setVal('new-period-book', attFormatBookName(p.bookName));
+  attFillPeriodBookSelect(attFormatBookName(p.bookName));
   setVal('new-period-location', p.location || '');
   setVal('new-period-start', p.start && p.start !== '-' ? p.start : '');
   setVal('new-period-end', p.end && p.end !== '-' ? p.end : '');
@@ -1547,7 +1856,7 @@ function attSavePeriodFromModal(opts) {
 
   var name = document.getElementById('new-period-name')?.value.trim();
   var className = document.getElementById('new-period-class')?.value || '-';
-  var bookName = document.getElementById('new-period-book')?.value.trim() || '-';
+  var bookName = attResolvePeriodBookName() || '-';
   var location = document.getElementById('new-period-location')?.value.trim() || '';
   var start = document.getElementById('new-period-start')?.value || '-';
   var end = document.getElementById('new-period-end')?.value || '-';
@@ -1561,6 +1870,16 @@ function attSavePeriodFromModal(opts) {
   if (!name) {
     if (typeof window.showToast === 'function') window.showToast('گھنٹے کا نام درج کرنا لازمی ہے!', 'error');
     return false;
+  }
+
+  var bookSel = document.getElementById('new-period-book');
+  if (bookSel && bookSel.value === ATT_BOOK_ADD_NEW && (!bookName || bookName === '-')) {
+    if (typeof window.showToast === 'function') window.showToast('نئی کتاب کا نام درج کریں!', 'error');
+    return false;
+  }
+
+  if (bookName && bookName !== '-') {
+    attEnsureLibraryBook(bookName);
   }
 
   if (teacherId === 'ADD_NEW') {
@@ -1622,9 +1941,13 @@ function attSavePeriodFromModal(opts) {
     logAttAudit(isEdit ? 'گھنٹہ ترمیم' : 'نیا گھنٹہ', (isEdit ? 'ترمیم: ' : '') + name);
   }
 
+  if (typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
+    try { window.exmSyncTimetableBooksToMasterSheet({ silent: true }); } catch (eExmSync) { /* ignore */ }
+  }
+
   if (addMore) {
     document.getElementById('new-period-name').value = '';
-    document.getElementById('new-period-book').value = '';
+    attFillPeriodBookSelect('');
     document.getElementById('new-period-class').value = '';
     if (document.getElementById('new-period-location')) document.getElementById('new-period-location').value = '';
     window._attEditingPeriodId = null;
@@ -1710,7 +2033,9 @@ function ttPopulateFilters() {
   };
   fill('tt-filter-teacher', periods.map((p) => p.teacherName), 'تمام اساتذہ');
   fill('tt-filter-class', periods.map((p) => p.className).filter((c) => c && c !== '-'), 'تمام درجات');
-  fill('tt-filter-book', periods.map((p) => p.bookName).filter((b) => b && b !== '-'), 'تمام کتب');
+  var periodBooks = periods.map((p) => p.bookName).filter((b) => b && b !== '-');
+  var libBooks = attReadLibraryBooks();
+  fill('tt-filter-book', periodBooks.concat(libBooks), 'تمام کتب');
 }
 
 function ttFilteredPeriods() {
@@ -2595,10 +2920,10 @@ window.attSignFooterHTML = function () {
 function attPrintWithBranding(innerHTML, title) {
   const wrap = document.createElement('div');
   wrap.id = 'att-print-wrap-temp';
-  wrap.style.cssText = 'background:#fff; padding:10px;';
+  wrap.style.cssText = 'background:#fff; padding:4px; color:#000;';
   wrap.innerHTML =
     window.attBrandHeaderHTML() +
-    (title ? `<h2 style="text-align:center; font-family:'Noto Nastaliq Urdu',serif; margin:8px 0 14px;">${title}</h2>` : '') +
+    (title ? `<h2 style="text-align:center; font-family:'Noto Nastaliq Urdu',serif; margin:4px 0 8px; color:#000; font-size:16px;">${title}</h2>` : '') +
     innerHTML +
     window.attSignFooterHTML();
   document.body.appendChild(wrap);
@@ -2610,13 +2935,133 @@ window.attPrintRegister = function () {
   const area = document.getElementById('att-register-print-area');
   if (!area) return;
   const st = window.currentAttState || {};
+
+  // کلون: اسکرین sticky / کنٹرول / تنگ سیلز پرنٹ میں کٹائی نہ کریں
+  var clone = area.cloneNode(true);
+  clone.querySelectorAll('.att-cell-controls, .daily-lock-btn, .att-period-bulk, .no-print').forEach(function (el) {
+    el.remove();
+  });
+  clone.querySelectorAll('[style]').forEach(function (el) {
+    var s = el.getAttribute('style') || '';
+    s = s
+      .replace(/position\s*:\s*sticky\s*;?/gi, '')
+      .replace(/z-index\s*:\s*[^;]+;?/gi, '')
+      .replace(/min-height\s*:\s*[^;]+;?/gi, '')
+      .replace(/min-width\s*:\s*[^;]+;?/gi, '')
+      .replace(/max-width\s*:\s*[^;]+;?/gi, '')
+      .replace(/max-height\s*:\s*[^;]+;?/gi, '')
+      .replace(/overflow\s*:\s*[^;]+;?/gi, '');
+    el.setAttribute('style', s);
+  });
+  clone.querySelectorAll('#smart-register-table').forEach(function (tbl) {
+    tbl.style.minWidth = '0';
+    tbl.style.width = '100%';
+    tbl.style.tableLayout = 'auto';
+  });
+
+  const printCss = `
+<style>
+@page { size: A3 landscape; margin: 8mm; }
+* { box-sizing: border-box; }
+body {
+  padding: 6px !important; margin: 0 !important;
+  background:#fff !important; color:#000 !important;
+  overflow: visible !important;
+  font-family: "Noto Nastaliq Urdu","Jameel Noori Nastaleeq",serif !important;
+}
+.att-brand-header, .att-brand-header * { color:#000 !important; background:transparent !important; }
+.att-brand-header img { max-height: 48px !important; }
+.att-brand-header h1, .att-brand-header h2 { font-size: 18px !important; margin: 4px 0 !important; color:#000 !important; line-height:1.5 !important; }
+h2 { font-size:16px !important; margin:4px 0 8px !important; color:#000 !important; line-height:1.5 !important; }
+
+/* معلومات پٹی — سیاہ باؤنڈری + سیاہ لکھائی (پرنٹر بیک گراؤنڈ بند ہو تو بھی نظر آئے) */
+.att-print-meta {
+  display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; align-items:center;
+  background:#000 !important; color:#fff !important;
+  -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important;
+  padding:6px 10px; margin:0 0 8px; font-size:12px; font-weight:700;
+  border:2px solid #000 !important; border-radius:0;
+}
+.att-print-meta span { color:#fff !important; }
+
+#att-register-print-area, #att-register-print-area * {
+  overflow: visible !important; max-height: none !important;
+}
+#smart-register-table {
+  width:100% !important; min-width:0 !important; max-width:100% !important;
+  border-collapse:collapse !important; table-layout:auto !important;
+  background:#fff !important; color:#000 !important;
+  border:2px solid #000 !important; font-size:12px !important;
+}
+#smart-register-table th, #smart-register-table td {
+  border:1px solid #000 !important;
+  padding:4px 5px !important;
+  vertical-align:middle !important;
+  line-height:1.55 !important;
+  overflow: visible !important;
+  word-wrap: break-word !important;
+  overflow-wrap: anywhere !important;
+  white-space: normal !important;
+  -webkit-print-color-adjust:exact !important; print-color-adjust:exact !important;
+}
+/* ہیڈر پٹی: سیاہ + سفید لکھائی؛ اگر بیک گراؤنڈ نہ چھپے تو باؤڈر سے پٹی واضح */
+#smart-register-table thead th {
+  background:#000 !important; color:#fff !important;
+  font-size:11px !important; font-weight:800 !important;
+  border:1.5px solid #000 !important;
+  text-align:center !important;
+}
+#smart-register-table thead th,
+#smart-register-table thead th * {
+  color:#fff !important;
+  background:#000 !important;
+  line-height:1.45 !important;
+}
+#smart-register-table thead th div { margin:0 !important; padding:1px 0 !important; }
+#smart-register-table tbody td {
+  background:#fff !important; color:#000 !important; font-size:12px !important;
+  text-align:center !important;
+}
+#smart-register-table tbody td:first-child {
+  background:#fff !important; color:#000 !important;
+  text-align:right !important;
+  min-width:130px !important; max-width:none !important; width:18% !important;
+}
+#smart-register-table tbody td:first-child,
+#smart-register-table tbody td:first-child strong {
+  font-size:14px !important; font-weight:700 !important; color:#000 !important;
+  line-height:1.55 !important;
+}
+#smart-register-table tbody td:first-child small {
+  font-size:11px !important; font-weight:600 !important; color:#000 !important;
+  display:inline-block !important; margin-top:2px !important;
+}
+.print-status-text {
+  display:inline-block !important; font-size:12px !important; color:#000 !important;
+  font-weight:800 !important; line-height:1.5 !important;
+  min-height:1.2em !important;
+}
+.att-cell-btn, .daily-lock-btn, .att-period-bulk, .no-print, .att-cell-controls { display:none !important; }
+.att-period-box {
+  border:1px solid #000 !important; color:#000 !important; background:#fff !important;
+  font-size:11px !important; line-height:1.4 !important; padding:1px 3px !important;
+}
+.col-holiday, .col-holiday-header { background:#fff !important; color:#000 !important; }
+#smart-register-table thead th.col-holiday-header,
+#smart-register-table thead th.col-holiday-header * {
+  background:#000 !important; color:#fff !important;
+}
+#smart-register-table tbody td > div {
+  min-height:0 !important; overflow:visible !important; line-height:1.5 !important;
+}
+</style>`;
   const info = `
-    <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; font-weight:bold; background:#f8fafc; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; margin-bottom:10px;">
+    <div class="att-print-meta">
         <span>درجہ/شعبہ: ${st.classId || 'تمام'}</span>
         <span>مہینہ: ${st.month || '-'}</span>
         <span>قسم: ${st.type || '-'}</span>
     </div>`;
-  attPrintWithBranding(info + area.innerHTML, 'حاضری رجسٹر');
+  attPrintWithBranding(printCss + info + clone.innerHTML, 'حاضری رجسٹر');
 };
 
 window.attPrintReport = function () {

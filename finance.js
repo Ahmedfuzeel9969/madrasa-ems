@@ -357,41 +357,121 @@
     if (typeof showToast === 'function') showToast((title || 'دستاویز') + ' — پرنٹ میں "Save as PDF" منتخب کریں', 'info');
   };
 
+  /** Clone target off-screen so hidden / scroll-clipped print areas capture fully. */
+  function finPreparePdfCapture(el) {
+    var old = document.getElementById('ems-pdf-capture-host');
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var width = Math.max(el.scrollWidth || 0, el.offsetWidth || 0, el.clientWidth || 0, 720);
+    var host = document.createElement('div');
+    host.id = 'ems-pdf-capture-host';
+    host.setAttribute('aria-hidden', 'true');
+    host.style.cssText = 'position:fixed;left:-12000px;top:0;width:' + width + 'px;background:#fff;z-index:-1;pointer-events:none;';
+    var clone = el.cloneNode(true);
+    clone.id = (el.id || 'pdf-clone') + '-capture';
+    clone.style.display = 'block';
+    clone.style.visibility = 'visible';
+    clone.style.opacity = '1';
+    clone.style.maxHeight = 'none';
+    clone.style.height = 'auto';
+    clone.style.overflow = 'visible';
+    clone.style.width = '100%';
+    clone.querySelectorAll('*').forEach(function (node) {
+      if (!node.style) return;
+      node.style.maxHeight = 'none';
+      node.style.overflow = 'visible';
+    });
+    host.appendChild(clone);
+    document.body.appendChild(host);
+    return { host: host, target: clone };
+  }
+
+  function finCleanupPdfCapture(pack) {
+    try {
+      if (pack && pack.host && pack.host.parentNode) pack.host.parentNode.removeChild(pack.host);
+    } catch (e) { /* ignore */ }
+  }
+
+  function finRasterToPdf(canvas, filename) {
+    var jsPDF = window.jspdf.jsPDF;
+    var pdf = new jsPDF('p', 'mm', 'a4');
+    var pageW = pdf.internal.pageSize.getWidth();
+    var pageH = pdf.internal.pageSize.getHeight();
+    var margin = 10;
+    var usableH = pageH - margin * 2;
+    var imgW = pageW - margin * 2;
+    var imgH = (canvas.height * imgW) / canvas.width;
+    var imgData = canvas.toDataURL('image/png');
+    if (imgH <= usableH) {
+      pdf.addImage(imgData, 'PNG', margin, margin, imgW, imgH);
+    } else {
+      var pxPerMm = canvas.height / imgH;
+      var pagePx = Math.floor(usableH * pxPerMm);
+      var yPx = 0;
+      var page = 0;
+      while (yPx < canvas.height) {
+        var sliceH = Math.min(pagePx, canvas.height - yPx);
+        var slice = document.createElement('canvas');
+        slice.width = canvas.width;
+        slice.height = sliceH;
+        var ctx = slice.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, slice.width, slice.height);
+        ctx.drawImage(canvas, 0, yPx, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
+        var sliceMm = (sliceH * imgW) / canvas.width;
+        if (page > 0) pdf.addPage();
+        pdf.addImage(slice.toDataURL('image/png'), 'PNG', margin, margin, imgW, sliceMm);
+        yPx += sliceH;
+        page += 1;
+      }
+    }
+    pdf.save(filename);
+  }
+
   window.finDownloadPDF = function (elementId, filename) {
     filename = filename || 'document.pdf';
     if (!/\.pdf$/i.test(filename)) filename += '.pdf';
     var el = document.getElementById(elementId);
     if (!el) return showToast('عنصر نہیں ملا', 'error');
-    if (!window.html2canvas || !window.jspdf) {
+
+    function fallbackPrint(msg, kind) {
       if (typeof window.printDiv === 'function') window.printDiv(elementId);
-      return showToast('PDF لائبریری نہیں — پرنٹ استعمال کریں', 'warning');
+      if (typeof showToast === 'function') showToast(msg || 'PDF نہیں بن سکی — پرنٹ کھول دیا', kind || 'warning');
     }
-    if (typeof showToast === 'function') showToast('PDF تیار ہو رہی ہے...', 'info');
-    html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false }).then(function (canvas) {
-      var jsPDF = window.jspdf.jsPDF;
-      var pdf = new jsPDF('p', 'mm', 'a4');
-      var pageW = pdf.internal.pageSize.getWidth();
-      var pageH = pdf.internal.pageSize.getHeight();
-      var margin = 10;
-      var imgW = pageW - margin * 2;
-      var imgH = (canvas.height * imgW) / canvas.width;
-      var imgData = canvas.toDataURL('image/png');
-      var y = margin;
-      var remaining = imgH;
-      pdf.addImage(imgData, 'PNG', margin, y, imgW, imgH);
-      remaining -= (pageH - margin * 2);
-      while (remaining > 0) {
-        pdf.addPage();
-        y = margin - (imgH - remaining);
-        pdf.addImage(imgData, 'PNG', margin, y, imgW, imgH);
-        remaining -= (pageH - margin * 2);
-      }
-      pdf.save(filename);
-      if (typeof showToast === 'function') showToast('PDF ڈاؤنلوڈ: ' + filename, 'success');
-    }).catch(function () {
-      if (typeof window.printDiv === 'function') window.printDiv(elementId);
-      if (typeof showToast === 'function') showToast('PDF نہیں بن سکی — پرنٹ کھول دیا', 'warning');
-    });
+
+    function runCapture() {
+      if (typeof showToast === 'function') showToast('PDF تیار ہو رہی ہے...', 'info');
+      var pack = finPreparePdfCapture(el);
+      var target = pack.target;
+      return window.html2canvas(target, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: target.scrollWidth || target.offsetWidth,
+        windowHeight: target.scrollHeight || target.offsetHeight
+      }).then(function (canvas) {
+        finCleanupPdfCapture(pack);
+        finRasterToPdf(canvas, filename);
+        if (typeof showToast === 'function') showToast('PDF ڈاؤنلوڈ: ' + filename, 'success');
+      }).catch(function () {
+        finCleanupPdfCapture(pack);
+        fallbackPrint();
+      });
+    }
+
+    var loader = typeof window.emsLoadPdfLibs === 'function' ? window.emsLoadPdfLibs : null;
+    if (loader) {
+      return loader().then(runCapture).catch(function () {
+        fallbackPrint('PDF لائبریری نہیں — پرنٹ استعمال کریں', 'warning');
+      });
+    }
+    if (!window.html2canvas || !window.jspdf) {
+      return fallbackPrint('PDF لائبریری نہیں — پرنٹ استعمال کریں', 'warning');
+    }
+    return runCapture();
   };
 
   window.finApplyReportPeriod = function (preset) {

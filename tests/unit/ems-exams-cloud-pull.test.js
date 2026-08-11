@@ -25,7 +25,8 @@ describe('Exams cloud pull (central ems-cloud-pull)', function () {
         expect(src).toContain('ems_library_books');
         expect(src).toContain('ems_exam_templates');
         expect(src).toContain('ems_exam_locks');
-        expect(src).toContain('forceApply: true');
+        expect(src).toContain('ems_master_sheet_meta');
+        expect(src).toContain('forceApply: false');
         expect(src).toContain('exmPullModuleDataFallback');
         expect(src).toContain("pullGroup('Exams'");
     });
@@ -33,7 +34,7 @@ describe('Exams cloud pull (central ems-cloud-pull)', function () {
     it('direct firestore honors forceApply on exams pullGroup', function () {
         var src = fs.readFileSync(path.join(ROOT, 'cloud/direct-firestore.js'), 'utf8');
         expect(src).toContain('forceApply');
-        expect(src).toContain("Exams: ['ems_full_exams', 'ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks']");
+        expect(src).toContain("Exams: ['ems_full_exams', 'ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks', 'ems_master_sheet_meta']");
         expect(src).toContain('applyRemoteDecision(localKey, remoteStr, remoteAt, opts)');
     });
 

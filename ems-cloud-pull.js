@@ -364,7 +364,7 @@
             });
         }
         if (global.EmsDirect && typeof global.EmsDirect.pullGroup === 'function') {
-            return global.EmsDirect.pullGroup('Exams', { forceFull: true, delta: false, forceApply: true }).then(function (r) {
+            return global.EmsDirect.pullGroup('Exams', { forceFull: true, delta: false, forceApply: false }).then(function (r) {
                 return {
                     ok: true,
                     count: localExamsRecordCount() || ((r && r.pulled) || 0),

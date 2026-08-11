@@ -225,25 +225,56 @@
 
     // ---------------- PDF (front + back) ----------------
     global.emsDownloadIDCardPDF = function () {
+        var f = document.getElementById('idc-front');
+        var bk = document.getElementById('idc-back');
+        if (!f) {
+            if (global.showToast) global.showToast('کارڈ نہیں ملا', 'error');
+            return;
+        }
+
+        function fallbackPrint() {
+            if (typeof global.emsPrintIDCard === 'function') global.emsPrintIDCard();
+            else if (global.showToast) global.showToast('PDF نہیں بن سکی — پرنٹ کریں', 'warning');
+        }
+
+        function run() {
+            if (global.showToast) global.showToast('PDF تیار ہو رہی ہے...', 'info');
+            var jsPDF = global.jspdf.jsPDF;
+            var pdf = new jsPDF('p', 'mm', [60, 92]);
+            var opts = { scale: 3, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false };
+            return global.html2canvas(f, opts).then(function (c1) {
+                pdf.addImage(c1.toDataURL('image/png'), 'PNG', 3, 3, 54, 85.6);
+                if (!bk) {
+                    pdf.save('IDCard-' + ((_currentUser && _currentUser.id) || 'card') + '.pdf');
+                    if (global.showToast) global.showToast('PDF ڈاؤنلوڈ ہو گئی', 'success');
+                    return null;
+                }
+                return global.html2canvas(bk, opts);
+            }).then(function (c2) {
+                if (!c2) return;
+                pdf.addPage([60, 92], 'p');
+                pdf.addImage(c2.toDataURL('image/png'), 'PNG', 3, 3, 54, 85.6);
+                pdf.save('IDCard-' + ((_currentUser && _currentUser.id) || 'card') + '.pdf');
+                if (global.showToast) global.showToast('PDF ڈاؤنلوڈ ہو گئی', 'success');
+            }).catch(function () {
+                fallbackPrint();
+                if (global.showToast) global.showToast('PDF بنانے میں مسئلہ — پرنٹ کھول دیا', 'warning');
+            });
+        }
+
+        var loader = typeof global.emsLoadPdfLibs === 'function' ? global.emsLoadPdfLibs : null;
+        if (loader) {
+            return loader().then(run).catch(function () {
+                fallbackPrint();
+                if (global.showToast) global.showToast('PDF لائبریری نہیں — پرنٹ کھول دیا', 'warning');
+            });
+        }
         if (!global.html2canvas || !global.jspdf) {
+            fallbackPrint();
             if (global.showToast) global.showToast('PDF لائبریری لوڈ نہیں ہوئی', 'error');
             return;
         }
-        var f = document.getElementById('idc-front');
-        var bk = document.getElementById('idc-back');
-        if (!f) return;
-        var jsPDF = global.jspdf.jsPDF;
-        var pdf = new jsPDF('p', 'mm', [60, 92]);
-        html2canvas(f, { scale: 3, useCORS: true }).then(function (c1) {
-            pdf.addImage(c1.toDataURL('image/png'), 'PNG', 3, 3, 54, 85.6);
-            return html2canvas(bk, { scale: 3, useCORS: true });
-        }).then(function (c2) {
-            pdf.addPage([60, 92], 'p');
-            pdf.addImage(c2.toDataURL('image/png'), 'PNG', 3, 3, 54, 85.6);
-            pdf.save('IDCard-' + ((_currentUser && _currentUser.id) || 'card') + '.pdf');
-        }).catch(function () {
-            if (global.showToast) global.showToast('PDF بنانے میں مسئلہ', 'error');
-        });
+        return run();
     };
 
     // ---------------- Card Designer ----------------

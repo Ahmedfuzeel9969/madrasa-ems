@@ -204,7 +204,12 @@
         if (keyPanel) keyPanel.style.display = 'none';
         if (deniedPanel) deniedPanel.style.display = 'none';
         if (profileGw) profileGw.style.display = 'none';
-        document.body.classList.add('ems-authenticated');
+        /* Mid-login only: shell still locked → keep splash (hideLanding unlocks first). */
+        if (document.body.classList.contains('ems-locked')
+            && !document.body.classList.contains('ems-authenticated')
+            && typeof global.emsEnsureBootSplashVisible === 'function') {
+            global.emsEnsureBootSplashVisible('سائن ان مکمل — ایپ کھل رہی ہے…');
+        }
         document.body.style.overflow = 'auto';
         if (typeof global.emsClearLandingAuthLoading === 'function') {
             global.emsClearLandingAuthLoading();
@@ -212,8 +217,15 @@
     };
 
     global.emsHideLanding = function () {
-        global.emsDismissLoginUi();
+        /* Unlock shell first so dismissLoginUi never races a locked+hidden landing blank. */
         setAppShellVisible(true);
+        global.emsDismissLoginUi();
+        if (typeof global.emsClearBootStuckWatchdog === 'function') {
+            global.emsClearBootStuckWatchdog();
+        }
+        if (typeof global.emsDismissBootSplash === 'function') {
+            global.emsDismissBootSplash();
+        }
     };
 
     global.emsApplyPortalShell = function () {

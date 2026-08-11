@@ -83,7 +83,7 @@
     };
 
     var GROUPS = {
-        Exams: ['ems_full_exams', 'ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks'],
+        Exams: ['ems_full_exams', 'ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks', 'ems_master_sheet_meta'],
         Curriculum: ['ems_curriculum_plans', 'ems_curriculum_daily', 'ems_curriculum_settings', 'ems_curriculum_audit'],
         Training: ['ems_tar_prayer', 'ems_tar_ethics', 'ems_tar_discipline', 'ems_tar_reform', 'ems_tar_awards', 'ems_tar_warnings', 'ems_tar_settings', 'ems_tar_audit'],
         Finance: ['ems_fee_categories', 'ems_class_fee_structure', 'ems_student_fee_setup', 'ems_fee_collections', 'ems_fee_bills'],
@@ -316,7 +316,10 @@
         }
 
         var local = null;
-        if (typeof global.emsCacheGetRaw === 'function') {
+        if (typeof global.emsIsLargeBlobKey === 'function' && global.emsIsLargeBlobKey(localKey)
+            && typeof global.emsDurableReadRaw === 'function') {
+            local = global.emsDurableReadRaw(localKey);
+        } else if (typeof global.emsCacheGetRaw === 'function') {
             local = global.emsCacheGetRaw(localKey);
         } else {
             local = localStorage.getItem(localKey);
@@ -340,6 +343,13 @@
     }
 
     function readLocalJson(localKey, fallback) {
+        if (typeof global.emsIsLargeBlobKey === 'function' && global.emsIsLargeBlobKey(localKey)
+            && typeof global.emsDurableReadRaw === 'function') {
+            try {
+                var dRaw = global.emsDurableReadRaw(localKey);
+                if (dRaw != null && dRaw !== '') return JSON.parse(dRaw);
+            } catch (eD) { /* fall through */ }
+        }
         if (typeof global.emsCacheGet === 'function') {
             return global.emsCacheGet(localKey, fallback);
         }
@@ -421,6 +431,35 @@
         });
     }
 
+    function mergeArrayPreferNewer(existing, incoming, idField, timeField) {
+        idField = idField || 'id';
+        timeField = timeField || 'timestamp';
+        var map = Object.create(null);
+        function itemTime(item) {
+            if (!item) return 0;
+            var t = item[timeField];
+            if (typeof t === 'number') return t;
+            if (item.clientUpdatedAt && typeof item.clientUpdatedAt === 'number') return item.clientUpdatedAt;
+            return 0;
+        }
+        (existing || []).forEach(function (item) {
+            if (!item) return;
+            var id = item[idField];
+            if (id != null) map[String(id)] = item;
+        });
+        (incoming || []).forEach(function (item) {
+            if (!item) return;
+            var id = item[idField];
+            if (id == null) return;
+            var key = String(id);
+            var prev = map[key];
+            if (!prev || itemTime(item) >= itemTime(prev)) {
+                map[key] = item;
+            }
+        });
+        return Object.keys(map).map(function (k) { return map[k]; });
+    }
+
     function pullArray(ref, cfg, localKey, opts) {
         opts = opts || {};
         var sinceMs = pullSinceMs(localKey, opts);
@@ -442,12 +481,33 @@
             });
             if (!incoming.length && isFull) return false;
 
+            var existing = readLocalJson(localKey, []);
+            if (!Array.isArray(existing)) existing = [];
+            var dirty = false;
+            try {
+                if (global.EmsCachePolicy && typeof global.EmsCachePolicy.readMeta === 'function') {
+                    var metaEntry = (global.EmsCachePolicy.readMeta() || {})[localKey];
+                    dirty = !!(metaEntry && metaEntry.dirty);
+                }
+            } catch (eDirty) { dirty = false; }
+
             var merged;
             if (isFull) {
-                merged = incoming;
+                if (opts.forceApply === true) {
+                    merged = incoming;
+                } else if (existing.length && dirty) {
+                    // Preserve newer local marks; absorb only missing/newer remote rows.
+                    merged = mergeArrayPreferNewer(existing, incoming, idField, 'timestamp');
+                    var mergedStr = JSON.stringify(merged);
+                    applyLocal(localKey, mergedStr);
+                    if (global.EmsCachePolicy && typeof global.EmsCachePolicy.markDirty === 'function') {
+                        global.EmsCachePolicy.markDirty(localKey);
+                    }
+                    return true;
+                } else {
+                    merged = incoming;
+                }
             } else {
-                var existing = readLocalJson(localKey, []);
-                if (!Array.isArray(existing)) existing = [];
                 merged = mergeArrayById(existing, incoming, idField);
             }
             return applyRemoteDecision(localKey, JSON.stringify(merged), maxRemoteAt || Date.now(), opts);

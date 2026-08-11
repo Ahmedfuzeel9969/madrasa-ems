@@ -1328,36 +1328,148 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 
 /* 5. پرنٹنگ کی مخصوص سیٹنگز (A3 رجسٹر فارمیٹ) */
 @media print {
-    @page { size: A3 landscape; margin: 10mm; }
-    
-    body * { visibility: hidden; } /* سب کچھ چھپا دیں */
-    
-    #att-register-print-area, #att-register-print-area * { visibility: visible; } /* صرف رجسٹر دکھائیں */
-    
+    @page { size: A3 landscape; margin: 8mm; }
+
+    /*
+     * IMPORTANT: Do NOT use global `body * { visibility: hidden }` here.
+     * printDiv() prints via an iframe that still loads style.css — a global hide
+     * made every module print (exams, finance, master sheet, …) come out blank.
+     * Scope hide-all only when body.ems-printing-att-register is set for rare
+     * in-page attendance register prints.
+     */
+    body.ems-printing-att-register * { visibility: hidden; }
+    body.ems-printing-att-register #att-register-print-area,
+    body.ems-printing-att-register #att-register-print-area * { visibility: visible; }
+
     #att-register-print-area {
-        position: absolute; left: 0; top: 0; width: 100%;
-        max-height: none; overflow: visible; border: none;
+        max-height: none !important; overflow: visible !important; border: none !important;
+        background: #fff !important; color: #000 !important;
     }
 
-    #att-print-header { display: block !important; } /* پرنٹ ہیڈر ظاہر کریں */
-    
-    /* پرنٹ میں بٹنز چھپا دیں اور صرف ٹیکسٹ ظاہر کریں */
-    .att-cell-btn { display: none !important; }
-    .att-period-bulk { display: none !important; }
-    .att-period-box { border-color: #000 !important; }
-    .print-status-text { display: inline-block !important; font-weight: bold; font-size: 14px; }
-    
-    #smart-register-table { border: 2px solid #000; }
-    #smart-register-table th, #smart-register-table td {
-        border-bottom: 1px solid #000; border-left: 1px solid #000;
-        padding: 5px; color: #000; background: #fff !important; /* رنگ ختم کریں تاکہ سیاہی بچے */
+    body.ems-printing-att-register #att-register-print-area {
+        position: absolute; left: 0; top: 0; width: 100%;
     }
-    
-    /* فریزڈ کالم کا شیڈو پرنٹ میں ختم کریں */
-    #smart-register-table th:first-child, #smart-register-table td:first-child { box-shadow: none; }
-    
-    /* تعطیلات کے کالم پرنٹ میں ہلکے گرے رنگ کے ہوں گے */
-    .col-holiday, .col-holiday-header { background-color: #f3f4f6 !important; -webkit-print-color-adjust: exact; }
+
+    #att-print-header { display: block !important; }
+
+    .att-cell-btn,
+    .daily-lock-btn,
+    .att-period-bulk { display: none !important; }
+    .att-period-box { border-color: #000 !important; color: #000 !important; background: #fff !important; }
+    .print-status-text {
+        display: inline-block !important;
+        font-weight: 800 !important;
+        font-size: 12px !important;
+        color: #000 !important;
+        line-height: 1.5 !important;
+        min-height: 1.2em !important;
+    }
+
+    #smart-register-table {
+        width: 100% !important;
+        min-width: 0 !important;
+        border-collapse: collapse !important;
+        border: 2px solid #000 !important;
+        background: #fff !important;
+        color: #000 !important;
+        font-size: 12px !important;
+    }
+    #smart-register-table th,
+    #smart-register-table td {
+        border: 1px solid #000 !important;
+        padding: 4px 5px !important;
+        vertical-align: middle !important;
+        line-height: 1.55 !important;
+        overflow: visible !important;
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    /* ہیڈر پٹی: سیاہ پس منظر، سفید لکھائی */
+    #smart-register-table thead th,
+    #smart-register-table thead th * {
+        background: #000 !important;
+        color: #fff !important;
+        font-size: 11px !important;
+        font-weight: 800 !important;
+        line-height: 1.45 !important;
+    }
+    #smart-register-table thead th div { margin: 0 !important; padding: 1px 0 !important; }
+    /* عام خانے: سفید پس منظر، سیاہ لکھائی — حاضری 12px */
+    #smart-register-table tbody td {
+        background: #fff !important;
+        color: #000 !important;
+        font-size: 12px !important;
+    }
+    #smart-register-table tbody td.att-cell-p,
+    #smart-register-table tbody td.att-cell-a,
+    #smart-register-table tbody td.att-cell-l,
+    #smart-register-table tbody td.att-cell-empty,
+    #smart-register-table tbody td.att-cell-teacher {
+        background: #fff !important;
+        color: #000 !important;
+    }
+    /* نام کالم: 14px — اردو لکھائی نہ کٹے */
+    #smart-register-table tbody td:first-child,
+    #smart-register-table tbody td:first-child *,
+    #smart-register-table tbody td:first-child strong {
+        background: #fff !important;
+        color: #000 !important;
+        font-size: 14px !important;
+        font-weight: 700 !important;
+        box-shadow: none !important;
+        min-width: 130px !important;
+        max-width: none !important;
+        line-height: 1.55 !important;
+        overflow: visible !important;
+        white-space: normal !important;
+    }
+    #smart-register-table tbody td:first-child small {
+        font-size: 11px !important;
+        font-weight: 600 !important;
+        color: #000 !important;
+    }
+    #smart-register-table th:first-child,
+    #smart-register-table td:first-child {
+        box-shadow: none !important;
+        position: static !important;
+    }
+    #smart-register-table tbody td > div {
+        min-height: 0 !important;
+        overflow: visible !important;
+        line-height: 1.5 !important;
+    }
+
+    .col-holiday,
+    .col-holiday-header,
+    .col-holiday *,
+    .col-holiday-header * {
+        background: #fff !important;
+        color: #000 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    #smart-register-table thead th.col-holiday-header,
+    #smart-register-table thead th.col-holiday-header * {
+        background: #000 !important;
+        color: #fff !important;
+    }
+
+    .att-print-meta {
+        background: #000 !important;
+        color: #fff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        border: 2px solid #000 !important;
+        border-radius: 0 !important;
+        padding: 6px 10px !important;
+        margin: 0 0 8px !important;
+        font-size: 12px !important;
+        gap: 8px !important;
+        line-height: 1.5 !important;
+    }
+    .att-print-meta * { color: #fff !important; }
 }
 
 /* پرنٹ کے علاوہ اسکرین پر ٹیکسٹ چھپا رہے گا */
@@ -1369,8 +1481,8 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 .registered-teacher-option { color: #2c3e50; font-weight: bold; }
 
 @media print {
-    #att-on-screen-header { border: none !important; padding: 0 !important; margin-bottom: 20px !important; }
-    #att-on-screen-header h1 { font-size: 40px !important; color: #000 !important; }
+    #att-on-screen-header { border: none !important; padding: 0 !important; margin-bottom: 6px !important; }
+    #att-on-screen-header h1 { font-size: 16px !important; color: #000 !important; margin: 2px 0 !important; }
 }
 /* ================= نیا اضافہ: فکسڈ ہیڈر، ڈیلی لاک بٹن، اور ریمارکس (CSS کے آخر میں پیسٹ کریں) ================= */
 /* 1. ہیڈر کو اوپر فکس (Sticky) کرنے کی لاجک */

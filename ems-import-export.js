@@ -814,12 +814,38 @@
 
     function exportPDF(rows, stamp) {
         var cols = ['id', 'name', 'fname', 'type', 'class', 'designation', 'position', 'phone'];
-        var html = '<html><head><meta charset="utf-8"><style>body{font-family:Arial;direction:rtl}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#1f3a5f;color:#fff}</style></head><body>';
-        html += '<h3>ریکارڈ رپورٹ — ' + stamp + '</h3><table><tr>' + cols.map(function (c) { return '<th>' + c + '</th>'; }).join('') + '</tr>';
-        rows.forEach(function (r) { html += '<tr>' + cols.map(function (c) { return '<td>' + esc(r[c] || '') + '</td>'; }).join('') + '</tr>'; });
-        html += '</table></body></html>';
+        var html = '<h3 style="margin:0 0 10px;text-align:right;">ریکارڈ رپورٹ — ' + stamp + '</h3>';
+        html += '<table style="width:100%;border-collapse:collapse;font-size:12px;direction:rtl;"><thead><tr>' +
+            cols.map(function (c) { return '<th style="border:1px solid #000;padding:5px;background:#111;color:#fff;text-align:right;">' + c + '</th>'; }).join('') +
+            '</tr></thead><tbody>';
+        rows.forEach(function (r) {
+            html += '<tr>' + cols.map(function (c) {
+                return '<td style="border:1px solid #999;padding:5px;text-align:right;">' + esc(r[c] || '') + '</td>';
+            }).join('') + '</tr>';
+        });
+        html += '</tbody></table>';
+
+        var host = document.getElementById('ems-export-pdf-host');
+        if (!host) {
+            host = document.createElement('div');
+            host.id = 'ems-export-pdf-host';
+            host.style.cssText = 'position:fixed;left:-12000px;top:0;width:900px;background:#fff;padding:12px;font-family:Arial,sans-serif;';
+            document.body.appendChild(host);
+        }
+        host.innerHTML = html;
+
+        if (typeof global.finDownloadPDF === 'function') {
+            global.finDownloadPDF('ems-export-pdf-host', 'records-' + stamp + '.pdf');
+            return;
+        }
+
         var w = global.open('', '', 'height=700,width=900');
-        w.document.write(html); w.document.close(); w.focus();
+        if (!w) return;
+        w.document.write('<html><head><meta charset="utf-8"><style>body{font-family:Arial;direction:rtl}table{width:100%;border-collapse:collapse;font-size:12px}th,td{border:1px solid #999;padding:5px;text-align:right}th{background:#1f3a5f;color:#fff}</style></head><body>');
+        w.document.write(html);
+        w.document.write('</body></html>');
+        w.document.close();
+        w.focus();
         setTimeout(function () { w.print(); }, 500);
     }
 

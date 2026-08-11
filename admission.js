@@ -2526,6 +2526,49 @@ window.printElement = function (elementId) {
   }, 500);
 };
 
+/** Image preview modal — print */
+window.printSpecificImage = function () {
+  var img = document.getElementById('full-size-image');
+  if (!img || !img.src) {
+    if (typeof showToast === 'function') showToast('تصویر نہیں ملی', 'error');
+    return;
+  }
+  var w = window.open('', '', 'height=700,width=560');
+  if (!w) {
+    if (typeof showToast === 'function') showToast('پاپ اپ بند ہے', 'error');
+    return;
+  }
+  w.document.write('<!DOCTYPE html><html dir="rtl"><head><meta charset="utf-8"><title>تصویر پرنٹ</title>');
+  w.document.write('<style>@page{margin:10mm;} body{margin:0;padding:16px;text-align:center;background:#fff;} img{max-width:100%;height:auto;}</style>');
+  w.document.write('</head><body><img src="' + img.src.replace(/"/g, '&quot;') + '" alt="preview"></body></html>');
+  w.document.close();
+  w.focus();
+  setTimeout(function () { try { w.print(); } catch (e) { /* ignore */ } }, 400);
+};
+
+/** Image preview modal — real PDF download */
+window.downloadSpecificImagePDF = function () {
+  var img = document.getElementById('full-size-image');
+  if (!img || !img.src) {
+    if (typeof showToast === 'function') showToast('تصویر نہیں ملی', 'error');
+    return;
+  }
+  var wrap = document.getElementById('ems-image-pdf-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'ems-image-pdf-wrap';
+    wrap.style.cssText = 'position:fixed;left:-12000px;top:0;padding:12px;background:#fff;';
+    document.body.appendChild(wrap);
+  }
+  wrap.innerHTML = '<img src="' + img.src.replace(/"/g, '&quot;') + '" style="max-width:700px;height:auto;display:block;" alt="preview">';
+  if (typeof window.finDownloadPDF === 'function') {
+    window.finDownloadPDF('ems-image-pdf-wrap', 'image-preview.pdf');
+    return;
+  }
+  window.printSpecificImage();
+  if (typeof showToast === 'function') showToast('PDF لائبریری نہیں — پرنٹ کھول دیا', 'warning');
+};
+
 window.closeModal = function (modalId) {
   document.getElementById(modalId).style.display = 'none';
 };

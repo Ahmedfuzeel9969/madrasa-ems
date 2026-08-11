@@ -11,9 +11,15 @@ describe('Exams library books durable save', function () {
         expect(src).toContain('function exmReadRaw');
         expect(src).toContain('function exmReadJson');
         expect(src).toContain("exmReadJson('ems_library_books'");
-        expect(src).toContain('emsDurableWriteRaw');
+        expect(src).toContain('emsDurableReadRaw');
         expect(src).toContain('window.exmAddLibraryBook');
         expect(src).not.toMatch(/JSON\.parse\(localStorage\.getItem\('ems_library_books'\)\)/);
+        // Durable write for blobs must go through emsSaveModuleData (not pre-write in emsSaveKey).
+        var saveStart = src.indexOf('function emsSaveKey(key, val, opts)');
+        var saveEnd = src.indexOf('\n  function exmGetUsers', saveStart);
+        var saveFn = src.slice(saveStart, saveEnd);
+        expect(saveFn).toContain('emsSaveModuleData');
+        expect(saveFn).not.toContain('emsDurableWriteRaw');
     });
 
     it('emsSaveModuleData persists large blob keys through durable storage', function () {

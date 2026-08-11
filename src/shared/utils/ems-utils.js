@@ -84,7 +84,7 @@
 /** Global non-destructive print helper — always available (dashboard 360, exams, finance, …) */
 (function (global) {
     'use strict';
-    if (!global || typeof global.printDiv === 'function') return;
+    if (!global) return;
 
     global.printDiv = function (divId) {
         var el = global.document && global.document.getElementById(divId);
@@ -106,10 +106,16 @@
         global.document.body.appendChild(iframe);
         var doc = iframe.contentWindow.document;
         doc.open();
+        /* Override any global @media print { body * { visibility:hidden } } from app CSS */
         doc.write('<!DOCTYPE html><html dir="rtl" lang="ur"><head><meta charset="utf-8"><title>پرنٹ</title>' + links +
-            '<style>body{font-family:"Noto Nastaliq Urdu","Jameel Noori Nastaleeq",Arial,sans-serif;direction:rtl;text-align:right;padding:14px;margin:0;}' +
+            '<style>body{font-family:"Noto Nastaliq Urdu","Jameel Noori Nastaleeq",Arial,sans-serif;direction:rtl;text-align:right;padding:14px;margin:0;color:#0f172a;background:#fff;}' +
             'table{border-collapse:collapse;width:100%;} th,td{padding:6px 8px;}' +
-            '@media print{.no-print{display:none!important;} @page{margin:12mm;}}</style></head><body>' +
+            '@media print{' +
+            'body,body *{visibility:visible!important;}' +
+            '.no-print,.tpl-matrix-ctrl,.tpl-matrix-del{display:none!important;}' +
+            '.tpl-paper-date-print{display:block!important;}' +
+            '@page{margin:12mm;}' +
+            '}</style></head><body>' +
             el.innerHTML + '</body></html>');
         doc.close();
         var done = false;

@@ -22,20 +22,9 @@
     global.emsEnterpriseResolveTenant = function () {
         var authUidVal = authUid();
 
-        if (typeof global.emsResolveFirestoreTenantId === 'function') {
-            var firestoreTid = global.emsResolveFirestoreTenantId();
-            if (firestoreTid) {
-                lastResolution = {
-                    ok: true,
-                    tenantId: firestoreTid,
-                    source: 'emsResolveFirestoreTenantId',
-                    authUid: authUidVal,
-                    role: global.CURRENT_USER_TENANT_ROLE || null
-                };
-                return lastResolution;
-            }
-        }
-
+        /* Prefer already-known session tenant BEFORE firestore helper —
+           emsResolveFirestoreTenantId → emsGetTenantId → emsRequireTenantId
+           used to recurse infinitely when CURRENT was temporarily empty. */
         if (global.CURRENT_MADRASA_TENANT_ID) {
             lastResolution = {
                 ok: true,
@@ -56,6 +45,25 @@
                 role: global.CURRENT_USER_TENANT_ROLE || null
             };
             return lastResolution;
+        }
+
+        if (typeof global.emsResolveFirestoreTenantId === 'function') {
+            var firestoreTid = null;
+            try {
+                firestoreTid = global.emsResolveFirestoreTenantId({ skipLegacyGetTenantId: true });
+            } catch (eFs) {
+                firestoreTid = null;
+            }
+            if (firestoreTid) {
+                lastResolution = {
+                    ok: true,
+                    tenantId: firestoreTid,
+                    source: 'emsResolveFirestoreTenantId',
+                    authUid: authUidVal,
+                    role: global.CURRENT_USER_TENANT_ROLE || null
+                };
+                return lastResolution;
+            }
         }
 
         if (authUidVal && global.CURRENT_USER_TENANT_ROLE === 'owner') {
@@ -134,6 +142,7 @@
         var res = global.emsEnterpriseResolveTenant();
         if (res.ok && res.tenantId) return res.tenantId;
         if (global.CURRENT_MADRASA_TENANT_ID) return global.CURRENT_MADRASA_TENANT_ID;
+        if (global.EMS_ACTIVE_TENANT_ID) return global.EMS_ACTIVE_TENANT_ID;
         return null;
     };
 
@@ -142,14 +151,28 @@
     };
 
     var _origGetTenantId = global.emsGetTenantId;
+    var _resolvingTenant = false;
 
     global.emsGetTenantId = function () {
-        var required = global.emsRequireTenantId();
-        if (required) return required;
-        if (typeof _origGetTenantId === 'function') {
-            return _origGetTenantId();
+        if (global.CURRENT_MADRASA_TENANT_ID) return global.CURRENT_MADRASA_TENANT_ID;
+        if (global.EMS_ACTIVE_TENANT_ID) return global.EMS_ACTIVE_TENANT_ID;
+        if (_resolvingTenant) {
+            if (typeof _origGetTenantId === 'function') {
+                try { return _origGetTenantId(); } catch (eOrig) { return null; }
+            }
+            return null;
         }
-        return null;
+        _resolvingTenant = true;
+        try {
+            var required = global.emsRequireTenantId();
+            if (required) return required;
+            if (typeof _origGetTenantId === 'function') {
+                return _origGetTenantId();
+            }
+            return null;
+        } finally {
+            _resolvingTenant = false;
+        }
     };
 
 })(typeof window !== 'undefined' ? window : globalThis);

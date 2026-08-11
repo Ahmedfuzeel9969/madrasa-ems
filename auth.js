@@ -1549,8 +1549,16 @@ window.emsPostLoginDiagMark = emsPostLoginDiagMark;
 function unlockAppScreen() {
     const profileGateway = document.getElementById('profile-setup-gateway');
     if (profileGateway) profileGateway.style.display = 'none';
-    if (typeof window.emsDismissLoginUi === 'function') {
+    /* Unlock shell BEFORE dismissing splash — reverse order caused white flash. */
+    if (typeof window.emsHideLanding === 'function') {
+        window.emsHideLanding();
+    } else if (typeof window.emsDismissLoginUi === 'function') {
         window.emsDismissLoginUi();
+        document.body.classList.remove('ems-locked');
+        document.body.classList.add('ems-authenticated');
+    }
+    if (typeof window.emsClearBootStuckWatchdog === 'function') {
+        window.emsClearBootStuckWatchdog();
     }
     if (typeof window.emsApplyStatusBar === 'function') {
         window.emsApplyStatusBar('app');
@@ -1558,11 +1566,11 @@ function unlockAppScreen() {
     if (typeof window.emsDismissBootSplash === 'function') {
         window.emsDismissBootSplash();
     }
-    if (typeof window.emsHideBootSpinner === 'function') {
-        window.emsHideBootSpinner();
-    }
-    if (typeof window.emsHideLanding === 'function') {
-        window.emsHideLanding();
+    var sp = document.getElementById('global-spinner');
+    if (sp) {
+        sp.style.display = 'none';
+        sp.classList.remove('ems-boot-overlay');
+        sp.innerHTML = '';
     }
     if (typeof window.applyModuleAccessUI === 'function') {
         window.applyModuleAccessUI();
@@ -1670,9 +1678,18 @@ function finishMadrasaLogin(user, firestore) {
     if (typeof window.emsBootMark === 'function') {
         window.emsBootMark('post-login-boot-start', user && user.uid);
     }
-    var tenantId = (typeof window.emsRequireTenantId === 'function' && window.emsRequireTenantId())
-        || window.CURRENT_MADRASA_TENANT_ID
-        || (typeof window.emsReadPersistedBootTenantId === 'function' && window.emsReadPersistedBootTenantId());
+    var tenantId = window.CURRENT_MADRASA_TENANT_ID
+        || window.EMS_ACTIVE_TENANT_ID
+        || (typeof window.emsReadPersistedBootTenantId === 'function' && window.emsReadPersistedBootTenantId())
+        || null;
+    if (!tenantId && typeof window.emsRequireTenantId === 'function') {
+        try {
+            tenantId = window.emsRequireTenantId();
+        } catch (eTid) {
+            console.warn('[EMS] emsRequireTenantId failed during login boot:', eTid);
+            tenantId = null;
+        }
+    }
     if (tenantId && typeof window.emsLiteLoginPrepare === 'function') {
         window.emsLiteLoginPrepare(tenantId);
     } else if (tenantId && typeof window.emsActivateTenantStorage === 'function') {

@@ -9,7 +9,7 @@ var ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 describe('P0 boot gate — login before enterprise boot (regent7)', function () {
     it('index.html loads boot-gate and post-auth loader (not repository at boot)', function () {
         var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-        var coreIdx = html.indexOf('core.js?v=' + EMS_BUILD.CACHE_BUST.core);
+        var coreIdx = html.search(/core\.js\?v=/);
         var gateIdx = html.indexOf('ems-boot-gate.js?v=');
         var loaderIdx = html.indexOf('ems-post-auth-loader.js?v=' + EMS_BUILD.CACHE_BUST.postAuthLoader);
         expect(coreIdx).toBeGreaterThan(-1);

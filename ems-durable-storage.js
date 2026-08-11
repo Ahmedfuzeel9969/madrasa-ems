@@ -9,7 +9,7 @@
     var memoryRaw = Object.create(null);
 
     var MODULE_BLOB_KEYS = [
-        'ems_full_exams', 'ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks',
+        'ems_full_exams', 'ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks', 'ems_master_sheet_meta',
         'ems_curriculum_plans', 'ems_curriculum_daily', 'ems_curriculum_settings', 'ems_curriculum_audit',
         'ems_tar_prayer', 'ems_tar_ethics', 'ems_tar_discipline', 'ems_tar_reform', 'ems_tar_awards',
         'ems_tar_warnings', 'ems_tar_settings', 'ems_tar_audit',
@@ -62,6 +62,32 @@
             return ls;
         }
         return ls;
+    };
+
+    /** Ensure a blob key is loaded from IDB into memory before sync reads. */
+    global.emsDurableEnsureKey = function (key) {
+        if (!key) return Promise.resolve(null);
+        if (Object.prototype.hasOwnProperty.call(memoryRaw, key)) {
+            return Promise.resolve(memoryRaw[key]);
+        }
+        var ls = readLs(key);
+        if (ls != null) {
+            memoryRaw[key] = ls;
+            if (global.emsIsLargeBlobKey(key)) {
+                if (typeof global.emsIdbKvSet === 'function') global.emsIdbKvSet(key, ls);
+                removeLs(key);
+            }
+            return Promise.resolve(ls);
+        }
+        if (typeof global.emsIdbKvGet !== 'function') {
+            return Promise.resolve(null);
+        }
+        return global.emsIdbKvGet(key).then(function (val) {
+            if (val == null) return null;
+            var str = typeof val === 'string' ? val : JSON.stringify(val);
+            memoryRaw[key] = str;
+            return str;
+        }).catch(function () { return null; });
     };
 
     global.emsDurableWriteRaw = function (key, str) {

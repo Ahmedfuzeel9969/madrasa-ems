@@ -22,14 +22,113 @@
     catch (e) { return fb; }
   }
 
+  /** مرکزی کتب خانہ — same durable SSOT as Exams / Attendance (not localStorage-only). */
+  function curReadLibraryBooks() {
+    if (typeof window.attReadLibraryBooks === 'function') {
+      try {
+        var fromAtt = window.attReadLibraryBooks();
+        if (Array.isArray(fromAtt)) return fromAtt;
+      } catch (eAtt) { /* fall through */ }
+    }
+    var books = [];
+    try {
+      if (typeof window.emsCacheGetRaw === 'function') {
+        var cached = window.emsCacheGetRaw(LIB_KEY);
+        if (cached) {
+          var parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) books = parsed;
+        }
+      }
+    } catch (eCache) { /* ignore */ }
+    if (!books.length && typeof window.emsDurableReadRaw === 'function') {
+      try {
+        var raw = window.emsDurableReadRaw(LIB_KEY);
+        if (raw) {
+          var parsedDurable = JSON.parse(raw);
+          if (Array.isArray(parsedDurable)) books = parsedDurable;
+        }
+      } catch (eDurable) { /* ignore */ }
+    }
+    if (!books.length) {
+      try {
+        var ls = JSON.parse(localStorage.getItem(LIB_KEY) || '[]');
+        if (Array.isArray(ls)) books = ls;
+      } catch (eLs) { /* ignore */ }
+    }
+    return books
+      .map(function (b) {
+        if (typeof b === 'string') return String(b).trim();
+        if (b && typeof b === 'object') return String(b.name || b.title || '').trim();
+        return '';
+      })
+      .filter(Boolean);
+  }
+
   function writeJson(key, val, opts) {
-    if (typeof window.emsRequireStaffAction === 'function') {
-      if (!window.emsRequireStaffAction('curriculum', 'edit')) return Promise.resolve();
+    opts = opts || {};
+    if (!opts.skipStaffGate && typeof window.emsRequireStaffAction === 'function') {
+      if (!window.emsRequireStaffAction('curriculum', 'edit')) return Promise.resolve({ blocked: true });
     }
     var options = Object.assign({ mutation: true, autoDelta: true }, opts || {});
+    delete options.skipStaffGate;
     if (window.emsSaveModuleData) return window.emsSaveModuleData(key, typeof val === 'string' ? val : JSON.stringify(val), options);
     localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
     return Promise.resolve();
+  }
+
+  /** Sync module JSON read — cache → durable memory → localStorage (blob keys leave LS empty). */
+  function curReadModuleJson(key, fb) {
+    var raw = null;
+    try {
+      if (typeof window.emsCacheGetRaw === 'function') {
+        raw = window.emsCacheGetRaw(key);
+      }
+    } catch (eCache) { /* ignore */ }
+    if ((raw == null || raw === '') && typeof window.emsDurableReadRaw === 'function') {
+      try { raw = window.emsDurableReadRaw(key); } catch (eDur) { /* ignore */ }
+    }
+    if (raw == null || raw === '') {
+      try { raw = localStorage.getItem(key); } catch (eLs) { /* ignore */ }
+    }
+    if (raw == null || raw === '') return fb;
+    try {
+      var parsed = JSON.parse(raw);
+      return parsed == null ? fb : parsed;
+    } catch (eParse) {
+      return fb;
+    }
+  }
+
+  function curPersistPlans(plans) {
+    var str = JSON.stringify(Array.isArray(plans) ? plans : []);
+    if (typeof window.emsDurableWriteRaw === 'function') {
+      try { window.emsDurableWriteRaw(PLANS_KEY, str); } catch (eW) { /* ignore */ }
+    } else {
+      try { localStorage.setItem(PLANS_KEY, str); } catch (eLs) { /* ignore */ }
+    }
+    if (typeof window.emsCacheInvalidate === 'function') {
+      try { window.emsCacheInvalidate(PLANS_KEY); } catch (eInv) { /* ignore */ }
+    }
+    return writeJson(PLANS_KEY, plans, { skipStaffGate: true });
+  }
+
+  /** Ensure library + plans blobs are loaded from IndexedDB into memory before sync/UI. */
+  function curEnsureLibraryReady() {
+    var keys = [LIB_KEY, PLANS_KEY];
+    return keys.reduce(function (chain, key) {
+      return chain.then(function () {
+        if (typeof window.emsDurableEnsureKey === 'function') {
+          return window.emsDurableEnsureKey(key);
+        }
+      });
+    }, Promise.resolve()).then(function () {
+      /* Drop stale sync-cache so reads prefer freshly hydrated durable memory. */
+      if (typeof window.emsCacheInvalidate === 'function') {
+        keys.forEach(function (key) {
+          try { window.emsCacheInvalidate(key); } catch (eInv) { /* ignore */ }
+        });
+      }
+    });
   }
 
   function toast(msg, type) {
@@ -50,7 +149,8 @@
     });
   }
 
-  function defaultPlan(bookName) {
+  function defaultPlan(bookName, opts) {
+    opts = opts || {};
     var p = {
       id: slugId('CUR', bookName),
       bookName: bookName,
@@ -67,9 +167,17 @@
       half2: { fromPage: 1, toPage: 0, fromLine: 1, toLine: 0 },
       months: defaultMonthSlots(),
       examLink: { half1: '', half2: '', annual: '' },
-      updatedAt: Date.now()
+      updatedAt: Date.now(),
+      fromCentralLibrary: !!opts.fromCentralLibrary
     };
-    if (typeof window.emsStampDepartment === 'function') window.emsStampDepartment(p);
+    if (opts.fromCentralLibrary) {
+      /* مرکزی کتب خانہ ادارہ-واسع — ہر شعبے میں نظر آئے */
+      p.departmentId = (typeof window.EMS_DEPARTMENT_ALL !== 'undefined')
+        ? window.EMS_DEPARTMENT_ALL
+        : 'all';
+    } else if (typeof window.emsStampDepartment === 'function') {
+      window.emsStampDepartment(p);
+    }
     return p;
   }
 
@@ -124,14 +232,28 @@
 
   function getDeptPlans() {
     var plans = window.curGetPlans();
-    if (typeof window.emsFilterByDepartment === 'function') {
-      return window.emsFilterByDepartment(plans);
-    }
-    return plans;
+    var libSet = Object.create(null);
+    try {
+      curReadLibraryBooks().forEach(function (n) {
+        var name = String(n || '').trim();
+        if (name) libSet[name] = true;
+      });
+    } catch (eLib) { /* ignore */ }
+    if (typeof window.emsFilterByDepartment !== 'function') return plans;
+    return plans.filter(function (p) {
+      var bn = String((p && p.bookName) || '').trim();
+      /* Library books are institution-wide — never hide by department filter. */
+      if (bn && libSet[bn]) return true;
+      if (p && (p.fromCentralLibrary || p.departmentId === 'all'
+          || (typeof window.EMS_DEPARTMENT_ALL !== 'undefined' && p.departmentId === window.EMS_DEPARTMENT_ALL))) {
+        return true;
+      }
+      return window.emsRecordMatchesDepartment(p);
+    });
   }
 
   window.curGetSettings = function () {
-    var s = readJson(SETTINGS_KEY, null);
+    var s = curReadModuleJson(SETTINGS_KEY, null);
     var y = new Date().getFullYear();
     if (!s) s = { measureMode: 'lines', academicYear: y + '-' + (y + 1), yellowPct: 5, redPct: 15, yearStart: y + '-07-01', yearEnd: (y + 1) + '-06-30' };
     if (!s.yearStart) s.yearStart = y + '-07-01';
@@ -144,11 +266,13 @@
   };
 
   window.curGetPlans = function () {
-    return readJson(PLANS_KEY, []) || [];
+    var plans = curReadModuleJson(PLANS_KEY, []);
+    return Array.isArray(plans) ? plans : [];
   };
 
   window.curGetDaily = function () {
-    return readJson(DAILY_KEY, []) || [];
+    var daily = curReadModuleJson(DAILY_KEY, []);
+    return Array.isArray(daily) ? daily : [];
   };
 
   window.curAudit = function (action, summary, before, after) {
@@ -167,22 +291,56 @@
   };
 
   window.curSyncFromLibrary = function () {
-    var lib = readJson(LIB_KEY, []) || [];
-    var names = lib.map(function (b) { return typeof b === 'string' ? b : (b.name || b.title || ''); }).filter(Boolean);
-    var plans = window.curGetPlans();
+    var lib = curReadLibraryBooks();
+    var names = [];
+    var seen = {};
+    lib.forEach(function (b) {
+      var name = typeof b === 'string' ? String(b).trim() : String((b && (b.name || b.title)) || '').trim();
+      if (!name) return;
+      var key = name.toLocaleLowerCase ? name.toLocaleLowerCase('ur') : name.toLowerCase();
+      if (seen[key]) return;
+      seen[key] = true;
+      names.push(name);
+    });
+    var plans = window.curGetPlans().slice();
     var added = 0;
+    var promoted = 0;
     names.forEach(function (name) {
-      if (!plans.some(function (p) { return p.bookName === name; })) {
-        plans.push(defaultPlan(name));
+      var existing = null;
+      for (var i = 0; i < plans.length; i++) {
+        if (String(plans[i].bookName || '').trim() === name) {
+          existing = plans[i];
+          break;
+        }
+      }
+      if (!existing) {
+        plans.push(defaultPlan(name, { fromCentralLibrary: true }));
         added++;
+        return;
+      }
+      /* Promote older plans so department filter does not hide central library books */
+      if (!existing.fromCentralLibrary
+          || (existing.departmentId && existing.departmentId !== 'all'
+            && existing.departmentId !== window.EMS_DEPARTMENT_ALL)) {
+        existing.fromCentralLibrary = true;
+        existing.departmentId = (typeof window.EMS_DEPARTMENT_ALL !== 'undefined')
+          ? window.EMS_DEPARTMENT_ALL
+          : 'all';
+        existing.updatedAt = Date.now();
+        promoted++;
       }
     });
-    if (added) {
-      writeJson(PLANS_KEY, plans);
-      window.curAudit('sync', 'کتب خانے سے ' + added + ' کتابیں', null, { added: added });
+    if (added || promoted) {
+      curPersistPlans(plans);
+      if (added) {
+        window.curAudit('sync', 'مرکزی کتب خانہ سے ' + added + ' کتابیں', null, { added: added, promoted: promoted });
+      }
     }
-    return added;
+    return { added: added, promoted: promoted, total: names.length, plans: plans.length };
   };
+
+  window.curReadLibraryBooks = curReadLibraryBooks;
+  window.curEnsureLibraryReady = curEnsureLibraryReady;
 
   function positionToUnits(plan, page, line) {
     page = Number(page) || 0;
@@ -867,68 +1025,81 @@
   };
 
   window.curInitModule = function () {
-    window.curSyncFromLibrary();
-    curApplyRoleUi();
-    if (curIsTeacherOnly()) {
-      window.switchCurTab('cur-win-daily', curTabButton('cur-win-daily'));
-      return;
+    function bootUi() {
+      window.curSyncFromLibrary();
+      curApplyRoleUi();
+      if (curIsTeacherOnly()) {
+        window.switchCurTab('cur-win-daily', curTabButton('cur-win-daily'));
+        return;
+      }
+      var active = document.querySelector('#cur-ribbon-menu .reg-tab.active-sub-tab');
+      if (active && active.style.display !== 'none') active.click();
+      else window.switchCurTab('cur-win-plan', curTabButton('cur-win-plan'));
     }
-    var active = document.querySelector('#cur-ribbon-menu .reg-tab.active-sub-tab');
-    if (active && active.style.display !== 'none') active.click();
-    else window.switchCurTab('cur-win-plan', curTabButton('cur-win-plan'));
+    curEnsureLibraryReady().then(bootUi).catch(bootUi);
   };
 
   window.curRenderPlanning = function () {
-    window.curSyncFromLibrary();
-    var plans = getDeptPlans();
-    var sel = document.getElementById('cur-plan-book-select');
-    if (sel) {
-      sel.innerHTML = '<option value="">کتاب منتخب کریں</option>' + plans.map(function (p) {
-        return '<option value="' + esc(p.id) + '">' + esc(p.bookName) + (p.grade ? ' (' + esc(p.grade) + ')' : '') + '</option>';
-      }).join('');
-    }
-    var tbody = document.getElementById('cur-plan-list-tbody');
-    var q = ((document.getElementById('cur-plan-search') || {}).value || '').trim().toLowerCase();
-    var filtered = q ? plans.filter(function (p) {
-      return (p.bookName || '').toLowerCase().indexOf(q) >= 0 || (p.grade || '').toLowerCase().indexOf(q) >= 0;
-    }) : plans;
-    window._curPlanFiltered = filtered;
-    var scrollEl = tbody ? tbody.closest('.table-responsive') : null;
-    if (tbody) {
-      if (!filtered.length) {
-        if (typeof window.emsVirtualTableDestroy === 'function') window.emsVirtualTableDestroy('cur-plan-list');
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">' + (q ? 'کوئی نتیجہ نہیں' : 'کتب خانے میں کتاب شامل کریں') + '</td></tr>';
-      } else if (scrollEl && typeof window.emsVirtualTableMount === 'function') {
-        scrollEl.style.maxHeight = scrollEl.style.maxHeight || '40vh';
-        scrollEl.style.overflowY = 'auto';
-        window.emsVirtualTableMount('cur-plan-list', {
-          scrollEl: scrollEl,
-          tbody: tbody,
-          rowHeight: 44,
-          getData: function () { return window._curPlanFiltered || []; },
-          renderRow: function (i, p) {
+    function paint() {
+      window.curSyncFromLibrary();
+      var plans = getDeptPlans();
+      var libCount = 0;
+      try { libCount = curReadLibraryBooks().length; } catch (eC) { libCount = 0; }
+      var sel = document.getElementById('cur-plan-book-select');
+      if (sel) {
+        sel.innerHTML = '<option value="">کتاب منتخب کریں</option>' + plans.map(function (p) {
+          return '<option value="' + esc(p.id) + '">' + esc(p.bookName) + (p.grade ? ' (' + esc(p.grade) + ')' : '') + '</option>';
+        }).join('');
+      }
+      var tbody = document.getElementById('cur-plan-list-tbody');
+      var q = ((document.getElementById('cur-plan-search') || {}).value || '').trim().toLowerCase();
+      var filtered = q ? plans.filter(function (p) {
+        return (p.bookName || '').toLowerCase().indexOf(q) >= 0 || (p.grade || '').toLowerCase().indexOf(q) >= 0;
+      }) : plans;
+      window._curPlanFiltered = filtered;
+      var scrollEl = tbody ? tbody.closest('.table-responsive') : null;
+      if (tbody) {
+        if (!filtered.length) {
+          if (typeof window.emsVirtualTableDestroy === 'function') window.emsVirtualTableDestroy('cur-plan-list');
+          var emptyMsg = q
+            ? 'کوئی نتیجہ نہیں'
+            : (libCount
+              ? 'سنک جاری… «مرکزی کتب خانہ سے sync» دوبارہ دبائیں'
+              : 'امتحانات → ترتیبات و کتب خانہ میں پہلے کتابیں شامل کریں');
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">' + emptyMsg + '</td></tr>';
+        } else if (scrollEl && typeof window.emsVirtualTableMount === 'function') {
+          scrollEl.style.maxHeight = scrollEl.style.maxHeight || '40vh';
+          scrollEl.style.overflowY = 'auto';
+          window.emsVirtualTableMount('cur-plan-list', {
+            scrollEl: scrollEl,
+            tbody: tbody,
+            rowHeight: 44,
+            getData: function () { return window._curPlanFiltered || []; },
+            renderRow: function (i, p) {
+              var st = window.curComputeStatus(p, window.curGetDaily());
+              var tr = document.createElement('tr');
+              tr.style.cursor = 'pointer';
+              tr.setAttribute('onclick', "window.curLoadPlanForm('" + p.id + "')");
+              tr.innerHTML = '<td>' + esc(p.bookName) + '</td><td>' + esc(p.grade || '—') + '</td><td>' + p.totalPages + '</td><td>' + p.teachableLines + '</td><td>' + progressBarHtml(st.pct, statusColor(st.status)) + '</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();window.curLoadPlanForm(\'' + p.id + '\')"><i class="fas fa-pen"></i></button></td>';
+              return tr;
+            },
+            emptyHtml: '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">کوئی نتیجہ نہیں</td></tr>'
+          });
+        } else {
+          tbody.innerHTML = filtered.map(function (p) {
             var st = window.curComputeStatus(p, window.curGetDaily());
-            var tr = document.createElement('tr');
-            tr.style.cursor = 'pointer';
-            tr.setAttribute('onclick', "window.curLoadPlanForm('" + p.id + "')");
-            tr.innerHTML = '<td>' + esc(p.bookName) + '</td><td>' + esc(p.grade || '—') + '</td><td>' + p.totalPages + '</td><td>' + p.teachableLines + '</td><td>' + progressBarHtml(st.pct, statusColor(st.status)) + '</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();window.curLoadPlanForm(\'' + p.id + '\')"><i class="fas fa-pen"></i></button></td>';
-            return tr;
-          },
-          emptyHtml: '<tr><td colspan="6" style="text-align:center;color:#94a3b8;">کوئی نتیجہ نہیں</td></tr>'
-        });
-      } else {
-        tbody.innerHTML = filtered.map(function (p) {
-          var st = window.curComputeStatus(p, window.curGetDaily());
-          return '<tr onclick="window.curLoadPlanForm(\'' + p.id + '\')" style="cursor:pointer;"><td>' + esc(p.bookName) + '</td><td>' + esc(p.grade || '—') + '</td><td>' + p.totalPages + '</td><td>' + p.teachableLines + '</td><td>' + progressBarHtml(st.pct, statusColor(st.status)) + '</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();window.curLoadPlanForm(\'' + p.id + '\')"><i class="fas fa-pen"></i></button></td></tr>';
+            return '<tr onclick="window.curLoadPlanForm(\'' + p.id + '\')" style="cursor:pointer;"><td>' + esc(p.bookName) + '</td><td>' + esc(p.grade || '—') + '</td><td>' + p.totalPages + '</td><td>' + p.teachableLines + '</td><td>' + progressBarHtml(st.pct, statusColor(st.status)) + '</td><td><button class="btn btn-sm btn-outline" onclick="event.stopPropagation();window.curLoadPlanForm(\'' + p.id + '\')"><i class="fas fa-pen"></i></button></td></tr>';
+          }).join('');
+        }
+      }
+      var gsel = document.getElementById('cur-mon-filter-grade');
+      if (gsel && gsel.options.length <= 1) {
+        gsel.innerHTML = '<option value="">تمام درجات</option>' + getClasses().map(function (c) {
+          return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
         }).join('');
       }
     }
-    var gsel = document.getElementById('cur-mon-filter-grade');
-    if (gsel && gsel.options.length <= 1) {
-      gsel.innerHTML = '<option value="">تمام درجات</option>' + getClasses().map(function (c) {
-        return '<option value="' + esc(c) + '">' + esc(c) + '</option>';
-      }).join('');
-    }
+    curEnsureLibraryReady().then(paint).catch(paint);
   };
 
   window.curLoadPlanForm = function (id) {
@@ -1542,7 +1713,23 @@
 
   document.addEventListener('click', function (e) {
     if (e.target && e.target.closest('#cur-btn-save-plan')) window.curSavePlan();
-    if (e.target && e.target.closest('#cur-btn-sync-lib')) { window.curSyncFromLibrary(); window.curRenderPlanning(); toast('کتب خانے سے sync', 'success'); }
+    if (e.target && e.target.closest('#cur-btn-sync-lib')) {
+      var btn = e.target.closest('#cur-btn-sync-lib');
+      if (btn) btn.disabled = true;
+      curEnsureLibraryReady().then(function () {
+        var syncRes = window.curSyncFromLibrary();
+        window.curRenderPlanning();
+        var addedN = syncRes && typeof syncRes === 'object' ? (syncRes.added || 0) : (Number(syncRes) || 0);
+        var totalN = syncRes && typeof syncRes === 'object' ? (syncRes.total || 0) : 0;
+        if (addedN > 0) toast('مرکزی کتب خانہ سے ' + addedN + ' نئی کتاب شامل ہوئیں', 'success');
+        else if (totalN > 0) toast('کتب خانہ ہم آہنگ ہے — ' + totalN + ' کتابیں دستیاب', 'success');
+        else toast('امتحانات → ترتیبات و کتب خانہ میں پہلے کتابیں شامل کریں', 'warning');
+      }).catch(function () {
+        toast('کتب خانہ لوڈ نہیں ہو سکی — دوبارہ کوشش کریں', 'error');
+      }).then(function () {
+        if (btn) btn.disabled = false;
+      });
+    }
     if (e.target && e.target.closest('#cur-btn-auto-lines')) window.curAutoCalcLines();
     if (e.target && e.target.closest('#cur-btn-auto-months')) window.curAutoSplitMonths();
     if (e.target && e.target.closest('#cur-btn-save-settings')) window.curSaveSettingsForm();

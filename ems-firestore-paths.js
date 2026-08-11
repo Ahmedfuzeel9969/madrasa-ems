@@ -137,10 +137,18 @@
             return uid;
         }
 
-        if (typeof global.emsGetTenantId === 'function') {
-            var legacyTid = global.emsGetTenantId();
-            if (legacyTid && !(uid && isLocalTenantId(legacyTid))) {
-                return legacyTid;
+        /* Do NOT call emsGetTenantId here — it routes back through
+           emsRequireTenantId → emsEnterpriseResolveTenant → this function (stack overflow). */
+        if (!opts.skipLegacyGetTenantId && typeof global.emsGetTenantId === 'function' && !global.__emsResolvingFsTenant) {
+            global.__emsResolvingFsTenant = true;
+            try {
+                var legacyTid = global.emsGetTenantId();
+                if (legacyTid && !(uid && isLocalTenantId(legacyTid))) {
+                    return legacyTid;
+                }
+            } catch (eLegacy) { /* ignore */ }
+            finally {
+                global.__emsResolvingFsTenant = false;
             }
         }
 

@@ -119,8 +119,14 @@
             sp.style.display = 'none';
             sp.classList.remove('ems-boot-overlay');
             sp.innerHTML = '';
-            if (typeof global.emsDismissBootSplash === 'function') {
+            /* Do not dismiss splash while shell still locked (white screen). */
+            var unlocked = document.body
+                && !document.body.classList.contains('ems-locked')
+                && document.body.classList.contains('ems-authenticated');
+            if (unlocked && typeof global.emsDismissBootSplash === 'function') {
                 global.emsDismissBootSplash();
+            } else if (typeof global.emsEnsureBootSplashVisible === 'function') {
+                global.emsEnsureBootSplashVisible('ڈیٹا لوڈ ہو رہا ہے…');
             }
         }
     };

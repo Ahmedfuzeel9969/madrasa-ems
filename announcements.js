@@ -1266,14 +1266,22 @@
 
   window.annExportDesignPNG = function () {
     var el = document.getElementById('ann-design-canvas');
-    if (!el || !window.html2canvas) return showToast('html2canvas نہیں', 'error');
-    html2canvas(el, { scale: 2, useCORS: true, backgroundColor: null }).then(function (c) {
-      var a = document.createElement('a');
-      a.href = c.toDataURL('image/png');
-      a.download = 'poster-' + Date.now() + '.png';
-      a.click();
-      showToast('PNG برآمد — Photoshop/Canva میں کھولیں', 'success');
-    });
+    if (!el) return showToast('کینوس نہیں ملا', 'error');
+    function run() {
+      if (!window.html2canvas) return showToast('html2canvas نہیں', 'error');
+      html2canvas(el, { scale: 2, useCORS: true, backgroundColor: null }).then(function (c) {
+        var a = document.createElement('a');
+        a.href = c.toDataURL('image/png');
+        a.download = 'poster-' + Date.now() + '.png';
+        a.click();
+        showToast('PNG برآمد — Photoshop/Canva میں کھولیں', 'success');
+      });
+    }
+    if (typeof window.emsLoadPdfLibs === 'function') {
+      window.emsLoadPdfLibs().then(run).catch(function () { showToast('html2canvas نہیں', 'error'); });
+      return;
+    }
+    run();
   };
 
   window.annExportDesignSVG = function () {

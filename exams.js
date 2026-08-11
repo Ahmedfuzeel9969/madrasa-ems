@@ -32,12 +32,8 @@
   function emsSaveKey(key, val, opts) {
     var options = Object.assign({ mutation: true, autoDelta: true }, opts || {});
     var str = typeof val === 'string' ? val : JSON.stringify(val);
-    // Keep durable SSOT in sync for blob keys (library/types/templates/marks/locks).
-    if (typeof window.emsDurableWriteRaw === 'function'
-        && typeof window.emsIsLargeBlobKey === 'function'
-        && window.emsIsLargeBlobKey(key)) {
-      window.emsDurableWriteRaw(key, str);
-    }
+    // Do NOT pre-write durable here — emsSaveModuleData must read oldStr first
+    // so array/blob cloud deltas (outbox / Firestore) are non-empty.
     if (typeof window.emsCacheInvalidate === 'function') {
       window.emsCacheInvalidate(key);
     }
@@ -106,21 +102,127 @@
     }
   }
 
-  function exmLockStorageKey(examName, cls) {
-    return String(examName || '').trim() + '||' + String(cls || '').trim();
+  function exmLockStorageKey(examName, cls, resultDate) {
+    var base = String(examName || '').trim() + '||' + String(cls || '').trim();
+    var d = resultDate ? String(resultDate).trim().slice(0, 10) : '';
+    return d ? (base + '||' + d) : base;
   }
 
-  window.exmIsExamLocked = function (examName, cls) {
+  function exmPad2(n) {
+    return (n < 10 ? '0' : '') + String(n);
+  }
+
+  function exmTodayYmd() {
+    var d = new Date();
+    return d.getFullYear() + '-' + exmPad2(d.getMonth() + 1) + '-' + exmPad2(d.getDate());
+  }
+
+  /** نتیجے کی تاریخ — نئے ریکارڈز میں resultDate؛ پرانے میں timestamp سے */
+  function exmResultDateOf(m) {
+    if (!m) return '';
+    if (m.resultDate) return String(m.resultDate).trim().slice(0, 10);
+    if (m.timestamp) {
+      var d = new Date(m.timestamp);
+      if (!isNaN(d.getTime())) {
+        return d.getFullYear() + '-' + exmPad2(d.getMonth() + 1) + '-' + exmPad2(d.getDate());
+      }
+    }
+    return '';
+  }
+
+  function exmReadResultDateInput(prefix) {
+    var el = document.getElementById(prefix + '-result-date');
+    var v = el && el.value ? String(el.value).trim().slice(0, 10) : '';
+    return v || exmTodayYmd();
+  }
+
+  function exmFormatResultDateLabel(ymd) {
+    if (!ymd) return '—';
+    var parts = String(ymd).split('-');
+    if (parts.length !== 3) return ymd;
+    return parts[2] + '-' + parts[1] + '-' + parts[0];
+  }
+
+  /** ایک امتحان+درجہ کی محفوظ شدہ تمام تواریخ (نیا سے پرانا) */
+  function exmListResultDates(examName, cls) {
+    var dbMarks = exmReadJson(DB.exams, []);
+    var set = Object.create(null);
+    (dbMarks || []).forEach(function (m) {
+      if (!m) return;
+      if (examName && m.examName !== examName) return;
+      if (cls && m.class !== cls) return;
+      var d = exmResultDateOf(m);
+      if (d) set[d] = true;
+    });
+    return Object.keys(set).sort(function (a, b) { return b.localeCompare(a); });
+  }
+
+  function exmFindStudentResult(dbMarks, examName, cls, studentId, resultDate) {
+    var want = resultDate ? String(resultDate).slice(0, 10) : '';
+    var legacy = null;
+    for (var i = 0; i < (dbMarks || []).length; i++) {
+      var m = dbMarks[i];
+      if (!m || m.examName !== examName || m.class !== cls || m.studentId !== studentId) continue;
+      var d = exmResultDateOf(m);
+      if (want && d === want) return m;
+      if (!m.resultDate && !legacy) legacy = m;
+    }
+    // صرف اس صورت میں پرانا بلا تاریخ ریکارڈ دیں جب پوچھی گئی تاریخ آج ہو / صرف ایک لیگیسی ہو
+    if (want && legacy && !legacy.resultDate && exmListResultDates(examName, cls).length <= 1) {
+      return legacy;
+    }
+    return null;
+  }
+
+  window.exmRefreshResultDateOptions = function (prefix) {
+    prefix = prefix || 'mrk';
+    var examEl = document.getElementById(prefix + '-exam-name');
+    var classId = prefix === 'mrk' ? 'mrk-class' : (prefix === 'ana' ? 'ana-class' : 'res-class');
+    var classEl = document.getElementById(classId);
+    var dateEl = document.getElementById(prefix + '-result-date');
+    var sessEl = document.getElementById(prefix + '-result-session');
+    if (!dateEl) return;
+    if (!dateEl.value) dateEl.value = exmTodayYmd();
+    var examName = examEl ? examEl.value : '';
+    var cls = classEl ? classEl.value : '';
+    var dates = exmListResultDates(examName, cls);
+    if (sessEl) {
+      var cur = dateEl.value;
+      var html = '<option value="">— نیا / دستی تاریخ —</option>';
+      dates.forEach(function (d) {
+        html += '<option value="' + d + '">' + exmFormatResultDateLabel(d) +
+          (d === exmTodayYmd() ? ' (آج)' : '') + '</option>';
+      });
+      sessEl.innerHTML = html;
+      if (cur && dates.indexOf(cur) >= 0) sessEl.value = cur;
+    }
+  };
+
+  window.exmOnResultSessionPick = function (prefix) {
+    prefix = prefix || 'mrk';
+    var sessEl = document.getElementById(prefix + '-result-session');
+    var dateEl = document.getElementById(prefix + '-result-date');
+    if (!sessEl || !dateEl) return;
+    if (sessEl.value) dateEl.value = sessEl.value;
+  };
+
+  window.exmIsExamLocked = function (examName, cls, resultDate) {
     if (!examName || !cls) return false;
     var locks = exmReadLocks();
-    var entry = locks[exmLockStorageKey(examName, cls)];
-    return !!(entry && entry.locked);
+    var legacy = locks[exmLockStorageKey(examName, cls)];
+    if (legacy && legacy.locked) return true;
+    var d = resultDate ? String(resultDate).slice(0, 10) : '';
+    if (d) {
+      var entry = locks[exmLockStorageKey(examName, cls, d)];
+      if (entry && entry.locked) return true;
+    }
+    return false;
   };
 
   function exmIsMarksContextLocked() {
     var examName = (document.getElementById('mrk-exam-name') || {}).value;
     var cls = (document.getElementById('mrk-class') || {}).value;
-    return window.exmIsExamLocked(examName, cls);
+    return window.exmIsExamLocked(examName, cls, exmReadResultDateInput('mrk'));
   }
 
   window.exmCanEditBookColumn = function (book) {
@@ -135,15 +237,17 @@
   window.exmUpdateLockUi = function () {
     var marksExam = (document.getElementById('mrk-exam-name') || {}).value;
     var marksCls = (document.getElementById('mrk-class') || {}).value;
+    var marksDate = exmReadResultDateInput('mrk');
     var resExam = (document.getElementById('res-exam-name') || {}).value;
     var resCls = (document.getElementById('res-class') || {}).value;
+    var resDate = exmReadResultDateInput('res');
 
-    var marksLocked = window.exmIsExamLocked(marksExam, marksCls);
+    var marksLocked = window.exmIsExamLocked(marksExam, marksCls, marksDate);
     var marksBadge = document.getElementById('exm-marks-lock-badge');
     if (marksBadge) marksBadge.style.display = marksLocked ? 'flex' : 'none';
 
     var resBadge = document.getElementById('exm-result-lock-badge');
-    if (resBadge) resBadge.style.display = window.exmIsExamLocked(resExam, resCls) ? 'flex' : 'none';
+    if (resBadge) resBadge.style.display = window.exmIsExamLocked(resExam, resCls, resDate) ? 'flex' : 'none';
 
     var toolbar = document.getElementById('exm-lock-toolbar');
     var toggleBtn = document.getElementById('btn-exm-lock-toggle');
@@ -151,7 +255,7 @@
     if (toolbar) toolbar.style.display = window.exmIsAdminOrOwner() ? 'flex' : 'none';
 
     if (toggleBtn) {
-      var resLocked = window.exmIsExamLocked(resExam, resCls);
+      var resLocked = window.exmIsExamLocked(resExam, resCls, resDate);
       toggleBtn.disabled = !resExam || !resCls;
       toggleBtn.innerHTML = resLocked
         ? '<i class="fas fa-unlock"></i> نتیجہ کھولیں (Unlock)'
@@ -160,10 +264,12 @@
     }
 
     if (lockMeta) {
-      var entry = exmReadLocks()[exmLockStorageKey(resExam, resCls)];
+      var entry = exmReadLocks()[exmLockStorageKey(resExam, resCls, resDate)]
+        || exmReadLocks()[exmLockStorageKey(resExam, resCls)];
       if (entry && entry.locked) {
         var when = entry.lockedAt ? new Date(entry.lockedAt).toLocaleString('ur-PK') : '—';
-        lockMeta.textContent = 'لاک: ' + (entry.lockedBy || '—') + ' | ' + when;
+        lockMeta.textContent = 'لاک: ' + (entry.lockedBy || '—') + ' | ' + when +
+          (resDate ? (' | تاریخ: ' + exmFormatResultDateLabel(resDate)) : '');
         lockMeta.style.display = 'block';
       } else {
         lockMeta.style.display = 'none';
@@ -206,35 +312,54 @@
     }
     var examName = (document.getElementById('res-exam-name') || {}).value;
     var cls = (document.getElementById('res-class') || {}).value;
+    var resultDate = exmReadResultDateInput('res');
     if (!examName || !cls) return showToast('امتحان اور درجہ منتخب کریں!', 'error');
 
     var locks = exmReadLocks();
-    var key = exmLockStorageKey(examName, cls);
-    if (locks[key] && locks[key].locked) {
-      if (!confirm('کیا آپ واقعی اس درجے کا نتیجہ کھولنا چاہتے ہیں؟ نمبرات دوبارہ تبدیل ہو سکیں گے۔')) return;
+    var key = exmLockStorageKey(examName, cls, resultDate);
+    var legacyKey = exmLockStorageKey(examName, cls);
+    var isLocked = (locks[key] && locks[key].locked) || (locks[legacyKey] && locks[legacyKey].locked);
+    if (isLocked) {
+      if (!confirm('کیا آپ واقعی اس تاریخ (' + exmFormatResultDateLabel(resultDate) + ') کا نتیجہ کھولنا چاہتے ہیں؟')) return;
       delete locks[key];
+      delete locks[legacyKey];
       emsSaveKey(EXM_LOCKS_KEY, JSON.stringify(locks));
       showToast('نتیجہ کھولا گیا — نمبرات اب تبدیل ہو سکتے ہیں', 'success');
     } else {
-      if (!confirm('لاک کے بعد کوئی بھی (بشمول ایڈمن) نمبرات تبدیل نہیں کر سکے گا جب تک آپ دوبارہ نہ کھولیں۔')) return;
+      if (!confirm('لاک کے بعد اس تاریخ کا نتیجہ تبدیل نہیں ہو سکے گا جب تک آپ دوبارہ نہ کھولیں۔')) return;
       locks[key] = {
         locked: true,
         lockedAt: Date.now(),
-        lockedBy: window.exmGetCurrentTeacherName() || 'ایڈمن'
+        lockedBy: window.exmGetCurrentTeacherName() || 'ایڈمن',
+        resultDate: resultDate
       };
       emsSaveKey(EXM_LOCKS_KEY, JSON.stringify(locks));
-      showToast('نتیجہ کامیابی سے لاک ہو گیا', 'success');
+      showToast('نتیجہ کامیابی سے لاک ہو گیا (' + exmFormatResultDateLabel(resultDate) + ')', 'success');
     }
     window.exmUpdateLockUi();
     if (currentGridData.length) renderMarksGrid();
   };
 
-    // printDiv lives in ems-utils.js (global); keep fallback if exams loads first in tests.
+    // printDiv lives in ems-utils.js (global). Never install a stub that blocks printing.
     if (typeof window.printDiv !== 'function') {
       window.printDiv = function (divId) {
         var el = document.getElementById(divId);
-        if (!el) return;
-        if (typeof window.showToast === 'function') window.showToast('پرنٹ ایریا نہیں ملا', 'error');
+        if (!el) {
+          if (typeof window.showToast === 'function') window.showToast('پرنٹ ایریا نہیں ملا', 'error');
+          return;
+        }
+        var w = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700');
+        if (!w) {
+          if (typeof window.showToast === 'function') window.showToast('پرنٹ ونڈو نہیں کھلی', 'error');
+          return;
+        }
+        w.document.write('<!DOCTYPE html><html dir="rtl" lang="ur"><head><meta charset="utf-8"><title>پرنٹ</title>' +
+          '<style>body{font-family:"Noto Nastaliq Urdu",serif;direction:rtl;padding:14px;}' +
+          'table{border-collapse:collapse;width:100%;} th,td{border:1px solid #333;padding:6px;}' +
+          '@media print{body,body *{visibility:visible!important;}}</style></head><body>' +
+          el.innerHTML + '</body></html>');
+        w.document.close();
+        setTimeout(function () { try { w.focus(); w.print(); } catch (eP) { /* ignore */ } }, 400);
       };
     }
 
@@ -277,7 +402,23 @@
       if (typeof window.emsIsExamsModuleActive === 'function' && !window.emsIsExamsModuleActive()) return;
       activeTabId = activeTabId || window._exmActiveTab || 'exam-win-settings';
 
-      if (typeof window.curSyncFromLibrary === 'function') window.curSyncFromLibrary();
+      (function exmRefreshCurriculumLibrary() {
+          function afterLibReady() {
+              if (typeof window.curSyncFromLibrary === 'function') {
+                  try { window.curSyncFromLibrary(); } catch (eSync) { /* ignore */ }
+              }
+              if (typeof window.curRenderPlanning === 'function'
+                  && document.getElementById('module-curriculum')
+                  && document.getElementById('module-curriculum').classList.contains('active')) {
+                  try { window.curRenderPlanning(); } catch (eCur) { /* ignore */ }
+              }
+          }
+          if (typeof window.curEnsureLibraryReady === 'function') {
+              window.curEnsureLibraryReady().then(afterLibReady).catch(afterLibReady);
+          } else {
+              afterLibReady();
+          }
+      })();
 
       var gen = typeof window.emsReadRepoCacheGen === 'function' ? window.emsReadRepoCacheGen() : 0;
       if (window._exmDropdownGen !== gen) {
@@ -293,6 +434,9 @@
               select.innerHTML = '<option value="">…</option>';
           });
       }
+      if (typeof window.exmEnsureTplAllClassesOption === 'function') {
+          window.exmEnsureTplAllClassesOption();
+      }
 
       window.exmEnsureLazyPickers();
       document.querySelectorAll('.exm-dynamic-teacher').forEach(function (select) {
@@ -305,9 +449,23 @@
           }
       });
 
-      if (activeTabId === 'exam-win-settings' || activeTabId === 'exam-win-marks' || activeTabId === 'exam-win-schedule') {
+      if (activeTabId === 'exam-win-settings' || activeTabId === 'exam-win-marks' || activeTabId === 'exam-win-schedule' || activeTabId === 'exam-win-template' || activeTabId === 'exam-win-analysis') {
           renderSettingsData();
+          if (activeTabId === 'exam-win-template' && typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
+              try {
+                  window.exmSyncTimetableBooksToMasterSheet({ silent: false });
+              } catch (eSync) { /* ignore */ }
+          }
           renderQuickAccessTabs();
+          if (activeTabId === 'exam-win-template') {
+              var tplSel = document.getElementById('tpl-class-select');
+              if (tplSel && tplSel.value && typeof window.renderTemplateTable === 'function') {
+                  window.renderTemplateTable(tplSel.value);
+              }
+          }
+          if (activeTabId === 'exam-win-analysis' && typeof window.exmUpdateAnaScopeUi === 'function') {
+              window.exmUpdateAnaScopeUi();
+          }
       }
       if (typeof window.examUpdateTplScopePreview === 'function') window.examUpdateTplScopePreview();
       if (typeof window.exmUpdateLockUi === 'function') window.exmUpdateLockUi();
@@ -389,6 +547,10 @@
 
 
 
+      if (typeof window.attMigratePeriodBooksToLibrary === 'function') {
+          try { window.attMigratePeriodBooksToLibrary({ skipRefresh: true }); } catch (eMig) { /* ignore */ }
+      }
+
       let libBooks = exmReadJson('ems_library_books', []);
       if (!Array.isArray(libBooks)) libBooks = [];
 
@@ -415,6 +577,10 @@
           let v = sel.value; sel.innerHTML = '<option value="">لائبریری سے کتابیں...</option>'; libBooks.forEach(b => sel.innerHTML += `<option value="${b}">${b}</option>`); sel.value = v;
 
       });
+
+      if (typeof window.attRefreshPeriodBookSelect === 'function') {
+          try { window.attRefreshPeriodBookSelect(); } catch (eAttLib) { /* ignore */ }
+      }
 
   }
 
@@ -494,6 +660,224 @@
 
 
 
+  var EXM_TPL_ALL_CLASSES = '__ALL_CLASSES__';
+
+  window.exmEnsureTplAllClassesOption = function () {
+      ['tpl-class-select', 'sch-class-select'].forEach(function (selId) {
+          var sel = document.getElementById(selId);
+          if (!sel) return;
+          var cur = sel.value;
+          var existing = null;
+          Array.from(sel.options).forEach(function (o) {
+              if (o.value === EXM_TPL_ALL_CLASSES) existing = o;
+          });
+          if (existing) existing.remove();
+          var opt = document.createElement('option');
+          opt.value = EXM_TPL_ALL_CLASSES;
+          opt.textContent = 'تمام درجات';
+          if (sel.options.length > 0) {
+              var insertBefore = sel.options[0] && !String(sel.options[0].value || '').trim()
+                  ? (sel.options[1] || null)
+                  : sel.options[0];
+              sel.insertBefore(opt, insertBefore);
+          } else {
+              sel.appendChild(opt);
+          }
+          if (cur) sel.value = cur;
+      });
+  };
+
+  function exmListMasterSheetClasses() {
+      if (typeof window.emsCollectClasses === 'function') {
+          var fromRepo = window.emsCollectClasses() || [];
+          if (fromRepo.length) return fromRepo.slice();
+      }
+      var sel = document.getElementById('tpl-class-select');
+      var out = [];
+      if (sel) {
+          Array.from(sel.options).forEach(function (o) {
+              var v = String(o.value || '').trim();
+              if (!v || v === EXM_TPL_ALL_CLASSES) return;
+              out.push(v);
+          });
+      }
+      return out;
+  }
+
+  function exmEnsureClassTemplate(templates, cls) {
+      var classTpl = templates.find(function (t) { return t.class === cls; });
+      if (!classTpl) {
+          classTpl = {
+              class: cls,
+              sheetName: '',
+              books: [],
+              removedBooks: [],
+              customHeader: '',
+              fontSize: 16,
+              textAlign: 'right',
+              showBorder: true
+          };
+          templates.push(classTpl);
+      }
+      if (!Array.isArray(classTpl.books)) classTpl.books = [];
+      if (!Array.isArray(classTpl.removedBooks)) classTpl.removedBooks = [];
+      if (typeof classTpl.sheetName !== 'string') classTpl.sheetName = classTpl.sheetName ? String(classTpl.sheetName) : '';
+      return classTpl;
+  }
+
+  function exmTplRemovedSet(classTpl) {
+      var set = Object.create(null);
+      (classTpl && classTpl.removedBooks ? classTpl.removedBooks : []).forEach(function (k) {
+          if (k) set[String(k)] = true;
+      });
+      return set;
+  }
+
+  function exmTplMarkBookRemoved(classTpl, bookName) {
+      if (!classTpl) return;
+      if (!Array.isArray(classTpl.removedBooks)) classTpl.removedBooks = [];
+      var key = exmTplBookDedupeKey(bookName);
+      if (!key) return;
+      if (classTpl.removedBooks.indexOf(key) < 0) classTpl.removedBooks.push(key);
+  }
+
+  function exmTplClearBookRemoved(classTpl, bookName) {
+      if (!classTpl || !Array.isArray(classTpl.removedBooks)) return;
+      var key = exmTplBookDedupeKey(bookName);
+      if (!key) return;
+      classTpl.removedBooks = classTpl.removedBooks.filter(function (k) { return k !== key; });
+  }
+
+  function exmTplDisplayName(tpl) {
+      if (!tpl) return '';
+      var named = tpl.sheetName ? String(tpl.sheetName).trim() : '';
+      if (named) return named;
+      return String(tpl.class || '');
+  }
+
+  function exmReadMasterSheetMeta() {
+      try {
+          var raw = typeof exmReadRaw === 'function'
+              ? exmReadRaw('ems_master_sheet_meta')
+              : localStorage.getItem('ems_master_sheet_meta');
+          if (!raw) return {};
+          var parsed = JSON.parse(raw);
+          return parsed && typeof parsed === 'object' ? parsed : {};
+      } catch (eMeta) {
+          return {};
+      }
+  }
+
+  function exmWriteMasterSheetMeta(meta) {
+      try {
+          emsSaveKey('ems_master_sheet_meta', JSON.stringify(meta || {}));
+      } catch (eWrite) {
+          try { localStorage.setItem('ems_master_sheet_meta', JSON.stringify(meta || {})); } catch (eLs) { /* ignore */ }
+      }
+  }
+
+  function exmBuildTplBookEntry(bookName, marks, date, time, room, invigilator, teacher, paperType) {
+      var curScope = window.examFormatCurScope(window.examGetCurScopeForBook(bookName, 'سالانہ امتحان'));
+      return {
+          id: generateID('B'),
+          name: bookName,
+          marks: marks,
+          date: date,
+          time: time,
+          room: room,
+          invigilator: invigilator,
+          teacher: teacher,
+          paperType: paperType,
+          curScope: curScope
+      };
+  }
+
+  function exmTplBookDedupeKey(name) {
+      var s = String(name == null ? '' : name).trim().replace(/\s+/g, ' ');
+      if (!s) return '';
+      try { s = s.normalize('NFC'); } catch (eNfc) { /* ignore */ }
+      try { return s.toLocaleLowerCase('ur'); } catch (eUr) {
+          try { return s.toLowerCase(); } catch (eLow) { return s; }
+      }
+  }
+
+  function exmReadAttendancePeriodsForTpl() {
+      try {
+          var periods = JSON.parse(localStorage.getItem('ems_att_periods') || '[]');
+          return Array.isArray(periods) ? periods : [];
+      } catch (e) {
+          return [];
+      }
+  }
+
+  /**
+   * نظام الاوقات: ہر درجہ کی کتاب → ماسٹر شیٹ کے اسی درجے میں منسلک۔
+   * Idempotent — صرف نئی کتابیں شامل ہوتی ہیں۔
+   */
+  window.exmSyncTimetableBooksToMasterSheet = function (opts) {
+      opts = opts || {};
+      if (typeof window.attMigratePeriodBooksToLibrary === 'function') {
+          try { window.attMigratePeriodBooksToLibrary({ skipRefresh: true }); } catch (eLib) { /* ignore */ }
+      }
+      var periods = exmReadAttendancePeriodsForTpl();
+      var byClass = Object.create(null);
+      periods.forEach(function (p) {
+          if (!p) return;
+          var cls = String(p.className || '').trim();
+          if (!cls || cls === '-') return;
+          var book = String(p.bookName || '').trim().replace(/\s+/g, ' ');
+          if (!book || book === '-') return;
+          var key = exmTplBookDedupeKey(book);
+          if (!key) return;
+          if (!byClass[cls]) byClass[cls] = Object.create(null);
+          if (byClass[cls][key]) return;
+          var teacher = String(p.teacherName || '').replace(/\[.*?\]\s*/g, '').trim();
+          if (teacher === '-') teacher = '';
+          byClass[cls][key] = { name: book, teacher: teacher };
+      });
+      var classNames = Object.keys(byClass);
+      if (!classNames.length) {
+          return { added: 0, classes: 0, changed: false };
+      }
+
+      var templates = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(templates)) templates = [];
+      var added = 0;
+      classNames.forEach(function (cls) {
+          var classTpl = exmEnsureClassTemplate(templates, cls);
+          var existing = Object.create(null);
+          var removed = exmTplRemovedSet(classTpl);
+          classTpl.books.forEach(function (b) {
+              var k = exmTplBookDedupeKey(b && b.name);
+              if (k) existing[k] = true;
+          });
+          Object.keys(byClass[cls]).forEach(function (bk) {
+              if (existing[bk] || removed[bk]) return;
+              var info = byClass[cls][bk];
+              classTpl.books.push(exmBuildTplBookEntry(
+                  info.name,
+                  100,
+                  '',
+                  '',
+                  '',
+                  '',
+                  info.teacher || '',
+                  'تحریری'
+              ));
+              existing[bk] = true;
+              added++;
+          });
+      });
+
+      if (added > 0) {
+          emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+          if (!opts.silent && typeof showToast === 'function') {
+              showToast(added + ' کتاب نظام الاوقات سے ماسٹر شیٹ (مطلوبہ درجات) میں منسلک ہو گئیں', 'success');
+          }
+      }
+      return { added: added, classes: classNames.length, changed: added > 0 };
+  };
+
   function renderQuickAccessTabs() {
 
       const tabsContainer = document.getElementById('quick-access-tabs');
@@ -504,7 +888,16 @@
 
       tabsContainer.innerHTML = '';
 
-      templates.forEach(tpl => { tabsContainer.innerHTML += `<button class="btn btn-outline" style="padding:6px 12px; border-radius:20px;" onclick="loadTemplateForClass('${tpl.class}')">${tpl.class}</button>`; });
+      var allMeta = exmReadMasterSheetMeta();
+      var allLabel = (allMeta.allSheetName && String(allMeta.allSheetName).trim()) || 'تمام درجات';
+      tabsContainer.innerHTML += `<button class="btn btn-outline" style="padding:6px 12px; border-radius:20px;" onclick="loadTemplateForClass('${EXM_TPL_ALL_CLASSES}')" title="تمام درجات">${exmTplEscapeHtml(allLabel)}</button>`;
+
+      templates.forEach(tpl => {
+          if (!tpl || !tpl.class) return;
+          var label = exmTplDisplayName(tpl);
+          var titleAttr = tpl.sheetName ? (' title="' + exmTplEscapeAttr(tpl.class) + '"') : '';
+          tabsContainer.innerHTML += `<button class="btn btn-outline" style="padding:6px 12px; border-radius:20px;" onclick="loadTemplateForClass('${exmTplEscapeAttr(tpl.class)}')"${titleAttr}>${exmTplEscapeHtml(label)}</button>`;
+      });
 
   }
 
@@ -544,17 +937,42 @@
 
       let templates = exmReadJson('ems_exam_templates', []);
 
-      let classTpl = templates.find(t => t.class === cls);
+      if (cls === EXM_TPL_ALL_CLASSES) {
+          var allClasses = exmListMasterSheetClasses();
+          if (!allClasses.length) {
+              return showToast("کوئی درجہ دستیاب نہیں — پہلے رجسٹریشن میں درجات درج کریں", "error");
+          }
+          var added = 0;
+          var skipped = 0;
+          allClasses.forEach(function (c) {
+              var classTpl = exmEnsureClassTemplate(templates, c);
+              exmTplClearBookRemoved(classTpl, bookName);
+              if (!classTpl.books.find(function (b) { return b.name === bookName; })) {
+                  classTpl.books.push(exmBuildTplBookEntry(bookName, marks, date, time, room, invigilator, teacher, paperType));
+                  added++;
+              } else {
+                  skipped++;
+              }
+          });
+          emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+          if (added > 0) {
+              showToast(added + ' درجات کی شیٹ میں کتاب شامل ہو گئی' + (skipped ? ' (' + skipped + ' پہلے سے موجود)' : '') + '!', "success");
+          } else {
+              showToast("یہ کتاب تمام درجات کی شیٹ میں پہلے سے موجود ہے!", "warning");
+          }
+          renderTemplateTable(EXM_TPL_ALL_CLASSES);
+          renderQuickAccessTabs();
+          return;
+      }
 
-      if(!classTpl) { classTpl = { class: cls, books: [], customHeader: '', fontSize: 16, textAlign: 'right', showBorder: true }; templates.push(classTpl); }
+      let classTpl = exmEnsureClassTemplate(templates, cls);
+      exmTplClearBookRemoved(classTpl, bookName);
 
       
 
       if(!classTpl.books.find(b => b.name === bookName)) {
 
-          var curScope = window.examFormatCurScope(window.examGetCurScopeForBook(bookName, 'سالانہ امتحان'));
-
-          classTpl.books.push({ id: generateID('B'), name: bookName, marks: marks, date: date, time: time, room: room, invigilator: invigilator, teacher: teacher, paperType: paperType, curScope: curScope });
+          classTpl.books.push(exmBuildTplBookEntry(bookName, marks, date, time, room, invigilator, teacher, paperType));
 
           emsSaveKey('ems_exam_templates', JSON.stringify(templates));
 
@@ -568,31 +986,572 @@
 
 
 
+  function exmTplEscapeHtml(s) {
+      return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+  }
+
+  function exmTplEscapeAttr(s) {
+      return String(s == null ? '' : s)
+          .replace(/\\/g, '\\\\')
+          .replace(/'/g, "\\'");
+  }
+
+  var EXM_TPL_DETAIL_HEADERS =
+      '<th>درجہ</th><th>کتاب</th><th>نصاب حصہ</th><th>کل نمبرات</th><th>تاریخ</th><th>وقت</th><th>کمرہ</th><th>نگران</th><th>استاد</th><th>نوعیت</th><th>ایکشن</th>';
+
+  var EXM_PAPER_ORDINALS = [
+      'الورقة الأولى', 'الورقة الثانية', 'الورقة الثالثة', 'الورقة الرابعة',
+      'الورقة الخامسة', 'الورقة السادسة', 'الورقة السابعة', 'الورقة الثامنة',
+      'الورقة التاسعة', 'الورقة العاشرة', 'الورقة الحادية عشرة', 'الورقة الثانية عشرة'
+  ];
+
+  function exmSetTplTableMode(mode) {
+      var detail = document.getElementById('tpl-detail-table-wrap');
+      var matrix = document.getElementById('tpl-all-matrix-wrap');
+      if (detail) detail.style.display = mode === 'all' ? 'none' : '';
+      if (matrix) matrix.style.display = mode === 'all' ? 'block' : 'none';
+      if (mode !== 'all') {
+          var headRow = document.querySelector('#tpl-books-table thead tr');
+          if (headRow) headRow.innerHTML = EXM_TPL_DETAIL_HEADERS;
+      }
+      exmApplyTplExtraSettingsUi(mode === 'all');
+  }
+
+  function exmTplExtraSettingsIsOpen() {
+      var root = document.getElementById('exam-win-template');
+      return !!(root && root.classList.contains('tpl-extra-open'));
+  }
+
+  function exmUpdateTplExtraSettingsButton() {
+      var btn = document.getElementById('btn-tpl-extra-settings');
+      if (!btn) return;
+      var open = exmTplExtraSettingsIsOpen();
+      btn.innerHTML = open
+          ? '<i class="fas fa-times"></i> سیٹنگز چھپائیں'
+          : '<i class="fas fa-cog"></i> اضافی سیٹنگز';
+      btn.setAttribute('aria-pressed', open ? 'true' : 'false');
+  }
+
+  function exmApplyTplExtraSettingsUi(isAllMode) {
+      var root = document.getElementById('exam-win-template');
+      var toggleWrap = document.getElementById('tpl-settings-toggle-wrap');
+      if (!root) return;
+      if (toggleWrap) toggleWrap.style.display = isAllMode ? '' : 'none';
+      if (!isAllMode) {
+          root.classList.add('tpl-extra-open');
+          exmUpdateTplExtraSettingsButton();
+          return;
+      }
+      var saved = null;
+      try { saved = sessionStorage.getItem('ems_tpl_extra_open'); } catch (eSave) { saved = null; }
+      if (saved === '1') root.classList.add('tpl-extra-open');
+      else root.classList.remove('tpl-extra-open');
+      exmUpdateTplExtraSettingsButton();
+  }
+
+  window.exmToggleTplExtraSettings = function () {
+      var root = document.getElementById('exam-win-template');
+      var sel = document.getElementById('tpl-class-select');
+      if (!root || !sel || sel.value !== EXM_TPL_ALL_CLASSES) return;
+      var open = root.classList.toggle('tpl-extra-open');
+      try { sessionStorage.setItem('ems_tpl_extra_open', open ? '1' : '0'); } catch (eSet) { /* ignore */ }
+      exmUpdateTplExtraSettingsButton();
+  };
+
+  function exmPaperOrdinalLabel(index) {
+      return EXM_PAPER_ORDINALS[index] || ('الورقة ' + (index + 1));
+  }
+
+  function exmSortTplBooksForMatrix(books) {
+      return (books || []).slice().sort(function (a, b) {
+          var ma = a && typeof a.matrixOrder === 'number' ? a.matrixOrder : null;
+          var mb = b && typeof b.matrixOrder === 'number' ? b.matrixOrder : null;
+          if (ma != null && mb != null && ma !== mb) return ma - mb;
+          if (ma != null && mb == null) return -1;
+          if (ma == null && mb != null) return 1;
+          var da = a && a.date ? String(a.date) : '';
+          var db = b && b.date ? String(b.date) : '';
+          if (da && db && da !== db) return da.localeCompare(db);
+          if (da && !db) return -1;
+          if (!da && db) return 1;
+          var ta = a && a.time ? String(a.time) : '';
+          var tb = b && b.time ? String(b.time) : '';
+          if (ta !== tb) return ta.localeCompare(tb);
+          return String((a && a.name) || '').localeCompare(String((b && b.name) || ''), 'ur');
+      });
+  }
+
+  /** اوپر کی اوراق قطار: کالم گھسیٹ کر / بٹن سے ترتیب۔ */
+  window.exmReorderMatrixPaperColumns = function (fromIdx, toIdx) {
+      fromIdx = parseInt(fromIdx, 10);
+      toIdx = parseInt(toIdx, 10);
+      if (!isFinite(fromIdx) || !isFinite(toIdx) || fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+      var templates = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(templates)) templates = [];
+      var changed = false;
+      templates.forEach(function (tpl) {
+          if (!tpl || !Array.isArray(tpl.books) || !tpl.books.length) return;
+          var books = exmSortTplBooksForMatrix(tpl.books);
+          if (fromIdx >= books.length) return;
+          var moved = books.splice(fromIdx, 1)[0];
+          if (!moved) return;
+          var insertAt = toIdx;
+          if (insertAt > books.length) insertAt = books.length;
+          books.splice(insertAt, 0, moved);
+          books.forEach(function (b, i) {
+              if (b) b.matrixOrder = i;
+          });
+          changed = true;
+      });
+      if (!changed) return;
+      emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+      if (typeof showToast === 'function') showToast('اوراق کی ترتیب محفوظ ہو گئی', 'success');
+      renderTemplateTable(EXM_TPL_ALL_CLASSES);
+  };
+
+  window.exmMoveMatrixPaperCol = function (colIdx, delta) {
+      colIdx = parseInt(colIdx, 10);
+      delta = parseInt(delta, 10) || 0;
+      if (!isFinite(colIdx)) return;
+      window.exmReorderMatrixPaperColumns(colIdx, colIdx + delta);
+  };
+
+  /** اوپر اوراق ہیڈر: پورے کالم کی تاریخ بدلنا (تمام درجات کی اس ورق کی کتابوں پر)۔ */
+  window.exmSetMatrixPaperColumnDate = function (colIdx, dateVal) {
+      colIdx = parseInt(colIdx, 10);
+      if (!isFinite(colIdx) || colIdx < 0) return;
+      var dateStr = dateVal ? String(dateVal) : '';
+      var templates = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(templates)) templates = [];
+      var updated = 0;
+      templates.forEach(function (tpl) {
+          if (!tpl || !Array.isArray(tpl.books) || !tpl.books.length) return;
+          var books = exmSortTplBooksForMatrix(tpl.books);
+          var book = books[colIdx];
+          if (!book) return;
+          book.date = dateStr;
+          // کالم پوزیشن برقرار رکھیں
+          if (typeof book.matrixOrder !== 'number') book.matrixOrder = colIdx;
+          updated++;
+      });
+      if (!updated) {
+          if (typeof showToast === 'function') showToast('اس ورق میں کوئی کتاب نہیں', 'warning');
+          return;
+      }
+      emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+      if (typeof showToast === 'function') showToast('ورق کی تاریخ محفوظ ہو گئی', 'success');
+      renderTemplateTable(EXM_TPL_ALL_CLASSES);
+  };
+
+  function exmBindMatrixPaperColumnDrag(table) {
+      if (!table) return;
+      table.querySelectorAll('th.tpl-matrix-paper-head').forEach(function (th) {
+          th.setAttribute('draggable', 'true');
+          th.addEventListener('dragstart', function (e) {
+              var from = th.getAttribute('data-col-index');
+              th.classList.add('tpl-paper-dragging');
+              try {
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', String(from));
+              } catch (err) { /* ignore */ }
+          });
+          th.addEventListener('dragend', function () {
+              th.classList.remove('tpl-paper-dragging');
+              table.querySelectorAll('.tpl-paper-drag-over').forEach(function (el) {
+                  el.classList.remove('tpl-paper-drag-over');
+              });
+          });
+          th.addEventListener('dragover', function (e) {
+              e.preventDefault();
+              th.classList.add('tpl-paper-drag-over');
+          });
+          th.addEventListener('dragleave', function () {
+              th.classList.remove('tpl-paper-drag-over');
+          });
+          th.addEventListener('drop', function (e) {
+              e.preventDefault();
+              th.classList.remove('tpl-paper-drag-over');
+              var to = parseInt(th.getAttribute('data-col-index'), 10);
+              var from = NaN;
+              try { from = parseInt(e.dataTransfer.getData('text/plain'), 10); } catch (err2) { from = NaN; }
+              if (isFinite(from) && isFinite(to)) window.exmReorderMatrixPaperColumns(from, to);
+          });
+      });
+  }
+
+  function exmClassMatrixSort(a, b) {
+      var na = String(a).match(/(\d+)/);
+      var nb = String(b).match(/(\d+)/);
+      if (na && nb) return parseInt(nb[1], 10) - parseInt(na[1], 10);
+      try { return String(a).localeCompare(String(b), 'ur'); }
+      catch (e) { return String(a) < String(b) ? -1 : String(a) > String(b) ? 1 : 0; }
+  }
+
+  function exmFindClassTemplate(templates, cls) {
+      return (templates || []).find(function (t) { return t && t.class === cls; }) || null;
+  }
+
+  /** درجات کی ترتیب: محفوظ sortOrder، ورنہ ڈیفالٹ۔ */
+  function exmOrderedMatrixClasses(templates, byClass) {
+      var names = Object.keys(byClass || {}).filter(function (c) {
+          return (byClass[c] || []).length > 0;
+      });
+      var listClasses = exmListMasterSheetClasses();
+      listClasses.forEach(function (c) {
+          if (byClass[c] && byClass[c].length && names.indexOf(c) < 0) names.push(c);
+      });
+      names.sort(function (a, b) {
+          var ta = exmFindClassTemplate(templates, a);
+          var tb = exmFindClassTemplate(templates, b);
+          var oa = ta && typeof ta.sortOrder === 'number' ? ta.sortOrder : null;
+          var ob = tb && typeof tb.sortOrder === 'number' ? tb.sortOrder : null;
+          if (oa != null && ob != null && oa !== ob) return oa - ob;
+          if (oa != null && ob == null) return -1;
+          if (oa == null && ob != null) return 1;
+          return exmClassMatrixSort(a, b);
+      });
+      return names;
+  }
+
+  function exmRewriteClassSortOrders(templates, orderedNames) {
+      (orderedNames || []).forEach(function (name, idx) {
+          var tpl = exmEnsureClassTemplate(templates, name);
+          tpl.sortOrder = idx + 1;
+      });
+  }
+
+  window.exmSetTplBookDate = function (cls, bookId, dateVal) {
+      var templates = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(templates)) templates = [];
+      var classTpl = exmFindClassTemplate(templates, cls);
+      if (!classTpl || !Array.isArray(classTpl.books)) {
+          return showToast('درجہ/کتاب نہیں ملی', 'error');
+      }
+      var book = classTpl.books.find(function (b) { return b && b.id === bookId; });
+      if (!book) return showToast('کتاب نہیں ملی', 'error');
+      book.date = dateVal ? String(dateVal) : '';
+      emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+      if (typeof showToast === 'function') showToast('تاریخ محفوظ ہو گئی', 'success');
+      renderTemplateTable(EXM_TPL_ALL_CLASSES);
+  };
+
+  window.exmSetClassMatrixOrder = function (cls, orderRaw) {
+      var templates = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(templates)) templates = [];
+      var byClass = Object.create(null);
+      templates.forEach(function (tpl) {
+          if (!tpl || !tpl.class) return;
+          if ((tpl.books || []).length) byClass[tpl.class] = tpl.books;
+      });
+      var names = exmOrderedMatrixClasses(templates, byClass);
+      if (names.indexOf(cls) < 0) names.push(cls);
+      var order = parseInt(orderRaw, 10);
+      if (!isFinite(order) || order < 1) order = 1;
+      if (order > names.length) order = names.length;
+      names = names.filter(function (n) { return n !== cls; });
+      names.splice(order - 1, 0, cls);
+      exmRewriteClassSortOrders(templates, names);
+      emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+      if (typeof showToast === 'function') showToast('درجہ کی ترتیب اپڈیٹ ہو گئی', 'success');
+      renderTemplateTable(EXM_TPL_ALL_CLASSES);
+  };
+
+  window.exmMoveClassMatrix = function (cls, delta) {
+      var templates = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(templates)) templates = [];
+      var byClass = Object.create(null);
+      templates.forEach(function (tpl) {
+          if (!tpl || !tpl.class) return;
+          if ((tpl.books || []).length) byClass[tpl.class] = tpl.books;
+      });
+      var names = exmOrderedMatrixClasses(templates, byClass);
+      var idx = names.indexOf(cls);
+      if (idx < 0) return;
+      var next = idx + (parseInt(delta, 10) || 0);
+      if (next < 0 || next >= names.length) return;
+      window.exmSetClassMatrixOrder(cls, next + 1);
+  };
+
+  function exmMatrixDayName(dateStr) {
+      if (!dateStr) return '';
+      var d = new Date(String(dateStr) + 'T12:00:00');
+      if (isNaN(d.getTime())) return '';
+      var days = (typeof SCH_DAYS_URDU !== 'undefined')
+          ? SCH_DAYS_URDU
+          : ['اتوار', 'پیر', 'منگل', 'بدھ', 'جمعرات', 'جمعہ', 'ہفتہ'];
+      return days[d.getDay()] || '';
+  }
+
+  function exmMatrixDateLabel(dateStr) {
+      if (!dateStr) return '';
+      var d = new Date(String(dateStr) + 'T12:00:00');
+      if (isNaN(d.getTime())) return exmTplEscapeHtml(dateStr);
+      var g = d.getDate() + '-' + (d.getMonth() + 1) + '-' + d.getFullYear();
+      var day = exmMatrixDayName(dateStr);
+      return exmTplEscapeHtml(g) + (day ? '<br><span style="font-size:11px;font-weight:600;">' + exmTplEscapeHtml(day) + '</span>' : '');
+  }
+
+  function exmInferPaperColumnDate(sortedByClass, colIndex) {
+      var counts = Object.create(null);
+      Object.keys(sortedByClass).forEach(function (cls) {
+          var book = sortedByClass[cls][colIndex];
+          if (book && book.date) {
+              var key = String(book.date);
+              counts[key] = (counts[key] || 0) + 1;
+          }
+      });
+      var best = '';
+      var bestN = 0;
+      Object.keys(counts).forEach(function (k) {
+          if (counts[k] > bestN) {
+              bestN = counts[k];
+              best = k;
+          }
+      });
+      return best;
+  }
+
+  function exmInferMatrixTime(sortedByClass) {
+      var times = [];
+      Object.keys(sortedByClass).forEach(function (cls) {
+          (sortedByClass[cls] || []).forEach(function (b) {
+              var t = b && b.time ? String(b.time).trim() : '';
+              if (t && times.indexOf(t) < 0) times.push(t);
+          });
+      });
+      return times[0] || '';
+  }
+
+  function exmDefaultMatrixTitle() {
+      var examSel = document.getElementById('sch-exam-name') || document.getElementById('mrk-exam-name');
+      var examName = examSel && examSel.value ? examSel.value : 'امتحان';
+      var year = new Date().getFullYear();
+      return 'جدول اختبار — ' + examName + ' — ' + year + 'م';
+  }
+
+  function exmRenderAllClassesMatrix(templates, opts) {
+      opts = opts || {};
+      var prefix = opts.prefix || 'tpl';
+      var editMode = opts.editMode !== false;
+      var table = document.getElementById(prefix + '-matrix-table');
+      var heading = document.getElementById(prefix + '-matrix-heading');
+      var brand = document.getElementById(prefix + '-matrix-brand');
+      if (!table) return;
+
+      if (brand && typeof window.attBrandHeaderHTML === 'function') {
+          try { brand.innerHTML = window.attBrandHeaderHTML(); } catch (eBrand) { brand.innerHTML = ''; }
+      } else if (brand) {
+          brand.innerHTML = '';
+      }
+
+      var byClass = Object.create(null);
+      (templates || []).forEach(function (tpl) {
+          if (!tpl || !tpl.class) return;
+          byClass[tpl.class] = exmSortTplBooksForMatrix(tpl.books || []);
+      });
+
+      var classOrder = exmOrderedMatrixClasses(templates, byClass);
+
+      var maxCols = 0;
+      classOrder.forEach(function (c) {
+          maxCols = Math.max(maxCols, (byClass[c] || []).length);
+      });
+
+      var titleEl = prefix === 'tpl' ? document.getElementById('tpl-matrix-title') : null;
+      var timeEl = prefix === 'tpl' ? document.getElementById('tpl-matrix-time') : null;
+      if (titleEl && !String(titleEl.value || '').trim()) {
+          titleEl.value = exmDefaultMatrixTitle();
+      }
+      if (timeEl && !String(timeEl.value || '').trim()) {
+          timeEl.value = exmInferMatrixTime(byClass) || '8:15 — 11:30';
+      }
+      var title = titleEl ? String(titleEl.value || '').trim() : exmDefaultMatrixTitle();
+      var timeText = timeEl
+          ? String(timeEl.value || '').trim()
+          : (exmInferMatrixTime(byClass) || '8:15 — 11:30');
+
+      if (heading) {
+          heading.innerHTML =
+              '<div style="font-size:26px; font-weight:800; color:#1e3a5f; font-family:\'Noto Nastaliq Urdu\', serif; line-height:1.6;">' +
+              exmTplEscapeHtml(title) + '</div>' +
+              (timeText
+                  ? '<div style="font-size:16px; font-weight:700; color:#334155; margin-top:4px;">الزمن: ' +
+                    exmTplEscapeHtml(timeText) + '</div>'
+                  : '');
+      }
+
+      if (!classOrder.length || maxCols < 1) {
+          table.innerHTML = '<tbody><tr><td style="text-align:center;padding:20px;">تمام درجات کی شیٹ میں کوئی کتاب نہیں</td></tr></tbody>';
+          if (prefix === 'tpl') exmSyncScheduleMatrixMirror(templates);
+          return;
+      }
+
+      var headCells = '<th class="tpl-matrix-class">الصفوف الدراسية<br><small>درجات / ترتیب</small></th>';
+      for (var i = 0; i < maxCols; i++) {
+          var colDate = exmInferPaperColumnDate(byClass, i);
+          var dayName = colDate ? exmMatrixDayName(colDate) : '';
+          headCells +=
+              '<th class="tpl-matrix-paper-head" data-col-index="' + i + '"' +
+              (editMode ? ' title="گھسیٹ کر اوراق کی ترتیب بدلیں"' : '') + '>' +
+              (editMode
+                  ? '<div class="tpl-matrix-ctrl" style="cursor:grab;font-size:14px;color:#64748b;margin-bottom:2px;">⠿ گھسیٹیں</div>'
+                  : '') +
+              '<div>' + exmTplEscapeHtml(exmPaperOrdinalLabel(i)) + '</div>' +
+              (editMode
+                  ? ('<div class="tpl-matrix-ctrl" style="margin-top:6px;">' +
+                     '<label style="display:block;font-size:11px;color:#64748b;margin-bottom:2px;">تاریخ</label>' +
+                     '<input type="date" value="' + exmTplEscapeHtml(colDate || '') + '" ' +
+                     'style="max-width:150px;padding:3px 4px;font-size:12px;" title="اس ورق کی تاریخ منتخب کریں" ' +
+                     'onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" ' +
+                     'onchange="event.stopPropagation();exmSetMatrixPaperColumnDate(' + i + ', this.value)">' +
+                     (dayName ? '<div style="margin-top:3px;font-size:11px;font-weight:600;">' + exmTplEscapeHtml(dayName) + '</div>' : '') +
+                     '</div>')
+                  : '') +
+              '<div class="tpl-paper-date-print" style="' + (editMode ? 'display:none;' : '') + 'margin-top:4px;font-weight:600;">' +
+              (colDate ? exmMatrixDateLabel(colDate) : '—') +
+              '</div>' +
+              (editMode
+                  ? ('<div class="tpl-matrix-ctrl" style="margin-top:6px;display:flex;gap:4px;justify-content:center;">' +
+                     '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="دائیں (پچھلا ورق)" ' +
+                     'onclick="event.stopPropagation();exmMoveMatrixPaperCol(' + i + ', -1)">→</button>' +
+                     '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="بائیں (اگلا ورق)" ' +
+                     'onclick="event.stopPropagation();exmMoveMatrixPaperCol(' + i + ', 1)">←</button>' +
+                     '</div>')
+                  : '') +
+              '</th>';
+      }
+
+      var bodyHtml = '';
+      classOrder.forEach(function (className, rowIdx) {
+          var books = byClass[className] || [];
+          var safeCls = exmTplEscapeAttr(className);
+          var pos = rowIdx + 1;
+          bodyHtml +=
+              '<tr><td class="tpl-matrix-class">' +
+              '<div>' + exmTplEscapeHtml(className) + '</div>' +
+              (editMode
+                  ? ('<div class="tpl-matrix-ctrl" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:center;">' +
+                     '<small style="color:#64748b;">ترتیب</small>' +
+                     '<input type="number" min="1" max="' + classOrder.length + '" value="' + pos + '" ' +
+                     'style="width:52px;padding:2px 4px;text-align:center;" title="قطار نمبر" ' +
+                     "onchange=\"exmSetClassMatrixOrder('" + safeCls + "', this.value)\">" +
+                     '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="اوپر" ' +
+                     "onclick=\"exmMoveClassMatrix('" + safeCls + "', -1)\">↑</button>" +
+                     '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="نیچے" ' +
+                     "onclick=\"exmMoveClassMatrix('" + safeCls + "', 1)\">↓</button>" +
+                     '</div>')
+                  : '') +
+              '</td>';
+          for (var c = 0; c < maxCols; c++) {
+              var book = books[c];
+              if (!book) {
+                  bodyHtml += '<td class="tpl-matrix-cell">—</td>';
+                  continue;
+              }
+              var safeId = exmTplEscapeAttr(book.id);
+              var dateVal = book.date ? String(book.date) : '';
+              bodyHtml +=
+                  '<td class="tpl-matrix-cell">' +
+                  '<div><strong>' + exmTplEscapeHtml(book.name) + '</strong></div>' +
+                  (editMode
+                      ? ('<div class="tpl-matrix-ctrl" style="margin-top:6px;">' +
+                         '<input type="date" value="' + exmTplEscapeHtml(dateVal) + '" ' +
+                         'style="max-width:140px;padding:2px 4px;font-size:12px;" title="امتحانی تاریخ" ' +
+                         "onchange=\"exmSetTplBookDate('" + safeCls + "', '" + safeId + "', this.value)\">" +
+                         '</div>' +
+                         '<button type="button" class="icon-btn delete tpl-matrix-del" title="حذف" ' +
+                         "onclick=\"deleteTplBook('" + safeCls + "', '" + safeId + "')\">" +
+                         '<i class="fas fa-trash"></i></button>')
+                      : (dateVal
+                          ? '<div class="tpl-paper-date-print" style="margin-top:4px;font-size:12px;">' + exmMatrixDateLabel(dateVal) + '</div>'
+                          : '')) +
+                  '</td>';
+          }
+          bodyHtml += '</tr>';
+      });
+
+      table.innerHTML = '<thead><tr>' + headCells + '</tr></thead><tbody>' + bodyHtml + '</tbody>';
+      if (editMode) exmBindMatrixPaperColumnDrag(table);
+      if (prefix === 'tpl') exmSyncScheduleMatrixMirror(templates);
+  }
+
+  function exmSyncScheduleMatrixMirror(templates) {
+      var wrap = document.getElementById('sch-matrix-wrap');
+      if (!wrap || wrap.style.display === 'none') return;
+      exmRenderAllClassesMatrix(templates, { prefix: 'sch', editMode: false });
+  }
+
+  function exmShowScheduleAllClassesMatrix() {
+      if (typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
+          try { window.exmSyncTimetableBooksToMasterSheet({ silent: true }); } catch (eSyncSch) { /* ignore */ }
+      }
+      var templates = exmReadJson('ems_exam_templates', []);
+      var toolbar = document.getElementById('sch-format-toolbar');
+      var flat = document.getElementById('sch-printable-area');
+      var matrix = document.getElementById('sch-matrix-wrap');
+      if (toolbar) toolbar.style.display = 'none';
+      if (flat) flat.style.display = 'none';
+      if (matrix) matrix.style.display = 'block';
+      exmRenderAllClassesMatrix(templates, { prefix: 'sch', editMode: false });
+      var hasBooks = (templates || []).some(function (t) { return t && (t.books || []).length; });
+      if (!hasBooks) return showToast('ماسٹر شیٹ میں کوئی کتاب نہیں ملی!', 'error');
+      showToast('تمام درجات کا نقشہ تیار ہے!', 'success');
+  }
+
   window.renderTemplateTable = function(cls) {
 
       const tbody = document.querySelector('#tpl-books-table tbody');
 
-      if(!tbody) return;
+      if(!tbody && cls !== EXM_TPL_ALL_CLASSES) return;
+
+      if (typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
+          try { window.exmSyncTimetableBooksToMasterSheet({ silent: true }); } catch (eSync2) { /* ignore */ }
+      }
 
       let templates = exmReadJson('ems_exam_templates', []);
 
+      var examName = (document.getElementById('sch-exam-name') || {}).value || 'سالانہ امتحان';
+
+      if (cls === EXM_TPL_ALL_CLASSES) {
+          exmSetTplTableMode('all');
+          var metaAll = exmReadMasterSheetMeta();
+          var titleElAll = document.getElementById('tpl-matrix-title');
+          var timeElAll = document.getElementById('tpl-matrix-time');
+          if (titleElAll && metaAll.matrixTitle && !String(titleElAll.value || '').trim()) {
+              titleElAll.value = metaAll.matrixTitle;
+          }
+          if (timeElAll && metaAll.matrixTime && !String(timeElAll.value || '').trim()) {
+              timeElAll.value = metaAll.matrixTime;
+          }
+          exmRenderAllClassesMatrix(templates);
+          exmFillTplSheetNameField(EXM_TPL_ALL_CLASSES);
+          return;
+      }
+
+      exmSetTplTableMode('detail');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      exmFillTplSheetNameField(cls);
+
       let classTpl = templates.find(t => t.class === cls);
 
-      
-
-      tbody.innerHTML = '';
-
       if(!classTpl || classTpl.books.length === 0) { tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">اس درجے کی شیٹ میں کوئی کتاب نہیں</td></tr>'; return; }
-
-      var examName = (document.getElementById('sch-exam-name') || {}).value || 'سالانہ امتحان';
 
       classTpl.books.forEach(book => {
 
           var scopeTxt = window.examFormatCurScope(window.examGetCurScopeForBook(book.name, examName)) || book.curScope || '—';
 
-          tbody.innerHTML += `<tr><td><strong>${classTpl.class}</strong></td><td>${book.name}</td><td style="font-size:12px;color:#5b21b6;">${scopeTxt}</td><td>${book.marks}</td><td>${book.date || '-'}</td><td>${book.time || '-'}</td><td>${book.room || '-'}</td><td>${book.invigilator || '-'}</td><td>${book.teacher || '-'}</td><td>${book.paperType || 'تحریری'}</td>
+          var safeCls = exmTplEscapeAttr(classTpl.class);
+          var safeId = exmTplEscapeAttr(book.id);
+          var sheetLabel = exmTplDisplayName(classTpl);
 
-                              <td><button class="icon-btn delete" onclick="deleteTplBook('${classTpl.class}', '${book.id}')"><i class="fas fa-trash"></i></button></td></tr>`;
+          tbody.innerHTML += `<tr><td><strong>${exmTplEscapeHtml(sheetLabel)}</strong>${classTpl.sheetName ? '<div style="font-size:11px;color:#64748b;">' + exmTplEscapeHtml(classTpl.class) + '</div>' : ''}</td><td>${exmTplEscapeHtml(book.name)}</td><td style="font-size:12px;color:#5b21b6;">${exmTplEscapeHtml(scopeTxt)}</td><td>${book.marks}</td><td>${book.date || '-'}</td><td>${exmTplEscapeHtml(book.time || '-')}</td><td>${exmTplEscapeHtml(book.room || '-')}</td><td>${exmTplEscapeHtml(book.invigilator || '-')}</td><td>${exmTplEscapeHtml(book.teacher || '-')}</td><td>${exmTplEscapeHtml(book.paperType || 'تحریری')}</td>
+
+                              <td><button class="icon-btn delete" onclick="deleteTplBook('${safeCls}', '${safeId}')" title="صرف اس ماسٹر شیٹ سے ہٹائیں"><i class="fas fa-trash"></i></button></td></tr>`;
 
       });
 
@@ -600,18 +1559,93 @@
 
 
 
+  document.getElementById('tpl-matrix-title')?.addEventListener('change', function () {
+      if ((document.getElementById('tpl-class-select') || {}).value === EXM_TPL_ALL_CLASSES) {
+          renderTemplateTable(EXM_TPL_ALL_CLASSES);
+      }
+  });
+  document.getElementById('tpl-matrix-time')?.addEventListener('change', function () {
+      if ((document.getElementById('tpl-class-select') || {}).value === EXM_TPL_ALL_CLASSES) {
+          renderTemplateTable(EXM_TPL_ALL_CLASSES);
+      }
+  });
+
   window.deleteTplBook = function(cls, bookId) {
 
-      if(confirm("کیا آپ واقعی شیٹ سے یہ کتاب ہٹانا چاہتے ہیں؟")) {
-
-          let templates = exmReadJson('ems_exam_templates', []);
-
-          let classTpl = templates.find(t => t.class === cls);
-
-          if(classTpl) { classTpl.books = classTpl.books.filter(b => b.id !== bookId); emsSaveKey('ems_exam_templates', JSON.stringify(templates)); renderTemplateTable(cls); }
-
+      if(!confirm("یہ کتاب صرف اسی ماسٹر شیٹ سے ہٹے گی۔ لائبریری یا نظام الاوقات سے نہیں ہٹے گی۔ جاری رکھیں؟")) {
+          return;
       }
 
+      let templates = exmReadJson('ems_exam_templates', []);
+      let classTpl = templates.find(t => t.class === cls);
+      if (!classTpl || !Array.isArray(classTpl.books)) return;
+
+      var removedBook = classTpl.books.find(function (b) { return b && b.id === bookId; });
+      classTpl.books = classTpl.books.filter(function (b) { return !b || b.id !== bookId; });
+      if (removedBook) exmTplMarkBookRemoved(classTpl, removedBook.name);
+      emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+      var viewCls = (document.getElementById('tpl-class-select') || {}).value || cls;
+      renderTemplateTable(viewCls);
+      renderQuickAccessTabs();
+      if (typeof showToast === 'function') {
+          showToast('کتاب اس ماسٹر شیٹ سے ہٹا دی گئی (صرف شیٹ سے)', 'success');
+      }
+  };
+
+  function exmFillTplSheetNameField(cls) {
+      var nameEl = document.getElementById('tpl-sheet-name');
+      if (!nameEl) return;
+      if (!cls) {
+          nameEl.value = '';
+          return;
+      }
+      if (cls === EXM_TPL_ALL_CLASSES) {
+          var meta = exmReadMasterSheetMeta();
+          var titleEl = document.getElementById('tpl-matrix-title');
+          nameEl.value = (meta.allSheetName || (titleEl && titleEl.value) || '').trim();
+          return;
+      }
+      var templates = exmReadJson('ems_exam_templates', []);
+      var classTpl = (templates || []).find(function (t) { return t && t.class === cls; });
+      nameEl.value = classTpl && classTpl.sheetName
+          ? String(classTpl.sheetName)
+          : String(cls);
+  }
+
+  window.exmSaveTplSheet = function () {
+      var cls = (document.getElementById('tpl-class-select') || {}).value;
+      var nameEl = document.getElementById('tpl-sheet-name');
+      var sheetName = nameEl ? String(nameEl.value || '').trim() : '';
+      if (!cls) return showToast('پہلے درجہ / شیٹ منتخب کریں', 'error');
+      if (!sheetName) return showToast('شیٹ کا نام لکھیں', 'error');
+
+      if (cls === EXM_TPL_ALL_CLASSES) {
+          var meta = exmReadMasterSheetMeta();
+          meta.allSheetName = sheetName;
+          var titleEl = document.getElementById('tpl-matrix-title');
+          var timeEl = document.getElementById('tpl-matrix-time');
+          if (titleEl) {
+              if (!String(titleEl.value || '').trim()) titleEl.value = sheetName;
+              meta.matrixTitle = String(titleEl.value || '').trim();
+          } else {
+              meta.matrixTitle = sheetName;
+          }
+          if (timeEl) meta.matrixTime = String(timeEl.value || '').trim();
+          exmWriteMasterSheetMeta(meta);
+          renderTemplateTable(EXM_TPL_ALL_CLASSES);
+          renderQuickAccessTabs();
+          showToast('تمام درجات شیٹ کا نام محفوظ ہو گیا', 'success');
+          return;
+      }
+
+      var templates = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(templates)) templates = [];
+      var classTpl = exmEnsureClassTemplate(templates, cls);
+      classTpl.sheetName = sheetName;
+      emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+      renderTemplateTable(cls);
+      renderQuickAccessTabs();
+      showToast('شیٹ کا نام محفوظ ہو گیا: ' + sheetName, 'success');
   };
 
 
@@ -643,9 +1677,15 @@
       const examName = document.getElementById('sch-exam-name').value;
       const aggregate = document.getElementById('sch-aggregate')?.checked;
       const cls = document.getElementById('sch-class-select').value;
-      activeSchClass = aggregate ? '' : cls;
+      var showAllMatrix = aggregate || cls === EXM_TPL_ALL_CLASSES;
+      activeSchClass = showAllMatrix ? '' : cls;
 
-      if(!aggregate && !cls) return showToast("درجہ منتخب کریں یا 'اجتماعی نقشہ' پر نشان لگائیں!", "error");
+      if(!showAllMatrix && !cls) return showToast("درجہ منتخب کریں، 'تمام درجات' چنیں، یا 'اجتماعی نقشہ' پر نشان لگائیں!", "error");
+
+      if (showAllMatrix) {
+          exmShowScheduleAllClassesMatrix();
+          return;
+      }
 
       let rows = window.examBuildScheduleRows(aggregate, cls, examName);
       if(rows.length === 0) return showToast("ماسٹر شیٹ میں کوئی کتاب نہیں ملی!", "error");
@@ -653,6 +1693,8 @@
       let templates = exmReadJson('ems_exam_templates', []);
       let classTpl = templates.find(t => t.class === cls) || { customHeader: '', fontSize: 16, textAlign: 'right', showBorder: true };
 
+      var schMatrix = document.getElementById('sch-matrix-wrap');
+      if (schMatrix) schMatrix.style.display = 'none';
       document.getElementById('sch-format-toolbar').style.display = 'flex';
       document.getElementById('sch-printable-area').style.display = 'block';
 
@@ -678,11 +1720,11 @@
       if (document.getElementById('sch-head-color')) document.getElementById('sch-head-color').value = classTpl.headColor || '#eef2f6';
       if (document.getElementById('sch-text-color')) document.getElementById('sch-text-color').value = classTpl.textColor || '#1e293b';
 
-      document.getElementById('sch-print-title').innerText = aggregate ? `${examName} — اجتماعی نقشہ (تمام درجات)` : `${examName} - ${cls}`;
+      document.getElementById('sch-print-title').innerText = `${examName} - ${cls}`;
 
-      // ہیڈر کالم (اجتماعی صورت میں درجہ کالم شامل)
+      // ہیڈر کالم
       if (thead) {
-          thead.innerHTML = '<tr>' + (aggregate ? '<th>درجہ</th>' : '') + '<th>تاریخ</th><th>دن</th><th>وقت</th><th>کتاب / پرچہ</th><th>نصاب حصہ</th><th>استاد</th><th>کمرہ</th><th>نگران</th><th>نوعیت</th></tr>';
+          thead.innerHTML = '<tr><th>تاریخ</th><th>دن</th><th>وقت</th><th>کتاب / پرچہ</th><th>نصاب حصہ</th><th>استاد</th><th>کمرہ</th><th>نگران</th><th>نوعیت</th></tr>';
       }
 
       const tbody = document.getElementById('sch-print-tbody');
@@ -690,7 +1732,7 @@
       rows.forEach(r => {
           let dayName = "-";
           if(r.date) { let d = new Date(r.date); dayName = SCH_DAYS_URDU[d.getDay()]; }
-          tbody.innerHTML += '<tr>' + (aggregate ? `<td><strong>${r.cls}</strong></td>` : '') +
+          tbody.innerHTML += '<tr>' +
               `<td>${r.date || 'طے نہیں'}</td><td>${dayName}</td><td>${r.time || '-'}</td><td><strong>${r.name}</strong></td><td style="font-size:12px;color:#5b21b6;">${r.curScope || '—'}</td><td>${r.teacher || '-'}</td><td>${r.room || '-'}</td><td>${r.invigilator || '-'}</td><td>${r.paperType || 'تحریری'}</td></tr>`;
       });
       showToast("نقشہ تیار ہے! آپ فارمیٹنگ و رنگ کے ٹولز استعمال کر سکتے ہیں۔", "success");
@@ -713,12 +1755,13 @@
       const aggregate = document.getElementById('sch-aggregate')?.checked;
       const cls = document.getElementById('sch-class-select').value;
       const examName = document.getElementById('sch-exam-name').value || 'امتحان';
-      let rows = window.examBuildScheduleRows(aggregate, cls, examName);
+      var asAll = aggregate || cls === EXM_TPL_ALL_CLASSES;
+      let rows = window.examBuildScheduleRows(asAll, asAll ? '' : cls, examName);
       if (!rows.length) return showToast("پہلے نقشہ بنائیں!", "error");
-      let header = (aggregate ? ['درجہ'] : []).concat(['تاریخ', 'دن', 'وقت', 'کتاب', 'نصاب حصہ', 'استاد', 'کمرہ', 'نگران', 'نوعیت']);
+      let header = (asAll ? ['درجہ'] : []).concat(['تاریخ', 'دن', 'وقت', 'کتاب', 'نصاب حصہ', 'استاد', 'کمرہ', 'نگران', 'نوعیت']);
       let data = rows.map(r => {
           let day = r.date ? SCH_DAYS_URDU[new Date(r.date).getDay()] : '-';
-          return (aggregate ? [r.cls] : []).concat([r.date || '', day, r.time || '', r.name, r.curScope || '—', r.teacher || '', r.room || '', r.invigilator || '', r.paperType || '']);
+          return (asAll ? [r.cls] : []).concat([r.date || '', day, r.time || '', r.name, r.curScope || '—', r.teacher || '', r.room || '', r.invigilator || '', r.paperType || '']);
       });
       window.examDownloadCSV([header].concat(data), `نقشہ_${examName}.csv`);
   };
@@ -787,6 +1830,33 @@
       var s = String(val).trim();
       if (s === '') return false;
       return /^ab$/i.test(s) || s === 'غ' || /غیر\s*حاضر/i.test(s);
+  }
+
+  /** Grid cell display — never show English AB; empty = غیر حاضر / خالی. */
+  function exmGridMarkDisplay(val) {
+      if (val === undefined || val === null || val === '') return '';
+      if (exmIsAbsentMark(val)) return '';
+      return val;
+  }
+
+  function exmHasNumericMarks(marks) {
+      if (!marks) return false;
+      var keys = Object.keys(marks);
+      for (var i = 0; i < keys.length; i++) {
+          var v = marks[keys[i]];
+          if (exmIsAbsentMark(v)) continue;
+          if (v === '' || v == null) continue;
+          if (!isNaN(Number(v))) return true;
+      }
+      return false;
+  }
+
+  /** حاصل کردہ — صرف جب حقیقی نمبر ہوں؛ ورنہ خالی (0/پرانے AB مجموعے نہ دکھائیں). */
+  function exmGridObtainedDisplay(marks, totalObtained) {
+      if (!exmHasNumericMarks(marks)) return '';
+      var n = Number(totalObtained);
+      if (isNaN(n)) n = exmSumMarks(marks);
+      return String(n);
   }
 
   function exmDisplayMark(val) {
@@ -983,11 +2053,15 @@
 
       const cls = document.getElementById('mrk-class').value;
 
+      const resultDate = exmReadResultDateInput('mrk');
+
 
 
       if(!cls) return showToast("درجہ منتخب کرنا لازمی ہے!", "error");
 
+      if (!resultDate) return showToast("نتیجے کی تاریخ منتخب کریں!", "error");
 
+      function exmBuildMarkSheetGrid() {
 
       let templates = exmReadJson('ems_exam_templates', []);
 
@@ -1057,7 +2131,7 @@
 
       currentGridData = students.map(std => {
 
-          let existingRecord = dbMarks.find(m => m.examName === examName && m.class === cls && m.studentId === std.id);
+          let existingRecord = exmFindStudentResult(dbMarks, examName, cls, std.id, resultDate);
 
           frStudentSelect.innerHTML += `<option value="${std.id}">${std.name} (${std.id})</option>`;
 
@@ -1087,9 +2161,20 @@
 
       renderMarksGrid(); 
 
+      if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions('mrk');
       if (typeof window.exmUpdateLockUi === 'function') window.exmUpdateLockUi();
 
-      showToast("ایکسل گرڈ تیار ہے!", "success");
+      showToast("ایکسل گرڈ تیار ہے! (تاریخ: " + exmFormatResultDateLabel(resultDate) + ")", "success");
+
+      }
+
+      var ensureMarks = typeof window.emsDurableEnsureKey === 'function'
+        ? Promise.all([
+            window.emsDurableEnsureKey(DB.exams),
+            window.emsDurableEnsureKey('ems_exam_templates')
+          ])
+        : Promise.resolve();
+      Promise.resolve(ensureMarks).then(exmBuildMarkSheetGrid).catch(exmBuildMarkSheetGrid);
 
   });
 
@@ -1108,24 +2193,38 @@
       }
 
       function bindMarkInputs(tr, index) {
+          var stdId = tr.getAttribute('data-std-id');
           tr.querySelectorAll('.mark-val-input').forEach(function (input) {
               function syncRowFromInputs() {
                   if (input.disabled) return;
+                  var rowIndex = index;
+                  if (stdId) {
+                      var found = currentGridData.findIndex(function (r) {
+                          return r.student && r.student.id === stdId;
+                      });
+                      if (found >= 0) rowIndex = found;
+                  }
+                  if (!currentGridData[rowIndex]) return;
                   tr.querySelectorAll('.mark-val-input').forEach(function (inp) {
                       if (inp.disabled) return;
                       var subject = inp.getAttribute('data-subject');
                       var max = exmGetBookMax(subject);
                       var normalized = exmNormalizeMarkRaw(inp.value, max);
-                      currentGridData[index].marks[subject] = normalized;
+                      currentGridData[rowIndex].marks[subject] = normalized;
                       if (normalized === 'AB') {
-                          inp.value = String(inp.value).trim() === '' ? '' : 'AB';
+                          inp.value = '';
                       } else if (String(normalized) !== String(inp.value).trim()) {
                           inp.value = normalized;
                       }
                   });
-                  currentGridData[index].totalObtained = exmSumMarks(currentGridData[index].marks);
+                  currentGridData[rowIndex].totalObtained = exmSumMarks(currentGridData[rowIndex].marks);
                   var totEl = tr.querySelector('.row-obtained-total');
-                  if (totEl) totEl.innerText = currentGridData[index].totalObtained;
+                  if (totEl) {
+                      totEl.innerText = exmGridObtainedDisplay(
+                          currentGridData[rowIndex].marks,
+                          currentGridData[rowIndex].totalObtained
+                      );
+                  }
               }
               input.addEventListener('input', syncRowFromInputs);
               input.addEventListener('blur', syncRowFromInputs);
@@ -1140,18 +2239,16 @@
           var trHTML = '<td><strong>' + row.student.name + '</strong> <br><small>' + row.student.id + '</small></td>';
           currentClassTemplateBooks.forEach(function (b) {
               var val = row.marks[b.name];
-              var displayVal = '';
-              if (val !== undefined && val !== null) {
-                  displayVal = exmIsAbsentMark(val) ? 'AB' : val;
-              }
+              var displayVal = exmGridMarkDisplay(val);
               var canEdit = window.exmCanEditBookColumn(b);
               var lockHint = exmIsMarksContextLocked() ? 'یہ نتیجہ لاک ہو چکا ہے' : 'آپ اس مضمون کے مجاز استاد نہیں';
               var disAttr = canEdit ? '' : ' disabled readonly';
-              var titleAttr = canEdit ? 'خالی، AB، یا غ = غیر حاضر' : lockHint;
-              trHTML += '<td><input type="text" class="input-control mark-val-input" data-subject="' + b.name + '" data-max="' + b.marks + '" value="' + displayVal + '" placeholder="AB" title="' + titleAttr + '"' + disAttr + ' style="width: 70px; text-align:center;"></td>';
+              var titleAttr = canEdit ? 'خالی یا غ = غیر حاضر' : lockHint;
+              trHTML += '<td><input type="text" class="input-control mark-val-input" data-subject="' + b.name + '" data-max="' + b.marks + '" value="' + displayVal + '" placeholder="" title="' + titleAttr + '"' + disAttr + ' style="width: 70px; text-align:center;"></td>';
           });
           trHTML += '<td style="font-weight:bold;">' + currentTotalPossibleMarks + '</td>' +
-              '<td class="row-obtained-total" style="font-weight:bold; color:var(--accent); font-size:16px;">' + row.totalObtained + '</td>';
+              '<td class="row-obtained-total" style="font-weight:bold; color:var(--accent); font-size:16px;">' +
+              exmGridObtainedDisplay(row.marks, row.totalObtained) + '</td>';
           tr.innerHTML = trHTML;
           bindMarkInputs(tr, index);
           return tr;
@@ -1258,6 +2355,31 @@
 
 
 
+  function exmFlushVisibleMarkInputsToGrid() {
+      var tbody = document.getElementById('mrk-entry-tbody');
+      if (!tbody || !currentGridData.length) return;
+      tbody.querySelectorAll('tr.mark-entry-row').forEach(function (tr) {
+          var sid = tr.getAttribute('data-std-id');
+          var rowIndex = -1;
+          if (sid) {
+              rowIndex = currentGridData.findIndex(function (r) {
+                  return r.student && r.student.id === sid;
+              });
+          }
+          if (rowIndex < 0) {
+              rowIndex = parseInt(tr.getAttribute('data-index'), 10);
+          }
+          if (!isFinite(rowIndex) || rowIndex < 0 || !currentGridData[rowIndex]) return;
+          tr.querySelectorAll('.mark-val-input').forEach(function (inp) {
+              if (inp.disabled) return;
+              var subject = inp.getAttribute('data-subject');
+              var max = exmGetBookMax(subject);
+              currentGridData[rowIndex].marks[subject] = exmNormalizeMarkRaw(inp.value, max);
+          });
+          currentGridData[rowIndex].totalObtained = exmSumMarks(currentGridData[rowIndex].marks);
+      });
+  }
+
   document.getElementById('btn-save-all-marks')?.addEventListener('click', () => {
 
       if (typeof window.emsRequireStaffAction === 'function' && !window.emsRequireStaffAction('exams', 'edit')) return;
@@ -1265,20 +2387,23 @@
       const examName = document.getElementById('mrk-exam-name').value;
 
       const cls = document.getElementById('mrk-class').value;
+      const resultDate = exmReadResultDateInput('mrk');
 
-      if (window.exmIsExamLocked(examName, cls)) {
+      if (window.exmIsExamLocked(examName, cls, resultDate)) {
           return showToast("یہ نتیجہ لاک ہو چکا ہے — محفوظ نہیں ہو سکتا", "error");
       }
+      if (!resultDate) return showToast("نتیجے کی تاریخ منتخب کریں!", "error");
 
+      exmFlushVisibleMarkInputsToGrid();
+
+      var finishSave = function () {
       let dbMarks = exmReadJson(DB.exams, []);
 
 
 
       currentGridData.forEach(row => {
 
-          var existingRecord = dbMarks.find(function (m) {
-              return m.examName === examName && m.class === cls && m.studentId === row.student.id;
-          });
+          var existingRecord = exmFindStudentResult(dbMarks, examName, cls, row.student.id, resultDate);
           var existingMarks = existingRecord ? (existingRecord.marks || {}) : {};
           var normalizedMarks = exmMergeMarksForSave(row.marks, existingMarks);
 
@@ -1294,7 +2419,9 @@
 
               marks: normalizedMarks, totalObtained: totalObtained, grandTotal: currentTotalPossibleMarks,
 
-              percentage: percentage.toFixed(1), grade: grade, timestamp: new Date().getTime()
+              percentage: percentage.toFixed(1), grade: grade,
+              resultDate: resultDate,
+              timestamp: new Date().getTime()
 
           };
 
@@ -1305,7 +2432,16 @@
           row.marks = normalizedMarks;
           row.totalObtained = totalObtained;
 
-          let existingIndex = dbMarks.findIndex(m => m.examName === examName && m.class === cls && m.studentId === row.student.id);
+          let existingIndex = -1;
+          if (existingRecord && existingRecord.id) {
+              existingIndex = dbMarks.findIndex(function (m) { return m && m.id === existingRecord.id; });
+          }
+          if (existingIndex < 0) {
+              existingIndex = dbMarks.findIndex(function (m) {
+                  return m && m.examName === examName && m.class === cls && m.studentId === row.student.id
+                      && exmResultDateOf(m) === resultDate;
+              });
+          }
 
           if (existingIndex !== -1) {
               recordObj.id = dbMarks[existingIndex].id;
@@ -1316,9 +2452,26 @@
 
       });
 
-      emsSaveKey(DB.exams, JSON.stringify(dbMarks));
+      Promise.resolve(emsSaveKey(DB.exams, JSON.stringify(dbMarks))).then(function (res) {
+          var status = res && res.status;
+          if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions('mrk');
+          if (status === 'synced') {
+              showToast("نمبرات محفوظ (" + exmFormatResultDateLabel(resultDate) + ") — مقامی + کلاؤڈ", "success");
+          } else if (status === 'offline_queued') {
+              showToast("نمبرات مقامی محفوظ (" + exmFormatResultDateLabel(resultDate) + ") — کلاؤڈ بعد میں", "success");
+          } else {
+              showToast("نمبرات محفوظ ہو گئے! تاریخ: " + exmFormatResultDateLabel(resultDate), "success");
+          }
+      }).catch(function () {
+          showToast("نمبرات محفوظ ہو گئے! تاریخ: " + exmFormatResultDateLabel(resultDate), "success");
+      });
+      };
 
-      showToast("تمام نمبرات محفوظ کر لیے گئے!", "success");
+      if (typeof window.emsDurableEnsureKey === 'function') {
+          window.emsDurableEnsureKey(DB.exams).then(finishSave).catch(finishSave);
+      } else {
+          finishSave();
+      }
 
   });
 
@@ -1341,6 +2494,7 @@
       const cls = document.getElementById('res-class').value;
 
       const stdId = document.getElementById('res-student').value;
+      const resultDate = exmReadResultDateInput('res');
 
       const printArea = document.getElementById('result-printable-area');
 
@@ -1354,11 +2508,25 @@
 
       const dbMarks = exmReadJson(DB.exams, []);
 
-      let classResults = dbMarks.filter(m => m.examName === examName && m.class === cls);
+      let classResults = dbMarks.filter(function (m) {
+          return m.examName === examName && m.class === cls && exmResultDateOf(m) === resultDate;
+      });
+      // لیگیسی: اگر اس تاریخ پر کچھ نہ ملے اور صرف بلا تاریخ/ایک ہی سیشن ہو
+      if (!classResults.length) {
+          var allForClass = dbMarks.filter(function (m) { return m.examName === examName && m.class === cls; });
+          var dates = exmListResultDates(examName, cls);
+          if (dates.length <= 1 && allForClass.length) {
+              classResults = allForClass.filter(function (m) {
+                  var d = exmResultDateOf(m);
+                  return !d || d === resultDate || dates[0] === resultDate;
+              });
+              if (!classResults.length) classResults = allForClass;
+          }
+      }
 
 
 
-      if(classResults.length === 0) { printArea.innerHTML = '<h3 style="text-align:center; color:red;">اس امتحان کا کوئی رزلٹ موجود نہیں!</h3>'; printArea.style.display = 'block'; return; }
+      if(classResults.length === 0) { printArea.innerHTML = '<h3 style="text-align:center; color:red;">اس تاریخ (' + exmFormatResultDateLabel(resultDate) + ') کا کوئی رزلٹ موجود نہیں!</h3>'; printArea.style.display = 'block'; return; }
 
       exmAssignPositions(classResults);
 
@@ -1383,7 +2551,7 @@
 
           html += `<h3 style="text-align:center; margin-top: 0; color:#7f8c8d;">کشف النتیجہ (درجہ وار)</h3>`;
 
-          html += `<p style="text-align:center; font-weight:bold;">امتحان: ${examName} | درجہ: ${cls}</p>`;
+          html += `<p style="text-align:center; font-weight:bold;">امتحان: ${examName} | درجہ: ${cls} | تاریخ: ${exmFormatResultDateLabel(resultDate)}</p>`;
 
           
 
@@ -1423,13 +2591,15 @@
 
           let res = classResults.find(r => r.studentId === stdId);
 
-          if(!res) { printArea.innerHTML = '<p>اس طالب علم کا رزلٹ موجود نہیں!</p>'; printArea.style.display='block'; return; }
+          if(!res) { printArea.innerHTML = '<p>اس طالب علم کا اس تاریخ کا رزلٹ موجود نہیں!</p>'; printArea.style.display='block'; return; }
 
           html += window.exmBuildStudentCardHtml(res, examName);
 
       }
 
       printArea.innerHTML = html; printArea.style.display = 'block';
+      if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions('res');
+      if (typeof window.exmUpdateLockUi === 'function') window.exmUpdateLockUi();
       var rsw = document.getElementById('res-search-wrap');
       if (rsw) { rsw.style.display = (resType === 'class_summary') ? 'flex' : 'none'; var ri = document.getElementById('res-search'); if (ri) ri.value = ''; }
       showToast("رزلٹ اور پری ویو تیار ہو گیا!", "success");
@@ -1530,14 +2700,17 @@
   window.examExportResults = function () {
       var examName = document.getElementById('res-exam-name').value;
       var cls = document.getElementById('res-class').value;
+      var resultDate = exmReadResultDateInput('res');
       var dbMarks = exmReadJson(DB.exams, []);
-      var list = dbMarks.filter(function (m) { return m.examName === examName && (!cls || m.class === cls); });
-      if (!list.length) return showToast("منتخب امتحان کا کوئی نتیجہ موجود نہیں!", "error");
+      var list = dbMarks.filter(function (m) {
+          return m.examName === examName && (!cls || m.class === cls) && exmResultDateOf(m) === resultDate;
+      });
+      if (!list.length) return showToast("اس تاریخ کا کوئی نتیجہ موجود نہیں!", "error");
       var allBooks = [];
       list.forEach(function (r) { Object.keys(r.marks || {}).forEach(function (b) { if (allBooks.indexOf(b) < 0) allBooks.push(b); }); });
-      var header = ['درجہ', 'ID', 'نام'].concat(allBooks).concat(['کل ممکن', 'حاصل کردہ', 'فیصد', 'درجہ بندی']);
+      var header = ['تاریخ', 'درجہ', 'ID', 'نام'].concat(allBooks).concat(['کل ممکن', 'حاصل کردہ', 'فیصد', 'درجہ بندی']);
       var data = list.sort(function (a, b) { return b.totalObtained - a.totalObtained; }).map(function (r) {
-          var line = [r.class, r.studentId, r.studentName];
+          var line = [exmResultDateOf(r) || resultDate, r.class, r.studentId, r.studentName];
           allBooks.forEach(function (b) {
               var v = r.marks[b];
               line.push(v != null ? (exmIsAbsentMark(v) ? 'AB' : v) : '');
@@ -1545,19 +2718,116 @@
           line.push(r.grandTotal, r.totalObtained, r.percentage + '%', r.grade);
           return line;
       });
-      window.examDownloadCSV([header].concat(data), 'نتائج_' + (examName || 'امتحان') + '.csv');
+      window.examDownloadCSV([header].concat(data), 'نتائج_' + (examName || 'امتحان') + '_' + resultDate + '.csv');
   };
 
   // =========================================================
   // مرحلہ 4: کارکردگی کا تجزیہ و شماریات
   // =========================================================
+  window.exmPopulateAnaMultiClasses = function () {
+      var box = document.getElementById('ana-class-multi-list');
+      if (!box) return;
+      var classes = [];
+      if (typeof window.emsCollectClasses === 'function') {
+          classes = window.emsCollectClasses() || [];
+      }
+      if (!classes.length) {
+          var sel = document.getElementById('ana-class');
+          if (sel) {
+              Array.from(sel.options).forEach(function (o) {
+                  var v = String(o.value || '').trim();
+                  if (v) classes.push(v);
+              });
+          }
+      }
+      var prev = Object.create(null);
+      box.querySelectorAll('input[type="checkbox"]').forEach(function (cb) {
+          if (cb.checked) prev[cb.value] = true;
+      });
+      if (!classes.length) {
+          box.innerHTML = '<span style="color:#94a3b8;">کوئی درجہ دستیاب نہیں</span>';
+          return;
+      }
+      box.innerHTML = classes.map(function (c) {
+          var safe = String(c).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+          var checked = prev[c] ? ' checked' : '';
+          return '<label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">' +
+              '<input type="checkbox" value="' + safe + '"' + checked + '> ' + safe + '</label>';
+      }).join('');
+  };
+
+  window.exmUpdateAnaScopeUi = function () {
+      var modeEl = document.getElementById('ana-scope-mode');
+      var mode = modeEl ? modeEl.value : 'one';
+      var oneWrap = document.getElementById('ana-class-one-wrap');
+      var multiWrap = document.getElementById('ana-class-multi-wrap');
+      if (oneWrap) oneWrap.style.display = mode === 'one' ? '' : 'none';
+      if (multiWrap) multiWrap.style.display = mode === 'multi' ? '' : 'none';
+      if (mode === 'multi') window.exmPopulateAnaMultiClasses();
+  };
+
+  window.exmAnaMultiSelectAll = function (on) {
+      document.querySelectorAll('#ana-class-multi-list input[type="checkbox"]').forEach(function (cb) {
+          cb.checked = !!on;
+      });
+  };
+
+  /** @returns {{ mode: string, classes: string[]|null, label: string }} classes=null → تمام */
+  function exmResolveAnaScope() {
+      var modeEl = document.getElementById('ana-scope-mode');
+      var mode = modeEl ? modeEl.value : 'one';
+      if (mode === 'all') {
+          return { mode: 'all', classes: null, label: 'تمام درجات (ایک ساتھ)' };
+      }
+      if (mode === 'multi') {
+          var picked = [];
+          document.querySelectorAll('#ana-class-multi-list input[type="checkbox"]:checked').forEach(function (cb) {
+              var v = String(cb.value || '').trim();
+              if (v) picked.push(v);
+          });
+          return {
+              mode: 'multi',
+              classes: picked,
+              label: picked.length ? ('منتخب درجات: ' + picked.join('، ')) : 'منتخب درجات'
+          };
+      }
+      var one = ((document.getElementById('ana-class') || {}).value || '').trim();
+      return {
+          mode: 'one',
+          classes: one ? [one] : [],
+          label: one ? ('درجہ: ' + one) : 'ایک درجہ'
+      };
+  }
+
   window.renderExamAnalysis = function () {
       var box = document.getElementById('exam-analysis-content');
       if (!box) return;
       var examName = document.getElementById('ana-exam-name').value;
-      var cls = document.getElementById('ana-class').value;
+      var scope = exmResolveAnaScope();
+      if (scope.mode === 'one' && (!scope.classes || !scope.classes.length)) {
+          return showToast('ایک درجہ منتخب کریں، یا تجزیہ کی قسم بدلیں', 'error');
+      }
+      if (scope.mode === 'multi' && (!scope.classes || !scope.classes.length)) {
+          return showToast('کم از کم ایک درجہ منتخب کریں', 'error');
+      }
+
+      var classSet = null;
+      if (scope.classes) {
+          classSet = Object.create(null);
+          scope.classes.forEach(function (c) { classSet[c] = true; });
+      }
+
       var dbMarks = exmReadJson(DB.exams, []);
-      var list = dbMarks.filter(function (m) { return (!examName || m.examName === examName) && (!cls || m.class === cls); });
+      var anaDateEl = document.getElementById('ana-result-date');
+      var anaAllDates = document.getElementById('ana-all-dates');
+      var useAllDates = !!(anaAllDates && anaAllDates.checked);
+      var resultDate = useAllDates ? '' : exmReadResultDateInput('ana');
+      var list = dbMarks.filter(function (m) {
+          if (examName && m.examName !== examName) return false;
+          if (classSet && !classSet[m.class]) return false;
+          if (!useAllDates && resultDate && exmResultDateOf(m) !== resultDate) return false;
+          return true;
+      });
       if (!list.length) { box.innerHTML = '<p style="color:#dc2626;">منتخب کسوٹی پر کوئی نتیجہ موجود نہیں۔</p>'; return; }
 
       var pass = list.filter(function (r) { return !String(r.grade).includes('راسب'); }).length;
@@ -1570,13 +2840,34 @@
           return { label: g, value: list.filter(function (r) { return r.grade === g; }).length, color: gradeColors[g] };
       }).filter(function (s) { return s.value > 0; });
 
-      // درجہ وار اوسط
+      // درجہ وار اوسط + جدول
       var byClass = {};
-      list.forEach(function (r) { (byClass[r.class] = byClass[r.class] || []).push(parseFloat(r.percentage || 0)); });
-      var classItems = Object.keys(byClass).map(function (c) {
-          var arr = byClass[c]; var a = arr.reduce(function (s, x) { return s + x; }, 0) / arr.length;
+      list.forEach(function (r) { (byClass[r.class] = byClass[r.class] || []).push(r); });
+      var classKeys = Object.keys(byClass).sort(function (a, b) {
+          return String(a).localeCompare(String(b), 'ur');
+      });
+      var classItems = classKeys.map(function (c) {
+          var rows = byClass[c];
+          var a = rows.reduce(function (s, r) { return s + parseFloat(r.percentage || 0); }, 0) / rows.length;
           return { label: c, value: Math.round(a), display: Math.round(a) + '%' };
       });
+      var classTableHtml = '';
+      if (scope.mode !== 'one' && classKeys.length) {
+          classTableHtml =
+              '<div class="table-responsive" style="margin-top:10px;"><table class="data-table" style="width:100%;font-size:13px;">' +
+              '<thead><tr><th>درجہ</th><th>طلبہ</th><th>اوسط %</th><th>کامیاب</th><th>ناکام</th><th>کامیابی %</th></tr></thead><tbody>' +
+              classKeys.map(function (c) {
+                  var rows = byClass[c];
+                  var p = rows.filter(function (r) { return !String(r.grade).includes('راسب'); }).length;
+                  var f = rows.length - p;
+                  var a = rows.reduce(function (s, r) { return s + parseFloat(r.percentage || 0); }, 0) / rows.length;
+                  var passPct = rows.length ? Math.round((p / rows.length) * 100) : 0;
+                  return '<tr><td><strong>' + String(c).replace(/</g, '&lt;') + '</strong></td><td>' + rows.length +
+                      '</td><td>' + a.toFixed(1) + '%</td><td style="color:#16a34a;">' + p +
+                      '</td><td style="color:#dc2626;">' + f + '</td><td>' + passPct + '%</td></tr>';
+              }).join('') +
+              '</tbody></table></div>';
+      }
 
       // مضمون وار اوسط
       var bookSum = {}, bookCnt = {}, bookMax = {};
@@ -1587,7 +2878,10 @@
           });
       });
       var tpls = exmReadJson('ems_exam_templates', []);
-      tpls.forEach(function (t) { (t.books || []).forEach(function (b) { bookMax[b.name] = b.marks; }); });
+      tpls.forEach(function (t) {
+          if (classSet && !classSet[t.class]) return;
+          (t.books || []).forEach(function (b) { bookMax[b.name] = b.marks; });
+      });
       var bookItems = Object.keys(bookSum).map(function (b) {
           var avgB = bookSum[b] / bookCnt[b]; var mx = bookMax[b] || 100;
           var pct = Math.round((avgB / mx) * 100);
@@ -1597,7 +2891,7 @@
       // استاد وار کارکردگی (ماسٹر شیٹ میں مضمون → استاد منسلک)
       var bookTeacher = {};
       tpls.forEach(function (t) {
-          if (cls && t.class !== cls) return;
+          if (classSet && !classSet[t.class]) return;
           (t.books || []).forEach(function (b) {
               if (b.teacher) bookTeacher[b.name] = b.teacher;
           });
@@ -1640,7 +2934,18 @@
       var lineYear = (yearItems.length > 1 && typeof window.emsLineChartSVG === 'function') ? window.emsLineChartSVG(yearItems, '#7c3aed')
           : '<p style="color:#94a3b8;">سال بہ سال موازنے کے لیے کم از کم دو مختلف سالوں کا ریکارڈ درکار ہے۔</p>';
 
+      var scopeBanner =
+          '<div style="margin-bottom:12px;padding:10px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;color:#1e40af;font-size:13px;">' +
+          '<i class="fas fa-filter"></i> <strong>' + String(scope.label).replace(/</g, '&lt;') + '</strong>' +
+          (examName ? ' — امتحان: ' + String(examName).replace(/</g, '&lt;') : '') +
+          (useAllDates
+              ? ' — تمام محفوظ شدہ تواریخ'
+              : (' — تاریخ: ' + exmFormatResultDateLabel(resultDate))) +
+          (scope.mode !== 'one' ? ' — شامل درجات: ' + classKeys.length : '') +
+          '</div>';
+
       box.innerHTML =
+          scopeBanner +
           '<div class="cmp-stat-strip" style="margin-bottom:16px;">' +
             statCard('کل طلبہ', list.length, '#2563eb', 'fa-users') +
             statCard('اوسط فیصد', avg + '%', '#7c3aed', 'fa-percent') +
@@ -1650,7 +2955,7 @@
           '<div class="cmp-dash-grid">' +
             '<div class="cmp-dash-card"><h4>درجہ بندی کی تقسیم</h4>' + donutGrade + '</div>' +
             '<div class="cmp-dash-card"><h4>کامیابی / ناکامی</h4>' + donutPass + '</div>' +
-            '<div class="cmp-dash-card cmp-dash-wide"><h4>درجہ وار اوسط کارکردگی</h4>' + barClass + '</div>' +
+            '<div class="cmp-dash-card cmp-dash-wide"><h4>درجہ وار اوسط کارکردگی</h4>' + barClass + classTableHtml + '</div>' +
             '<div class="cmp-dash-card cmp-dash-wide"><h4>مضمون وار اوسط (کمزور مضامین کی نشاندہی)</h4>' + barBook + '</div>' +
             '<div class="cmp-dash-card cmp-dash-wide"><h4>استاد وار اوسط کارکردگی</h4>' + barTeacher + '</div>' +
             '<div class="cmp-dash-card cmp-dash-wide"><h4>سال بہ سال موازنہ (اوسط فیصد)</h4>' + lineYear + '</div>' +
@@ -1662,6 +2967,9 @@
   };
 
   document.getElementById('btn-run-analysis')?.addEventListener('click', window.renderExamAnalysis);
+  if (typeof window.exmUpdateAnaScopeUi === 'function') {
+      try { window.exmUpdateAnaScopeUi(); } catch (eAnaUi) { /* ignore */ }
+  }
 
   // مرحلہ 6: نتائج کی فوری تلاش (درجہ وار چارٹ کی قطاروں پر)
   window.examResultSearch = function (val) {
@@ -1687,13 +2995,18 @@
       if (!students.length) return showToast("اس درجے میں کوئی طالب علم نہیں!", "error");
 
       window._promoRows = students.map(function (std) {
-          var res = dbMarks.find(function (m) { return m.examName === examName && m.class === fromClass && m.studentId === std.id; });
+          var candidates = dbMarks.filter(function (m) {
+              return m.examName === examName && m.class === fromClass && m.studentId === std.id;
+          });
+          candidates.sort(function (a, b) { return (b.timestamp || 0) - (a.timestamp || 0); });
+          var res = candidates[0] || null;
           var passing = res ? !String(res.grade).includes('راسب') : false;
           return {
               id: std.id, name: std.name,
               totalObtained: res ? res.totalObtained : '-',
               percentage: res ? res.percentage : '-',
               grade: res ? res.grade : 'نتیجہ نہیں',
+              resultDate: res ? exmResultDateOf(res) : '',
               passing: passing,
               selected: passing
           };
@@ -1811,12 +3124,26 @@ if (typeof window.emsRegisterDepartmentRefresh === 'function') {
   });
 }
 
-['mrk-exam-name', 'mrk-class', 'res-exam-name', 'res-class'].forEach(function (selId) {
+['mrk-exam-name', 'mrk-class', 'res-exam-name', 'res-class', 'ana-exam-name', 'ana-class'].forEach(function (selId) {
   var el = document.getElementById(selId);
   if (el) el.addEventListener('change', function () {
+    var prefix = selId.indexOf('mrk') === 0 ? 'mrk' : (selId.indexOf('ana') === 0 ? 'ana' : 'res');
+    if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions(prefix);
     if (typeof window.exmUpdateLockUi === 'function') window.exmUpdateLockUi();
   });
 });
+
+['mrk-result-date', 'res-result-date', 'ana-result-date'].forEach(function (id) {
+  var el = document.getElementById(id);
+  if (el && !el.value) el.value = (typeof exmTodayYmd === 'function') ? exmTodayYmd() : '';
+});
+if (typeof window.exmRefreshResultDateOptions === 'function') {
+  try {
+    window.exmRefreshResultDateOptions('mrk');
+    window.exmRefreshResultDateOptions('res');
+    window.exmRefreshResultDateOptions('ana');
+  } catch (eDates) { /* ignore */ }
+}
 
 document.getElementById('btn-exm-lock-toggle')?.addEventListener('click', function () {
   if (typeof window.exmToggleExamLock === 'function') window.exmToggleExamLock();
@@ -1832,7 +3159,8 @@ window.EMS_EXAMS_CLOUD_KEYS = [
   'ems_exam_types',
   'ems_library_books',
   'ems_exam_templates',
-  'ems_exam_locks'
+  'ems_exam_locks',
+  'ems_master_sheet_meta'
 ];
 
 window.emsExamsLocalKeyStats = function () {
@@ -1896,7 +3224,7 @@ window.emsPullExamsFromCloud = function (tenantId, opts) {
     return Promise.resolve({ ok: false, reason: 'no_tenant', count: 0, source: 'exams_cloud_pull' });
   }
 
-  var pullOpts = { forceFull: true, delta: false, forceApply: true };
+  var pullOpts = { forceFull: true, delta: false, forceApply: false };
   var keys = window.EMS_EXAMS_CLOUD_KEYS.slice();
   var byKey = {};
   keys.forEach(function (k) { byKey[k] = false; });
@@ -1923,7 +3251,7 @@ window.emsPullExamsFromCloud = function (tenantId, opts) {
     }
 
     // Legacy ModuleData fallback for config blobs not yet in Exams_Config
-    var blobKeys = ['ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks'];
+    var blobKeys = ['ems_exam_types', 'ems_library_books', 'ems_exam_templates', 'ems_exam_locks', 'ems_master_sheet_meta'];
     var fb = Promise.resolve();
     blobKeys.forEach(function (key) {
       fb = fb.then(function () {
