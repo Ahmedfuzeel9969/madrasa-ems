@@ -7,7 +7,7 @@
     var _attDashInflight = null;
     var _attDashFilterTimer = null;
     var _attDashRenderGen = 0;
-    var _attSheetCache = { month: null, sheets: null };
+    var _attSheetCache = { month: null, tenantId: null, sheets: null };
     var _attTabBootHandlers = Object.create(null);
     var _attRibbonDelegated = false;
 
@@ -50,6 +50,7 @@
 
     function attDashInvalidateSheetCache() {
         _attSheetCache.month = null;
+        _attSheetCache.tenantId = null;
         _attSheetCache.sheets = null;
     }
     global.emsInvalidateAttDashboardCache = attDashInvalidateSheetCache;
@@ -185,9 +186,12 @@
     /**
      * One final P/A/L (or unmarked) per studentId for a date.
      * Dedupes period=all vs period sheets + local/cloud versions by timestamp.
+     * When periodFilter is set: analyze that hour via periodRecords (canonical)
+     * or legacy period-sheet records.
      */
-    function attDashBuildFinalMarksForDay(dateStr, sheets, rosterUsers) {
+    function attDashBuildFinalMarksForDay(dateStr, sheets, rosterUsers, periodFilter) {
         var dayNum = dayNumOf(dateStr);
+        var periodId = String(periodFilter || '').trim();
         var roster = Object.create(null);
         (rosterUsers || []).forEach(function (u) {
             var id = attDashGetUserId(u);
@@ -200,10 +204,74 @@
         });
 
         var best = Object.create(null);
+
         (sheets || []).forEach(function (sh) {
             if (!sh || !sh.data) return;
             var sheetTs = attDashSheetTimestamp(sh.data);
             var isAll = !sh.period || sh.period === 'all';
+
+            if (periodId) {
+                // —— گھنٹہ وار تجزیہ ——
+                if (isAll) {
+                    var periodRecs = sh.data.periodRecords || {};
+                    Object.keys(periodRecs).forEach(function (uid) {
+                        if (!roster[uid]) return;
+                        var role = roster[uid].role;
+                        if (role === 'student' && sh.type && sh.type !== 'students') return;
+                        if (role === 'teacher' && sh.type && sh.type !== 'teachers') return;
+                        if (role === 'staff' && sh.type && sh.type !== 'staff') return;
+                        if (role === 'student' && sh.classId && sh.classId !== roster[uid].classId) return;
+
+                        var dayMap = periodRecs[uid] && (periodRecs[uid][dayNum] || periodRecs[uid][String(dayNum)]);
+                        if (!dayMap || typeof dayMap !== 'object') return;
+                        if (!Object.prototype.hasOwnProperty.call(dayMap, periodId)) return;
+                        var raw = dayMap[periodId];
+                        var bucket = attDashNormalizeStatusBucket(raw == null ? '' : String(raw).trim());
+                        var cand = {
+                            uid: uid,
+                            ts: sheetTs,
+                            isAll: true,
+                            hasObservation: true,
+                            cleared: !bucket,
+                            status: bucket,
+                            sheetKey: sh.key || '',
+                            period: periodId
+                        };
+                        if (attDashMarkCandidateBetter(cand, best[uid])) best[uid] = cand;
+                    });
+                    return;
+                }
+
+                // Legacy period sheet: only this hour
+                if (String(sh.period) !== periodId) return;
+                var recLegacy = sh.data.records || {};
+                Object.keys(recLegacy).forEach(function (uid) {
+                    if (!roster[uid]) return;
+                    var role = roster[uid].role;
+                    if (role === 'student' && sh.type && sh.type !== 'students') return;
+                    if (role === 'teacher' && sh.type && sh.type !== 'teachers') return;
+                    if (role === 'staff' && sh.type && sh.type !== 'staff') return;
+                    if (role === 'student' && sh.classId && sh.classId !== roster[uid].classId) return;
+
+                    var obs = attDashReadDayObservation(recLegacy[uid], dayNum);
+                    if (!obs.hasKey) return;
+                    var bucketL = attDashNormalizeStatusBucket(obs.status);
+                    var candL = {
+                        uid: uid,
+                        ts: sheetTs,
+                        isAll: false,
+                        hasObservation: true,
+                        cleared: !bucketL,
+                        status: bucketL,
+                        sheetKey: sh.key || '',
+                        period: periodId
+                    };
+                    if (attDashMarkCandidateBetter(candL, best[uid])) best[uid] = candL;
+                });
+                return;
+            }
+
+            // —— یومیہ تجزیہ (پہلا رویہ) ——
             var rec = sh.data.records || {};
             Object.keys(rec).forEach(function (uid) {
                 if (!roster[uid]) return;
@@ -257,7 +325,13 @@
                 sourceKey: b ? b.sheetKey : ''
             };
         });
-        return { roster: roster, marks: marks, dayNum: dayNum, dateStr: dateStr };
+        return {
+            roster: roster,
+            marks: marks,
+            dayNum: dayNum,
+            dateStr: dateStr,
+            periodFilter: periodId || ''
+        };
     }
 
     function attDashAssertStatsInvariant(stats, ctx) {
@@ -475,7 +549,13 @@
     }
 
     function attDashCollectSheetsAsync(monthStr, force) {
-        if (!force && _attSheetCache.month === monthStr && _attSheetCache.sheets) {
+        var tenantId = typeof global.emsGetTenantId === 'function'
+            ? global.emsGetTenantId()
+            : global.CURRENT_MADRASA_TENANT_ID;
+        // No identified madrasa: never briefly reuse sheets from an earlier account.
+        if (!tenantId) return Promise.resolve([]);
+        if (!force && _attSheetCache.month === monthStr
+            && _attSheetCache.tenantId === tenantId && _attSheetCache.sheets) {
             return Promise.resolve(_attSheetCache.sheets);
         }
         var listFn = typeof global.emsOfflineListAttendanceKeysAsync === 'function'
@@ -491,6 +571,7 @@
             keyList = keyList || [];
             if (!keyList.length) {
                 _attSheetCache.month = monthStr;
+                _attSheetCache.tenantId = tenantId;
                 _attSheetCache.sheets = [];
                 return [];
             }
@@ -529,6 +610,7 @@
                     };
                 });
                 _attSheetCache.month = monthStr;
+                _attSheetCache.tenantId = tenantId;
                 _attSheetCache.sheets = sheets;
                 return sheets;
             });
@@ -554,10 +636,16 @@
 
     /** @deprecated sync — use attDashCollectSheetsAsync */
     function attDashCollectSheets(monthStr, force) {
-        if (!force && _attSheetCache.month === monthStr && _attSheetCache.sheets) {
+        var tenantId = typeof global.emsGetTenantId === 'function'
+            ? global.emsGetTenantId()
+            : global.CURRENT_MADRASA_TENANT_ID;
+        if (!tenantId) return [];
+        if (!force && _attSheetCache.month === monthStr
+            && _attSheetCache.tenantId === tenantId && _attSheetCache.sheets) {
             return _attSheetCache.sheets;
         }
-        return _attSheetCache.month === monthStr ? (_attSheetCache.sheets || []) : [];
+        return _attSheetCache.month === monthStr && _attSheetCache.tenantId === tenantId
+            ? (_attSheetCache.sheets || []) : [];
     }
 
     function attDashSheetBetter(candidate, incumbent) {
@@ -690,7 +778,7 @@
     }
 
     /** Count P/A/L for a given day from sheets + user roster (deduped final-state). */
-    function attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets) {
+    function attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets, periodFilter) {
         users = users || attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter);
         var total = users.length;
         if (attDashIsFutureDate(dateStr)) {
@@ -706,20 +794,21 @@
             if (sh.data && sh.data.locked) lockedSheets++;
         });
 
-        var finalDataset = attDashBuildFinalMarksForDay(dateStr, sheets, users);
+        var finalDataset = attDashBuildFinalMarksForDay(dateStr, sheets, users, periodFilter);
         var stats = attDashStatsFromFinalMarks(finalDataset, users);
         stats.lockedSheets = lockedSheets;
         stats.source = 'local';
+        stats.periodFilter = String(periodFilter || '').trim();
         return stats;
     }
 
-    function attDashClassBreakdown(dateStr, roleFilter, classFilter, sheets) {
+    function attDashClassBreakdown(dateStr, roleFilter, classFilter, sheets, periodFilter) {
         if (roleFilter !== 'student' && roleFilter !== 'all') return [];
         if (attDashIsFutureDate(dateStr)) return [];
 
         var users = attDashFilterUsers(attDashGetUsers(), 'student', classFilter || '');
         sheets = sheets || [];
-        var finalDataset = attDashBuildFinalMarksForDay(dateStr, sheets, users);
+        var finalDataset = attDashBuildFinalMarksForDay(dateStr, sheets, users, periodFilter);
         var rows = attDashClassBreakdownFromFinal(finalDataset, users);
         if (classFilter) {
             rows = rows.filter(function (r) { return r.className === classFilter; });
@@ -822,15 +911,231 @@
         if (curr) sel.value = curr;
     }
 
+    function attDashListPeriods() {
+        try {
+            if (typeof global.attReadTimetablePeriods === 'function') {
+                var fromFn = global.attReadTimetablePeriods();
+                if (Array.isArray(fromFn)) return fromFn;
+            }
+            var raw = localStorage.getItem('ems_att_periods');
+            var list = raw ? JSON.parse(raw) : [];
+            return Array.isArray(list) ? list : [];
+        } catch (ePer) {
+            return [];
+        }
+    }
+
+    function attDashEscAttr(s) {
+        return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    }
+
+    function attDashPeriodLabel(periodId) {
+        periodId = String(periodId || '').trim();
+        if (!periodId) return 'یومیہ';
+        var periods = attDashListPeriods();
+        for (var i = 0; i < periods.length; i++) {
+            var p = periods[i];
+            if (!p || String(p.id) !== periodId) continue;
+            var parts = [p.name || 'گھنٹہ'];
+            if (p.bookName && p.bookName !== '-') parts.push(p.bookName);
+            if (p.className) parts.push(p.className);
+            if (p.start) parts.push(p.start + (p.end ? '–' + p.end : ''));
+            return parts.join(' · ');
+        }
+        return 'گھنٹہ: ' + periodId;
+    }
+
+    function attDashPopulatePeriodFilter(f) {
+        var sel = document.getElementById('att-dash-period-filter');
+        if (!sel) return;
+        f = f || {};
+        var classFilter = String(f.classFilter || '').trim();
+        var periods = attDashListPeriods().filter(function (p) {
+            if (!p || !p.id) return false;
+            if (classFilter && String(p.className || '').trim() !== classFilter) return false;
+            return true;
+        }).slice().sort(function (a, b) {
+            var c = String(a.className || '').localeCompare(String(b.className || ''), 'ur');
+            if (c) return c;
+            return String(a.start || '').localeCompare(String(b.start || ''));
+        });
+        var curr = sel.value;
+        var html = '<option value="">یومیہ (پورا دن)</option>';
+        periods.forEach(function (p) {
+            var label = p.name || 'گھنٹہ';
+            if (p.bookName && p.bookName !== '-') label += ' — ' + p.bookName;
+            if (!classFilter && p.className) label += ' (' + p.className + ')';
+            if (p.start) label += ' · ' + p.start + (p.end ? '–' + p.end : '');
+            html += '<option value="' + attDashEscAttr(p.id) + '">' + attDashEscAttr(label) + '</option>';
+        });
+        sel.innerHTML = html;
+        if (curr && periods.some(function (p) { return String(p.id) === curr; })) {
+            sel.value = curr;
+        } else {
+            sel.value = '';
+        }
+    }
+
     function attDashReadFilters() {
         var dateEl = document.getElementById('att-dash-date');
         var roleEl = document.getElementById('att-dash-role-filter');
         var classEl = document.getElementById('att-dash-class-filter');
+        var periodEl = document.getElementById('att-dash-period-filter');
+        var calcEl = document.getElementById('att-dash-calc-mode');
+        var calcMode = (calcEl && calcEl.value) || 'daily';
+        if (calcMode !== 'period_order') calcMode = 'daily';
+        var periodFilter = (periodEl && periodEl.value) || '';
+        // گھنٹوں کی ترتیب موڈ میں واحد گھنٹہ فلٹر نظر انداز — یومیہ خلاصہ + ترتیب جدول
+        if (calcMode === 'period_order') periodFilter = '';
         return {
             dateStr: (dateEl && dateEl.value) || todayStr(),
             roleFilter: (roleEl && roleEl.value) || 'all',
-            classFilter: (classEl && classEl.value) || ''
+            classFilter: (classEl && classEl.value) || '',
+            periodFilter: periodFilter,
+            calcMode: calcMode
         };
+    }
+
+    function attDashSyncCalcModeUi(f) {
+        var periodEl = document.getElementById('att-dash-period-filter');
+        var seqPanel = document.getElementById('att-dash-period-sequence-panel');
+        var byOrder = !!(f && f.calcMode === 'period_order');
+        if (periodEl) {
+            periodEl.disabled = byOrder;
+            if (byOrder) periodEl.value = '';
+            periodEl.title = byOrder
+                ? 'گھنٹوں کی ترتیب موڈ میں تمام گھنٹے دکھائے جاتے ہیں'
+                : '';
+        }
+        if (seqPanel) seqPanel.classList.toggle('att-col-hidden', !byOrder);
+        setTxt('att-dash-calc-mode-label', byOrder ? 'گھنٹوں کی ترتیب سے' : 'یومیہ خلاصہ');
+    }
+
+    /** Timetable periods for the selected day, sorted by start time. */
+    function attDashOrderedPeriodsForDay(dateStr, classFilter) {
+        var weekday = 0;
+        try {
+            weekday = new Date(String(dateStr) + 'T12:00:00').getDay();
+        } catch (eWd) {
+            weekday = new Date().getDay();
+        }
+        var classF = String(classFilter || '').trim();
+        var seen = Object.create(null);
+        var out = [];
+        attDashListPeriods().forEach(function (p) {
+            if (!p || !p.id) return;
+            if (classF && String(p.className || '').trim() !== classF) return;
+            var days = Array.isArray(p.days) ? p.days : null;
+            if (days && days.length) {
+                var onDay = days.some(function (d) { return Number(d) === weekday; });
+                if (!onDay) return;
+            }
+            var id = String(p.id);
+            if (seen[id]) return;
+            seen[id] = true;
+            out.push(p);
+        });
+        out.sort(function (a, b) {
+            var t = String(a.start || '').localeCompare(String(b.start || ''));
+            if (t) return t;
+            return String(a.name || '').localeCompare(String(b.name || ''), 'ur');
+        });
+        return out;
+    }
+
+    function attDashBuildPeriodSequenceStats(dateStr, roleFilter, classFilter, users, sheets) {
+        var periods = attDashOrderedPeriodsForDay(dateStr, classFilter);
+        return periods.map(function (p, idx) {
+            var st = attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets, p.id);
+            return {
+                index: idx + 1,
+                periodId: String(p.id),
+                name: p.name || ('گھنٹہ ' + (idx + 1)),
+                bookName: (p.bookName && p.bookName !== '-') ? p.bookName : '',
+                className: p.className || '',
+                start: p.start || '',
+                end: p.end || '',
+                present: st.present,
+                absent: st.absent,
+                leave: st.leave,
+                notMarked: st.notMarked,
+                total: st.total,
+                markedTotal: st.markedTotal,
+                rate: st.rate,
+                notTaken: st.notTaken
+            };
+        });
+    }
+
+    function attDashRenderPeriodSequence(rows, f) {
+        var panel = document.getElementById('att-dash-period-sequence-panel');
+        var tbody = document.getElementById('att-dash-period-seq-tbody');
+        var note = document.getElementById('att-dash-period-seq-note');
+        var chart = document.getElementById('att-dash-chart-period-seq');
+        if (!panel || !tbody) return;
+        var active = !!(f && f.calcMode === 'period_order');
+        panel.classList.toggle('att-col-hidden', !active);
+        if (!active) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">—</td></tr>';
+            if (chart) chart.innerHTML = '';
+            if (note) note.textContent = '—';
+            return;
+        }
+        if (!rows || !rows.length) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;">اس دن نظام الاوقات میں کوئی گھنٹہ نہیں ملا — پہلے گھنٹے شامل کریں یا درجہ فلٹر ہٹائیں</td></tr>';
+            if (chart) chart.innerHTML = '<p style="color:#94a3b8;font-size:13px;text-align:center;padding:16px;">گھنٹے دستیاب نہیں</p>';
+            if (note) note.textContent = 'گھنٹوں کی ترتیب سے دیکھنے کے لیے نظام الاوقات میں اس دن کے گھنٹے درکار ہیں۔';
+            return;
+        }
+        tbody.innerHTML = rows.map(function (r) {
+            var label = escHtmlSafe(r.name);
+            if (r.bookName) label += ' — ' + escHtmlSafe(r.bookName);
+            if (!f.classFilter && r.className) label += ' <small>(' + escHtmlSafe(r.className) + ')</small>';
+            var time = (r.start || '—') + (r.end ? '–' + r.end : '');
+            var rateTxt = r.rate == null ? '—' : (r.rate + '%');
+            var col = r.rate == null ? '#94a3b8' : (r.rate >= 75 ? '#27ae60' : (r.rate >= 50 ? '#f39c12' : '#e74c3c'));
+            return '<tr>'
+                + '<td>' + r.index + '</td>'
+                + '<td><strong>' + label + '</strong></td>'
+                + '<td>' + escHtmlSafe(time) + '</td>'
+                + '<td>' + r.total + '</td>'
+                + '<td style="color:#27ae60;font-weight:bold;">' + (r.notTaken ? '—' : r.present) + '</td>'
+                + '<td style="color:#e74c3c;font-weight:bold;">' + (r.notTaken ? '—' : r.absent) + '</td>'
+                + '<td style="color:#f39c12;">' + (r.notTaken ? '—' : r.leave) + '</td>'
+                + '<td>' + (r.notMarked != null ? r.notMarked : '—') + '</td>'
+                + '<td style="color:' + col + ';font-weight:bold;">' + rateTxt + '</td>'
+                + '</tr>';
+        }).join('');
+
+        var withRates = rows.filter(function (r) { return r.rate != null; });
+        if (chart) {
+            if (typeof global.emsBarChartSVG === 'function' && withRates.length) {
+                chart.innerHTML = global.emsBarChartSVG(withRates.slice(0, 12).map(function (r) {
+                    return {
+                        label: String(r.name || '').substring(0, 10) || ('#' + r.index),
+                        value: r.rate,
+                        display: r.rate + '%',
+                        color: r.rate >= 75 ? '#27ae60' : (r.rate >= 50 ? '#f39c12' : '#e74c3c')
+                    };
+                }));
+            } else if (!withRates.length) {
+                chart.innerHTML = '<p style="color:#94a3b8;font-size:13px;text-align:center;padding:16px;">ان گھنٹوں میں حاضری نہیں لی گئی</p>';
+            } else {
+                chart.innerHTML = '';
+            }
+        }
+        if (note) {
+            var taken = withRates.length;
+            note.textContent = 'کل ' + rows.length + ' گھنٹے (وقت کی ترتیب) · ' + taken + ' میں حاضری لی گئی · تاریخ ' + f.dateStr;
+        }
+    }
+
+    function escHtmlSafe(s) {
+        return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
     }
 
     function attDashDateOffset(daysAgo) {
@@ -856,7 +1161,7 @@
     }
 
     /** Last N days attendance rate trend — offline-first from local sheets. */
-    function attDashComputeLocalTrend(days, roleFilter, classFilter, users, sheetsByMonth) {
+    function attDashComputeLocalTrend(days, roleFilter, classFilter, users, sheetsByMonth, periodFilter) {
         days = days || 7;
         sheetsByMonth = sheetsByMonth || Object.create(null);
         var points = [];
@@ -864,7 +1169,7 @@
             var dateStr = attDashDateOffset(i);
             var monthStr = monthOf(dateStr);
             var monthSheets = attDashSheetsForMonth(sheetsByMonth, monthStr);
-            var dayStats = attDashStatsForDay(dateStr, roleFilter, classFilter, users, monthSheets);
+            var dayStats = attDashStatsForDay(dateStr, roleFilter, classFilter, users, monthSheets, periodFilter);
             points.push({
                 date: dateStr,
                 label: attDashWeekdayLabel(dateStr),
@@ -899,16 +1204,23 @@
         var roleLabels = { all: 'تمام رجسٹر', student: 'طلباء', teacher: 'اساتذہ', staff: 'عملہ' };
         var role = roleLabels[f.roleFilter] || 'تمام';
         var cls = f.classFilter ? (' · درجہ: ' + f.classFilter) : '';
+        var periodPart = f.periodFilter
+            ? (' · گھنٹہ: ' + attDashPeriodLabel(f.periodFilter))
+            : (f.calcMode === 'period_order' ? ' · گھنٹوں کی ترتیب' : ' · یومیہ');
+        setTxt('att-dash-period-label', f.periodFilter
+            ? attDashPeriodLabel(f.periodFilter)
+            : (f.calcMode === 'period_order' ? 'گھنٹوں کی ترتیب' : 'یومیہ'));
+        setTxt('att-dash-calc-mode-label', f.calcMode === 'period_order' ? 'گھنٹوں کی ترتیب سے' : 'یومیہ خلاصہ');
         if (stats.total === 0) {
-            el.textContent = 'منتخب فلٹر (' + role + cls + ') کے لیے کوئی حاضری ہدف نہیں — رجسٹر یا فلٹر چیک کریں۔';
+            el.textContent = 'منتخب فلٹر (' + role + cls + periodPart + ') کے لیے کوئی حاضری ہدف نہیں — رجسٹر یا فلٹر چیک کریں۔';
             return;
         }
         if (stats.rate == null || stats.notTaken || attDashIsFutureDate(f.dateStr)) {
-            el.textContent = f.dateStr + ' — ' + role + cls + ': حاضری نہیں لی گئی (نشان زد نہیں: ' +
+            el.textContent = f.dateStr + ' — ' + role + cls + periodPart + ': حاضری نہیں لی گئی (نشان زد نہیں: ' +
                 fmt(stats.notMarked != null ? stats.notMarked : stats.total) + ' / ' + fmt(stats.total) + ')';
             return;
         }
-        el.textContent = f.dateStr + ' — ' + role + cls + ': ' +
+        el.textContent = f.dateStr + ' — ' + role + cls + periodPart + ': ' +
             fmt(stats.present) + ' حاضر، ' + fmt(stats.absent) + ' غائب، ' +
             fmt(stats.leave) + ' رخصت، ' + fmt(stats.notMarked) + ' نشان زد نہیں (کل ' + fmt(stats.total) + ') — شرح ' + stats.rate + '%';
     }
@@ -1107,6 +1419,9 @@
     function attDashRenderBody() {
         attDashPopulateClassFilter();
         var f = attDashReadFilters();
+        attDashPopulatePeriodFilter(f);
+        f = attDashReadFilters();
+        attDashSyncCalcModeUi(f);
         var rawUsers = attDashGetUsersRaw();
         // Eligible + department-scoped roster (inactive/suspended/expelled excluded).
         var users = attDashGetUsers();
@@ -1133,13 +1448,18 @@
         setTxt('att-dash-total-roster', allUsers.length);
         setTxt('att-dash-date-label', f.dateStr);
 
-        var stats = attDashStatsForDay(f.dateStr, f.roleFilter, f.classFilter, allUsers, sheets);
-        var classRows = attDashClassBreakdown(f.dateStr, f.roleFilter, f.classFilter, sheets);
+        var stats = attDashStatsForDay(f.dateStr, f.roleFilter, f.classFilter, allUsers, sheets, f.periodFilter);
+        var classRows = attDashClassBreakdown(f.dateStr, f.roleFilter, f.classFilter, sheets, f.periodFilter);
+        var periodSeqRows = f.calcMode === 'period_order'
+            ? attDashBuildPeriodSequenceStats(f.dateStr, f.roleFilter, f.classFilter, allUsers, sheets)
+            : [];
         // Single pipeline snapshot for print/debug — summary and class-wise must match.
         global._attDashLastCalc = {
             dateStr: f.dateStr,
             roleFilter: f.roleFilter,
             classFilter: f.classFilter,
+            periodFilter: f.periodFilter || '',
+            calcMode: f.calcMode || 'daily',
             target: stats.total,
             present: stats.present,
             absent: stats.absent,
@@ -1147,6 +1467,7 @@
             unmarked: stats.notMarked,
             markedTotal: stats.markedTotal,
             classRows: classRows,
+            periodSequence: periodSeqRows,
             invariantBroken: !!stats.invariantBroken,
             rows: stats.rows || null
         };
@@ -1155,6 +1476,7 @@
         setTxt('att-dash-source', stats.source === 'local' ? 'مقامی' : '—');
         attDashUpdateLiveIndicator(stats.source);
         attDashRenderSummary(stats, f);
+        attDashRenderPeriodSequence(periodSeqRows, f);
 
         var monthSummary = attDashMonthlySummary(monthStr, f.roleFilter, f.classFilter, sheets);
         setTxt('att-dash-month-rate', monthSummary.monthRate + '%');
@@ -1167,7 +1489,7 @@
         var alerts = attDashLowAttendanceAlerts(monthStr, sheets);
         attDashRenderAlerts(alerts);
 
-        var localTrend = attDashComputeLocalTrend(7, f.roleFilter, f.classFilter, allUsers, sheetsByMonth);
+        var localTrend = attDashComputeLocalTrend(7, f.roleFilter, f.classFilter, allUsers, sheetsByMonth, f.periodFilter);
         attDashRenderCharts(stats, localTrend, classRows);
         attDashRenderTrendSummary(localTrend);
 
@@ -1176,9 +1498,12 @@
         }
 
         return Promise.resolve().then(function () {
+            // Cloud daily summary is یومیہ only — skip when hour filter / period-order detail is active.
             if (typeof global.emsFetchTodayAttendanceStats === 'function'
                 && f.roleFilter === 'all'
                 && !f.classFilter
+                && !f.periodFilter
+                && f.calcMode !== 'period_order'
                 && f.dateStr === todayStr()) {
                 return attDashPromiseTimeout(global.emsFetchTodayAttendanceStats(), 3000, null)
                     .then(function (remote) {
@@ -1302,7 +1627,7 @@
                 global.renderAttDashboard();
             });
         }
-        ['att-dash-date', 'att-dash-role-filter', 'att-dash-class-filter'].forEach(function (id) {
+        ['att-dash-date', 'att-dash-role-filter', 'att-dash-class-filter', 'att-dash-period-filter', 'att-dash-calc-mode'].forEach(function (id) {
             var el = document.getElementById(id);
             if (el && !el._attDashBound) {
                 el._attDashBound = true;
@@ -1379,7 +1704,10 @@
 
     global.switchAttTab = function (tabId, btn) {
         if (!tabId) return;
-        if (global._attCurrentTabId === tabId && attPanelIsVisible(tabId)) return;
+        if (global._attCurrentTabId === tabId && attPanelIsVisible(tabId)) {
+            if (tabId === 'att-collective-register') attRunTabBoot(tabId);
+            return;
+        }
         if (typeof global.emsCloseAllModals === 'function') global.emsCloseAllModals();
         attShowPanel(tabId, btn);
         attRunTabBoot(tabId);

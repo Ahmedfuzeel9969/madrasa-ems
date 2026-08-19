@@ -156,14 +156,16 @@
         if (uid && persisted && isLocalTenantId(persisted)) {
             return uid;
         }
-        if (persisted && !isLocalTenantId(persisted)) {
+        // Never route an authenticated Gmail to a tenant merely because that
+        // tenant used this browser previously.
+        if (!uid && persisted && !isLocalTenantId(persisted)) {
             return persisted;
         }
 
         if (uid && opts.allowAuthUidFallback !== false) {
             return uid;
         }
-        if (persisted) {
+        if (!uid && persisted) {
             return persisted;
         }
         return null;

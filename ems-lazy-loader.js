@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260811_att_cur_lib';
+    var CACHE_BUST = '20260818_tenant_isolation_hardening';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 
@@ -24,8 +24,8 @@
             'ems-import-queue.js',
             'registration-ui.js'
         ],
-        attendance: ['att-dashboard.js', 'attendance.js'],
-        exams: ['exams.js'],
+        attendance: ['att-dashboard.js', 'att-save-status.js', 'attendance.js', 'att-collective.js'],
+        exams: ['exams.js', 'exams-import-export.js'],
         curriculum: ['curriculum.js'],
         training: ['training.js'],
         finance: ['ems-smart-slip.js', 'finance.js'],

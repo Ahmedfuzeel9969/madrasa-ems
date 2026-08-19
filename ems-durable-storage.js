@@ -25,6 +25,15 @@
     var MODULE_BLOB_SET = Object.create(null);
     MODULE_BLOB_KEYS.forEach(function (k) { MODULE_BLOB_SET[k] = true; });
 
+    function resolveDurableKey(key) {
+        if (typeof global.emsIsTenantDataKey === 'function'
+            && global.emsIsTenantDataKey(key)
+            && typeof global.emsResolveCacheKey === 'function') {
+            return global.emsResolveCacheKey(key);
+        }
+        return key;
+    }
+
     function readLs(key) {
         try {
             if (global._emsOriginalGetItem) return global._emsOriginalGetItem.call(localStorage, key);
@@ -42,12 +51,22 @@
     global.emsIsLargeBlobKey = function (key) {
         if (!key || typeof key !== 'string') return false;
         if (key.indexOf('att_rec_') === 0) return true;
+        // Tenant-scoped business blobs retain the logical key after "__".
+        var scopedAt = key.indexOf('__');
+        if (key.indexOf('ems_t_') === 0 && scopedAt > 0) {
+            var logicalKey = key.slice(scopedAt + 2);
+            if (typeof global.emsIsTenantDataKey === 'function' && global.emsIsTenantDataKey(logicalKey)) {
+                return true;
+            }
+            if (logicalKey.indexOf('ems_full_') === 0 || MODULE_BLOB_SET[logicalKey]) return true;
+        }
         if (key.indexOf('ems_full_') === 0) return true;
         if (key === 'ems_att_keys_index') return true;
         return !!MODULE_BLOB_SET[key];
     };
 
     global.emsDurableReadRaw = function (key) {
+        key = resolveDurableKey(key);
         if (!key) return null;
         if (Object.prototype.hasOwnProperty.call(memoryRaw, key)) {
             return memoryRaw[key];
@@ -66,6 +85,7 @@
 
     /** Ensure a blob key is loaded from IDB into memory before sync reads. */
     global.emsDurableEnsureKey = function (key) {
+        key = resolveDurableKey(key);
         if (!key) return Promise.resolve(null);
         if (Object.prototype.hasOwnProperty.call(memoryRaw, key)) {
             return Promise.resolve(memoryRaw[key]);
@@ -91,6 +111,7 @@
     };
 
     global.emsDurableWriteRaw = function (key, str) {
+        key = resolveDurableKey(key);
         if (!key) return false;
         str = str == null ? '' : String(str);
         memoryRaw[key] = str;
@@ -145,8 +166,17 @@
         if (typeof global.emsIdbKvKeys !== 'function') {
             return Promise.resolve({ hydrated: 0 });
         }
+        var tenantId = typeof global.emsVerifiedTenantId === 'function'
+            ? global.emsVerifiedTenantId()
+            : (global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID);
         return global.emsIdbKvKeys().then(function (keys) {
-            var blobKeys = (keys || []).filter(global.emsIsLargeBlobKey);
+            var blobKeys = (keys || []).filter(function (key) {
+                if (!global.emsIsLargeBlobKey(key)) return false;
+                if (typeof global.emsPhysicalKeyBelongsToTenant === 'function') {
+                    return global.emsPhysicalKeyBelongsToTenant(key, tenantId);
+                }
+                return !!tenantId;
+            });
             var chain = Promise.resolve();
             var hydrated = 0;
             blobKeys.forEach(function (key) {
@@ -157,6 +187,19 @@
                 });
             });
             return chain.then(function () { return { hydrated: hydrated }; });
+        });
+    };
+
+    /** Drop other tenants from RAM only — IndexedDB partitions stay intact. */
+    global.emsDurableReleaseInactiveTenants = function (tenantId) {
+        tenantId = tenantId || (typeof global.emsVerifiedTenantId === 'function'
+            ? global.emsVerifiedTenantId() : null);
+        Object.keys(memoryRaw).forEach(function (key) {
+            if (typeof global.emsPhysicalKeyBelongsToTenant === 'function'
+                && !global.emsPhysicalKeyBelongsToTenant(key, tenantId)) {
+                delete memoryRaw[key];
+                if (typeof global.emsCacheInvalidate === 'function') global.emsCacheInvalidate(key);
+            }
         });
     };
 

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260811_att_cur_lib';
+    var CACHE_BUST = '20260818_tenant_isolation_hardening';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;

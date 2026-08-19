@@ -46,6 +46,32 @@ describe('Attendance dashboard calculation fixes', function () {
         expect(helper).toMatch(/todayParts[\s\S]{0,400}Asia\/Karachi/);
     });
 
+    it('supports hourly period filter on dashboard analysis', function () {
+        var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
+        var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+        expect(html).toContain('id="att-dash-period-filter"');
+        expect(html).toContain('تجزیہ کی بنیاد');
+        expect(js).toContain('function attDashPopulatePeriodFilter');
+        expect(js).toContain('periodRecords');
+        expect(js).toMatch(/attDashBuildFinalMarksForDay\([^)]*periodFilter/);
+        expect(js).toMatch(/!f\.periodFilter/);
+        expect(js).toContain('att-dash-period-filter');
+    });
+
+    it('adds daily view mode filter for period-order calculation', function () {
+        var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
+        var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+        expect(html).toContain('id="att-dash-calc-mode"');
+        expect(html).toContain('گھنٹوں کی ترتیب سے');
+        expect(html).toContain('id="att-dash-period-sequence-panel"');
+        expect(html).toContain('id="att-dash-period-seq-tbody"');
+        expect(js).toContain('function attDashOrderedPeriodsForDay');
+        expect(js).toContain('function attDashBuildPeriodSequenceStats');
+        expect(js).toContain('function attDashRenderPeriodSequence');
+        expect(js).toContain("calcMode === 'period_order'");
+        expect(js).toContain('att-dash-calc-mode');
+    });
+
     it('filters inactive registrations out of dashboard roster', function () {
         var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
         expect(js).toContain('function attDashIsEligibleRegistration');

@@ -87,6 +87,8 @@
 
     global.emsCacheGet = function (key, fallback) {
         key = resolveKey(key);
+        // Tenant business data must never fall back to an unscoped legacy key.
+        if (!key) return fallback !== undefined ? fallback : null;
         var raw = readRaw(key);
         var hit = store[key];
         if (hit && hit.value !== undefined && hit.value !== null) {
@@ -108,6 +110,7 @@
 
     global.emsCacheGetRaw = function (key) {
         key = resolveKey(key);
+        if (!key) return null;
         var raw = readRaw(key);
         var fp = fingerprint(raw);
         var hit = store[key];
@@ -125,6 +128,7 @@
     global.emsCacheSet = function (key, value, options) {
         options = options || {};
         key = resolveKey(key);
+        if (!key) return null;
         var str = typeof value === 'string' ? value : JSON.stringify(value);
         var parsed = typeof value === 'string' ? parseValue(str, null, key) : value;
 
@@ -152,6 +156,10 @@
                     return;
                 }
                 if (e.key.indexOf('ems_') !== 0 && e.key.indexOf('att_rec_') !== 0) return;
+                if (typeof global.emsPhysicalKeyBelongsToTenant === 'function'
+                    && !global.emsPhysicalKeyBelongsToTenant(e.key)) {
+                    return;
+                }
                 var existing = readRaw(e.key);
                 if (existing !== null && existing !== undefined) return;
                 var str = typeof e.value === 'string' ? e.value : JSON.stringify(e.value);

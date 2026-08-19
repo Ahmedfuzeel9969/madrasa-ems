@@ -88,7 +88,10 @@
             return lastResolution;
         }
 
-        if (typeof global.emsReadPersistedBootTenantId === 'function') {
+        // A persisted tenant is offline metadata, never authority over an
+        // authenticated Gmail identity. Otherwise account B can momentarily
+        // inherit account A's storage before context resolution finishes.
+        if (!authUidVal && typeof global.emsReadPersistedBootTenantId === 'function') {
             var persisted = global.emsReadPersistedBootTenantId();
             if (persisted && !(authUidVal && isLocalTenantId(persisted))) {
                 lastResolution = {

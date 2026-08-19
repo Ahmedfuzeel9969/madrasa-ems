@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260809_tenant_loop';
+var EMS_SW_BUILD_TAG = '20260818_tenant_isolation_hardening';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',
@@ -56,7 +56,9 @@ function isMutableAppScript(url) {
         || url.pathname.indexOf('dashboard.js') >= 0
         || url.pathname.indexOf('admission.js') >= 0
         || url.pathname.indexOf('attendance.js') >= 0
-        || url.pathname.indexOf('att-dashboard.js') >= 0;
+        || url.pathname.indexOf('att-dashboard.js') >= 0
+        || url.pathname.indexOf('att-save-status.js') >= 0
+        || url.pathname.indexOf('att-collective.js') >= 0;
 }
 
 self.addEventListener('fetch', function (event) {

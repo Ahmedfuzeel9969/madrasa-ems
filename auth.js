@@ -386,7 +386,8 @@ window.emsStartSyncEngine = function (user, options) {
     var tenantId = (typeof window.emsRequireTenantId === 'function' && window.emsRequireTenantId())
         || (window.emsGetTenantId && window.emsGetTenantId())
         || window.CURRENT_MADRASA_TENANT_ID
-        || (typeof window.emsReadPersistedBootTenantId === 'function' && window.emsReadPersistedBootTenantId());
+        || (!user && typeof window.emsReadPersistedBootTenantId === 'function'
+            && window.emsReadPersistedBootTenantId());
     if (!tenantId) return Promise.resolve({ skipped: true, reason: 'no_tenant' });
     if (typeof window.emsIsOfflineOnly === 'function' && window.emsIsOfflineOnly()) {
         return runLocalBootOnly();
@@ -1680,7 +1681,8 @@ function finishMadrasaLogin(user, firestore) {
     }
     var tenantId = window.CURRENT_MADRASA_TENANT_ID
         || window.EMS_ACTIVE_TENANT_ID
-        || (typeof window.emsReadPersistedBootTenantId === 'function' && window.emsReadPersistedBootTenantId())
+        || (!user && typeof window.emsReadPersistedBootTenantId === 'function'
+            && window.emsReadPersistedBootTenantId())
         || null;
     if (!tenantId && typeof window.emsRequireTenantId === 'function') {
         try {

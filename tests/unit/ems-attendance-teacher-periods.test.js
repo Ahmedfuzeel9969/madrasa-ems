@@ -35,9 +35,10 @@ describe('Teacher timetable period boxes in smart register', function () {
         vm.runInNewContext(fnSrc + '\nthis.attRollupPeriodDayStatus = attRollupPeriodDayStatus;', sandbox);
         var sym = { P: 'P', A: 'A', L: 'L' };
         expect(sandbox.attRollupPeriodDayStatus({ a: 'P', b: 'P' }, sym)).toBe('P');
-        expect(sandbox.attRollupPeriodDayStatus({ a: 'P', b: 'A' }, sym)).toBe('A');
+        expect(sandbox.attRollupPeriodDayStatus({ a: 'P', b: 'A' }, sym)).toBe('جزوی حاضری');
         expect(sandbox.attRollupPeriodDayStatus({ a: 'L', b: 'L' }, sym)).toBe('L');
         expect(sandbox.attRollupPeriodDayStatus({}, sym)).toBe('');
+        expect(sandbox.attRollupPeriodDayStatus({ a: 'P' }, sym, ['a', 'b'])).toBe('نامکمل');
     });
 
     it('filters timetable periods by teacher and weekday', function () {

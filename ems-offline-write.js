@@ -23,9 +23,16 @@
         return Math.min(BACKOFF_BASE_MS * Math.pow(2, n), BACKOFF_MAX_MS);
     }
 
+    function rowBelongsToActiveTenant(row) {
+        var active = getTenantId();
+        if (!row || !row.tenantId || !active) return false;
+        return String(row.tenantId) === String(active);
+    }
+
     function rowEligibleForFlush(row, opts) {
         opts = opts || {};
         if (!row) return false;
+        if (!rowBelongsToActiveTenant(row)) return false;
         if (opts.force === true) return true;
         if (row.deadLetter === true) return false;
         if (row.failed && row.nextRetryAt && row.nextRetryAt > Date.now()) return false;
@@ -52,7 +59,9 @@
         });
     }
 
-    function checkRemoteVersion(ref, payload) {
+    function checkRemoteVersion(ref, payload, opts) {
+        opts = opts || {};
+        if (opts.forceLocal) return Promise.resolve({ ok: true, proceed: true });
         return ref.get({ source: 'server' }).then(function (snap) {
             if (!snap.exists) return { ok: true, proceed: true };
             var remote = snap.data() || {};
@@ -157,10 +166,6 @@
         if (typeof global.emsGetTenantId === 'function') {
             var t = global.emsGetTenantId();
             if (t) return t;
-        }
-        if (typeof global.emsReadPersistedBootTenantId === 'function') {
-            var p = global.emsReadPersistedBootTenantId();
-            if (p) return p;
         }
         try {
             if (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) {
@@ -275,21 +280,65 @@
     };
 
     global.emsAttLocalStorageKey = function (tenantId, month, type, classId, period) {
-        var tid = tenantId || getTenantId() || 'local';
+        var tid = tenantId || getTenantId();
+        if (!tid) return null;
         return 'att_rec_' + tid + '_' + month + '_' + type + '_' + classId + '_' + (period || 'all');
     };
 
     global.emsAttResolveLocalKey = function (tenantId, month, type, classId, period) {
         var scoped = global.emsAttLocalStorageKey(tenantId, month, type, classId, period);
-        if (readRaw(scoped)) return scoped;
-        var legacy = global.emsAttCloudDocId(month, type, classId, period);
-        if (readRaw(legacy)) {
-            var parsed = parseLocal(readRaw(legacy));
-            if (parsed) global.emsOfflineWriteLocalSync(scoped, parsed);
-            return scoped;
-        }
+        if (!scoped) return null;
         return scoped;
     };
+
+    global.emsIsActiveTenantAttendanceKey = function (key, tenantId) {
+        tenantId = tenantId || getTenantId();
+        return !!(key && tenantId && key.indexOf('att_rec_' + tenantId + '_') === 0);
+    };
+
+    /**
+     * Safe one-time import of pre-isolation attendance. It runs only when the
+     * persisted tenant already matched the verified active tenant at activation.
+     * Unknown legacy sheets are retained but never read by any live screen.
+     */
+    global.emsMigrateLegacyAttendanceForTenant = function (tenantId) {
+        tenantId = tenantId || getTenantId();
+        if (!tenantId || global.EMS_TENANT_LEGACY_MIGRATION_ALLOWED !== true) {
+            return Promise.resolve({ migrated: 0, deferred: true });
+        }
+        var flag = 'ems_att_tenant_migration_v2__' + tenantId;
+        if (readRaw(flag) === '1') return Promise.resolve({ migrated: 0, done: true });
+        var list = typeof global.emsIdbKvKeysByPrefix === 'function'
+            ? global.emsIdbKvKeysByPrefix('att_rec_')
+            : Promise.resolve([]);
+        return list.then(function (keys) {
+            var legacy = (keys || []).filter(function (key) {
+                return /^att_rec_\d{4}-\d{2}_/.test(key);
+            });
+            return Promise.all(legacy.map(function (oldKey) {
+                return Promise.resolve(readRaw(oldKey)).then(function (raw) {
+                    if (raw == null) return false;
+                    var scoped = 'att_rec_' + tenantId + '_' + oldKey.slice('att_rec_'.length);
+                    if (readRaw(scoped) != null) return false;
+                    return writeLocal(scoped, raw).then(function () { return true; });
+                });
+            }));
+        }).then(function (results) {
+            var migrated = (results || []).filter(Boolean).length;
+            writeLocal(flag, '1');
+            if (typeof global.emsAttOfflineKeyIndexInvalidate === 'function') {
+                global.emsAttOfflineKeyIndexInvalidate();
+            }
+            return { migrated: migrated, done: true };
+        });
+    };
+
+    if (global.addEventListener) {
+        global.addEventListener('ems:tenant-storage-ready', function (event) {
+            var tenantId = event && event.detail && event.detail.tenantId;
+            global.emsMigrateLegacyAttendanceForTenant(tenantId);
+        });
+    }
 
     function parseLocal(raw) {
         if (raw == null) return null;
@@ -318,32 +367,53 @@
         });
     }
 
+    function attIndexStorageKey() {
+        if (typeof global.emsResolveCacheKey === 'function') {
+            return global.emsResolveCacheKey('ems_att_keys_index');
+        }
+        var tid = getTenantId();
+        return tid ? ('ems_t_' + tid + '__ems_att_keys_index') : null;
+    }
+
     function attIndexRead() {
         try {
-            var raw = readRaw(ATT_INDEX_KEY);
+            var storageKey = attIndexStorageKey();
+            if (!storageKey) return [];
+            var raw = readRaw(storageKey);
             if (!raw) return [];
             var parsed = JSON.parse(raw);
-            return Array.isArray(parsed) ? parsed : [];
+            var keys = Array.isArray(parsed) ? parsed : [];
+            var tid = getTenantId();
+            if (!tid) return [];
+            return keys.filter(function (key) {
+                return key && key.indexOf('att_rec_' + tid + '_') === 0;
+            });
         } catch (e) { return []; }
     }
 
     function attIndexWrite(keys) {
+        var storageKey = attIndexStorageKey();
+        if (!storageKey) return;
         try {
-            var str = JSON.stringify(keys);
+            var str = JSON.stringify(keys || []);
             if (typeof global.emsDurableWriteRaw === 'function') {
-                global.emsDurableWriteRaw(ATT_INDEX_KEY, str);
+                global.emsDurableWriteRaw(storageKey, str);
             } else if (global._emsOriginalSetItem) {
                 global._emsSuppressSync = true;
-                global._emsOriginalSetItem.call(localStorage, ATT_INDEX_KEY, str);
+                global._emsOriginalSetItem.call(localStorage, storageKey, str);
                 global._emsSuppressSync = false;
             } else {
-                localStorage.setItem(ATT_INDEX_KEY, str);
+                localStorage.setItem(storageKey, str);
             }
         } catch (e) { /* quota */ }
     }
 
     function attIndexAddKey(key) {
         if (!key || key.indexOf('att_rec_') !== 0) return;
+        if (!getTenantId() || (typeof global.emsIsActiveTenantAttendanceKey === 'function'
+            && !global.emsIsActiveTenantAttendanceKey(key))) {
+            return;
+        }
         var idx = attIndexRead();
         if (idx.indexOf(key) >= 0) return;
         idx.push(key);
@@ -354,11 +424,14 @@
     }
 
     function attIndexRebuildFromStorage() {
+        var tid = getTenantId();
         var keys = [];
+        if (!tid) return keys;
+        var prefix = 'att_rec_' + tid + '_';
         try {
             for (var i = 0; i < localStorage.length; i++) {
                 var k = localStorage.key(i);
-                if (k && k.indexOf('att_rec_') === 0) keys.push(k);
+                if (k && k.indexOf(prefix) === 0) keys.push(k);
             }
         } catch (e) { /* ignore */ }
         if (keys.length) attIndexWrite(keys);
@@ -478,13 +551,17 @@
 
     function flushAttendanceRow(row) {
         var db = getDb();
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
+        if (!tid || (getTenantId() && String(tid) !== String(getTenantId()))) {
+            return Promise.resolve({ ok: false, error: 'tenant_mismatch', code: 'TENANT_MISMATCH', skip: true });
+        }
         if (!db || !tid || !row.docId) {
             return Promise.resolve({ ok: false, error: 'missing_db_or_doc', code: 'INVALID_ROW' });
         }
         var payload = stampCloudVersion(row.payload || {});
         var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
-        return checkRemoteVersion(ref, payload).then(function (gate) {
+        var forceLocal = !!(row.meta && row.meta.forceLocal);
+        return checkRemoteVersion(ref, payload, { forceLocal: forceLocal }).then(function (gate) {
             if (!gate.proceed) return gate;
             // merge:false — cleared days must not survive Firestore deep-merge
             return flushOp(ref.set(payload, { merge: false }), {
@@ -495,7 +572,10 @@
 
     function flushAttendancePatchRow(row) {
         var db = getDb();
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
+        if (!tid || (getTenantId() && String(tid) !== String(getTenantId()))) {
+            return Promise.resolve({ ok: false, error: 'tenant_mismatch', code: 'TENANT_MISMATCH', skip: true });
+        }
         if (!db || !tid || !row.docId) {
             return Promise.resolve({ ok: false, error: 'missing_db_or_doc', code: 'INVALID_ROW' });
         }
@@ -524,7 +604,8 @@
         patch.clientUpdatedAt = Date.now();
         patch._version = (typeof patch._version === 'number' ? patch._version : 0) + 1;
         var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
-        return checkRemoteVersion(ref, patch).then(function (gate) {
+        var forceLocal = !!(row.meta && row.meta.forceLocal);
+        return checkRemoteVersion(ref, patch, { forceLocal: forceLocal }).then(function (gate) {
             if (!gate.proceed) return gate;
             return flushOp(ref.update(patch), { type: 'attendance_patch', docId: row.docId }).then(function (res) {
                 if (res && res.ok) return res;
@@ -537,7 +618,7 @@
 
     function flushModuleItemRow(row) {
         var db = getDb();
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
         var meta = row.meta || {};
         var col = meta.collection;
         if (!db || !tid || !row.docId || !col) {
@@ -558,7 +639,7 @@
 
     function flushModuleBlobRow(row) {
         var db = getDb();
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
         var meta = row.meta || {};
         if (!db || !tid || !meta.collection || !meta.blobDocId) {
             return Promise.resolve({ ok: false, error: 'missing_blob_ref', code: 'INVALID_ROW' });
@@ -579,7 +660,7 @@
 
     function flushModuleMapRow(row) {
         var db = getDb();
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
         var meta = row.meta || {};
         if (!db || !tid || !meta.collection || !row.docId) {
             return Promise.resolve({ ok: false, error: 'missing_map_ref', code: 'INVALID_ROW' });
@@ -599,7 +680,7 @@
 
     function flushRegistrationRow(row) {
         var db = getDb();
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
         if (!db || !tid || !row.docId) {
             return Promise.resolve({ ok: false, error: 'missing_registration_ref', code: 'INVALID_ROW' });
         }
@@ -689,7 +770,7 @@
 
     function flushRegistrationAtomicRow(row) {
         var db = getDb();
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
         if (!db || !tid || !row.docId) {
             return Promise.resolve({ ok: false, error: 'missing_registration_atomic_ref', code: 'INVALID_ROW' });
         }
@@ -731,7 +812,7 @@
 
     function flushFeeRow(row) {
         var db = getDb();
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
         if (!db || !tid || !row.docId) {
             return Promise.resolve({ ok: false, error: 'missing_fee_ref', code: 'INVALID_ROW' });
         }
@@ -744,7 +825,7 @@
     }
 
     function flushSyncModuleRow(row) {
-        var tid = row.tenantId || getTenantId();
+        var tid = row.tenantId;
         var payload = row.payload || {};
         var key = payload.key || row.docId;
         var value = payload.value;
@@ -777,6 +858,12 @@
 
     function flushRow(row) {
         if (!row) return Promise.resolve({ ok: false, error: 'no_row', code: 'INVALID_ROW' });
+        if (!row.tenantId) {
+            return Promise.resolve({ ok: false, error: 'missing_tenant', code: 'TENANT_REQUIRED', skip: true });
+        }
+        if (!rowBelongsToActiveTenant(row)) {
+            return Promise.resolve({ ok: false, error: 'tenant_mismatch', code: 'TENANT_MISMATCH', skip: true });
+        }
         if (row.type === 'attendance') return flushAttendanceRow(row);
         if (row.type === 'attendance_patch') return flushAttendancePatchRow(row);
         if (row.type === 'module_item') return flushModuleItemRow(row);
@@ -792,6 +879,9 @@
 
     function flushMutationRowAndDequeueUnlocked(row) {
         return flushRow(row).then(function (res) {
+            if (res && res.skip) {
+                return { synced: false, skipped: true, code: res.code };
+            }
             if (!res || !res.ok) {
                 return markRowFailed(row, res).then(function () {
                     return refreshSyncFailureCounts().then(function (counts) {
@@ -803,6 +893,20 @@
                             error: res && res.error,
                             code: res && res.code
                         });
+                        if (row.type === 'attendance' || row.type === 'attendance_patch') {
+                            try {
+                                global.dispatchEvent(new CustomEvent('ems:att-save-status', {
+                                    detail: {
+                                        source: 'outbox',
+                                        docId: row.docId,
+                                        type: row.type,
+                                        cloud: res && res.code === 'VERSION_CONFLICT' ? 'conflict' : 'queued',
+                                        error: res && res.error,
+                                        code: res && res.code
+                                    }
+                                }));
+                            } catch (eAtt) { /* ignore */ }
+                        }
                         return { synced: false, error: res && res.error, code: res && res.code };
                     });
                 });
@@ -819,6 +923,13 @@
                     return deleteQueueRow(hit.id).then(function () {
                         return refreshSyncFailureCounts().then(function (counts) {
                             if (counts.failed === 0) notifySyncFailureUI({ failed: 0, pending: counts.pending, cleared: true });
+                            if (row.type === 'attendance' || row.type === 'attendance_patch') {
+                                try {
+                                    global.dispatchEvent(new CustomEvent('ems:att-save-status', {
+                                        detail: { source: 'outbox', docId: row.docId, type: row.type, synced: true, cloud: 'synced' }
+                                    }));
+                                } catch (eAttOk) { /* ignore */ }
+                            }
                             return { synced: true };
                         });
                     });
@@ -838,6 +949,7 @@
     }
 
     global.emsOfflineQueueUpsert = upsertQueueByDocId;
+    global.emsOfflineListQueue = listQueue;
     global.emsOfflineFlushMutationRow = flushMutationRowAndDequeue;
     global.emsOfflineFlushRowInternal = flushRow;
 
@@ -869,10 +981,14 @@
                 return { ok: true, synced: false, offline: true, docId: env.docId };
             }
             return flushMutationRowAndDequeue(queueRow).then(function (res) {
+                var synced = !!(res && res.synced);
+                var failed = !!(res && (res.error || res.code));
                 return {
-                    ok: true,
-                    synced: !!(res && res.synced),
-                    offline: !(res && res.synced),
+                    // A rejected Firebase write is a failure, not an offline wait.
+                    // Keep the row in the queue, but make the caller/UI show it clearly.
+                    ok: !failed,
+                    synced: synced,
+                    offline: !synced && !failed,
                     docId: env.docId,
                     error: res && res.error,
                     code: res && res.code
@@ -1133,6 +1249,10 @@
                         return;
                     }
                     return flushRow(row).then(function (res) {
+                        if (res && res.skip) {
+                            skipped++;
+                            return;
+                        }
                         if (!res || !res.ok) {
                             failed++;
                             return markRowFailed(row, res);
@@ -1371,6 +1491,9 @@
     }
 
     migrateLegacyQueuesOnce().catch(function () { /* ignore */ });
+    if (global.EMS_TENANT_STORAGE_READY === true && global.EMS_ACTIVE_TENANT_ID) {
+        global.emsMigrateLegacyAttendanceForTenant(global.EMS_ACTIVE_TENANT_ID);
+    }
 
     if (typeof global.setInterval === 'function') {
         global.setInterval(function () {

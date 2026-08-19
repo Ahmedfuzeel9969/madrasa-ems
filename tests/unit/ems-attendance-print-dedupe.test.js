@@ -210,4 +210,49 @@ describe('Attendance print/dashboard dedupe + final-state', function () {
         var stats = api.attDashStatsFromFinalMarks(final, users);
         expect(stats.present + stats.absent + stats.leave).toBeLessThanOrEqual(2);
     });
+
+    it('period filter reads periodRecords for hourly analysis', function () {
+        var api = loadDashNormalizeApi();
+        var users = makeRoster(4, 'A');
+        var sheets = [
+            {
+                key: 'all',
+                type: 'students',
+                classId: 'A',
+                period: 'all',
+                data: {
+                    timestamp: 5000,
+                    records: {
+                        S1: { 6: 'P' },
+                        S2: { 6: 'P' },
+                        S3: { 6: 'A' },
+                        S4: { 6: 'L' }
+                    },
+                    periodRecords: {
+                        S1: { 6: { 'PRD-1': 'P', 'PRD-2': 'A' } },
+                        S2: { 6: { 'PRD-1': 'A' } },
+                        S3: { 6: { 'PRD-1': 'L' } },
+                        S4: { 6: { 'PRD-2': 'P' } }
+                    }
+                }
+            }
+        ];
+        var daily = api.attDashStatsFromFinalMarks(
+            api.attDashBuildFinalMarksForDay('2026-08-06', sheets, users),
+            users
+        );
+        expect(daily.present).toBe(2);
+        expect(daily.absent).toBe(1);
+        expect(daily.leave).toBe(1);
+
+        var hour = api.attDashStatsFromFinalMarks(
+            api.attDashBuildFinalMarksForDay('2026-08-06', sheets, users, 'PRD-1'),
+            users
+        );
+        expect(hour.present).toBe(1);
+        expect(hour.absent).toBe(1);
+        expect(hour.leave).toBe(1);
+        expect(hour.notMarked).toBe(1);
+        expect(hour.present + hour.absent + hour.leave + hour.notMarked).toBe(4);
+    });
 });

@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260809_pdf1">
+    <link rel="stylesheet" href="style.css?v=20260818_tenant_isolation_hardening">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -1244,6 +1244,7 @@
                 <div class="reg-tabs" id="att-ribbon-menu">
                     <button class="reg-tab active-sub-tab" onclick="switchAttTab('att-dashboard-panel', this)"><i class="fas fa-chart-line"></i> ڈیش بورڈ</button>
                     <button class="reg-tab" onclick="switchAttTab('att-smart-register', this)"><i class="fas fa-list-alt"></i> اسمارٹ رجسٹر</button>
+                    <button class="reg-tab" onclick="switchAttTab('att-collective-register', this)"><i class="fas fa-users"></i> اجتماعی حاضری</button>
                     <button class="reg-tab" onclick="switchAttTab('att-event-register', this)"><i class="fas fa-star"></i> تقریبات</button>
                     <button class="reg-tab" onclick="switchAttTab('att-timetable', this)"><i class="fas fa-table"></i> نظام الاوقات</button>
                     <button class="reg-tab" onclick="switchAttTab('att-holiday-management', this)"><i class="fas fa-umbrella-beach"></i> تعطیلات</button>
@@ -1251,6 +1252,19 @@
                     <button class="reg-tab" onclick="switchAttTab('att-master-settings', this)"><i class="fas fa-cogs"></i> سیٹنگز</button>
                     <span class="reg-tabs-sep"></span>
                     <button class="reg-tab reg-tab-rejected" onclick="switchAttTab('att-audit-recycle', this)"><i class="fas fa-history"></i> آڈٹ و ریسائیکل</button>
+                </div>
+            </div>
+
+            <div id="att-save-queue-panel" class="att-save-queue-panel att-col-hidden" role="region" aria-label="حاضری Firebase سنک قطار">
+                <div class="att-save-queue-head">
+                    <strong><i class="fas fa-cloud-upload-alt"></i> حاضری Firebase سنک قطار</strong>
+                    <button type="button" id="att-save-queue-close" class="btn btn-outline btn-sm" title="بند کریں">×</button>
+                </div>
+                <p id="att-save-queue-summary" class="att-save-queue-summary">لوڈ…</p>
+                <ul id="att-save-queue-list" class="att-save-queue-list"></ul>
+                <div class="att-save-queue-actions">
+                    <button type="button" id="att-save-queue-retry" class="btn btn-primary btn-sm"><i class="fas fa-redo"></i> دوبارہ بھیجیں</button>
+                    <button type="button" id="att-save-queue-force" class="btn btn-warning btn-sm" title="cloud تنازعہ پر مقامی کاپی دوبارہ بھیجیں"><i class="fas fa-upload"></i> مقامی کاپی دوبارہ بھیجیں</button>
                 </div>
             </div>
 
@@ -1291,19 +1305,32 @@
                             <label>درجہ (فلٹر)</label>
                             <select id="att-dash-class-filter" class="input-control"><option value="">تمام درجات</option></select>
                         </div>
+                        <div class="input-group">
+                            <label>تجزیہ کی بنیاد</label>
+                            <select id="att-dash-period-filter" class="input-control">
+                                <option value="">یومیہ (پورا دن)</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label>یومیہ دکھانے کا طریقہ</label>
+                            <select id="att-dash-calc-mode" class="input-control">
+                                <option value="daily">یومیہ خلاصہ</option>
+                                <option value="period_order">گھنٹوں کی ترتیب سے</option>
+                            </select>
+                        </div>
                         <div class="input-group att-dash-refresh-wrap">
                             <label>&nbsp;</label>
                             <button class="btn btn-primary" id="btn-att-dash-refresh"><i class="fas fa-sync-alt"></i> تجزیات تازہ کریں</button>
                         </div>
                     </div>
-                    <p class="att-dash-meta">ذریعہ: <strong id="att-dash-source">—</strong> · تاریخ: <strong id="att-dash-date-label">—</strong></p>
+                    <p class="att-dash-meta">ذریعہ: <strong id="att-dash-source">—</strong> · تاریخ: <strong id="att-dash-date-label">—</strong> · بنیاد: <strong id="att-dash-period-label">یومیہ</strong> · طریقہ: <strong id="att-dash-calc-mode-label">یومیہ خلاصہ</strong></p>
 
                     <div class="att-dash-grid">
 
                         <div class="dash-panel att-dash-card-today">
                             <div class="dash-panel-head">
                                 <div class="dash-panel-ic att-ic-today"><i class="fas fa-user-check"></i></div>
-                                <div><div class="t">آج کی حاضری</div><div class="s">حاضر · غائب · رخصت</div></div>
+                                <div><div class="t">آج کی حاضری</div><div class="s">یومیہ یا منتخب گھنٹہ — حاضر · غائب · رخصت</div></div>
                                 <button class="dash-open-btn" onclick="switchAttTab('att-smart-register', document.querySelector('#att-ribbon-menu [onclick*=att-smart-register]'))">رجسٹر کھولیں <i class="fas fa-arrow-left"></i></button>
                             </div>
                             <div class="dash-subcards">
@@ -1326,7 +1353,7 @@
                         <div class="dash-panel att-dash-card-week">
                             <div class="dash-panel-head">
                                 <div class="dash-panel-ic att-ic-week"><i class="fas fa-chart-line"></i></div>
-                                <div><div class="t">گزشتہ 7 دن</div><div class="s">یومیہ حاضری شرح (%)</div></div>
+                                <div><div class="t">گزشتہ 7 دن</div><div class="s">یومیہ یا منتخب گھنٹے کی شرح (%)</div></div>
                             </div>
                             <div class="dash-chart-box att-dash-chart-compact" id="att-dash-chart-trend"></div>
                             <p id="att-dash-trend-summary" class="att-dash-footnote">—</p>
@@ -1355,6 +1382,38 @@
                             </div>
                             <div class="dash-chart-box att-dash-chart-class" id="att-dash-chart-class"></div>
                         </div>
+                    </div>
+
+                    <div id="att-dash-period-sequence-panel" class="dash-panel att-dash-period-sequence-panel att-col-hidden">
+                        <div class="dash-panel-head">
+                            <div class="dash-panel-ic att-ic-week"><i class="fas fa-clock"></i></div>
+                            <div>
+                                <div class="t">گھنٹوں کی ترتیب سے یومیہ حاضری</div>
+                                <div class="s">نظام الاوقات کی ترتیب — ہر گھنٹے کی الگ شماریات</div>
+                            </div>
+                        </div>
+                        <div class="dash-chart-box att-dash-chart-class" id="att-dash-chart-period-seq"></div>
+                        <div class="att-dash-table-wrap">
+                            <table class="data-table att-dash-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>گھنٹہ</th>
+                                        <th>وقت</th>
+                                        <th>ہدف</th>
+                                        <th>حاضر</th>
+                                        <th>غائب</th>
+                                        <th>رخصت</th>
+                                        <th>نشان زد نہیں</th>
+                                        <th>شرح</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="att-dash-period-seq-tbody">
+                                    <tr><td colspan="9" style="text-align:center;">—</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <p id="att-dash-period-seq-note" class="att-dash-footnote">—</p>
                     </div>
 
                     <div class="dash-bottom-grid att-dash-bottom">
@@ -1418,6 +1477,14 @@
                             <label>گھنٹہ / پیریڈ (اختیاری)</label>
                             <select id="att-reg-period" class="input-control"><option value="">تمام دن / اجمالی</option></select>
                         </div>
+                        <div class="input-group smart-register-search-group">
+                            <label for="att-reg-quick-search">درجہ یا استاد تلاش کریں</label>
+                            <div class="smart-register-search-wrap">
+                                <input type="search" id="att-reg-quick-search" class="input-control" autocomplete="off"
+                                    placeholder="درجہ، استاد، کتاب یا پیریڈ لکھیں...">
+                                <div id="att-reg-quick-search-results" class="smart-register-search-results" hidden></div>
+                            </div>
+                        </div>
                         <div class="input-group" style="justify-content: flex-end;">
                             <button class="btn btn-primary" id="btn-load-smart-register"><i class="fas fa-sync-alt"></i> رجسٹر لوڈ کریں</button>
                         </div>
@@ -1461,11 +1528,77 @@
                             <input type="checkbox" id="att-lock-check" style="width: 20px; height: 20px; cursor: pointer;">
                             <label for="att-lock-check" style="color: var(--danger); margin: 0; font-weight: bold; cursor: pointer;">اس دن/مہینے کی حاضری کو مکمل لاک کریں (ترمیم منع ہے)</label>
                         </div>
-                        <div class="input-group" style="flex-direction: row; justify-content: flex-end; gap: 10px;">
+                        <div class="input-group" style="flex-direction: row; justify-content: flex-end; gap: 10px; align-items: center;">
+                            <span id="att-save-status-chip" class="att-save-status-chip att-save-status--idle att-save-status-hidden" aria-live="polite" aria-hidden="true"></span>
                             <button class="btn btn-warning" id="btn-att-edit-mode" style="display: none;"><i class="fas fa-edit"></i> لاک کھولیں / ترمیم کریں</button>
                             <button class="btn btn-success" id="btn-att-save-lock" style="font-size: 16px; padding: 10px 30px;"><i class="fas fa-save"></i> محفوظ کریں</button>
                         </div>
                     </div>
+                </div>
+            </div>
+        
+            <div id="att-collective-register" class="att-panel">
+                <div class="premium-card att-col-card">
+                    <h3 style="margin-top:0; color:var(--primary);"><i class="fas fa-users"></i> اجتماعی حاضری</h3>
+                    <p class="att-col-lead">ایک دن کا گھنٹہ وار رجسٹر — پورا مدرسہ، ایک درجہ، یا متعدد درجات۔ حاضری مرکزی محفوظ جگہ پر اسمارٹ رجسٹر کے ساتھ مشترک ہے۔</p>
+
+                    <div class="att-col-scope-bar">
+                        <span class="att-col-scope-label">انتخاب:</span>
+                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="all" checked> پورا مدرسہ</label>
+                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="one"> ایک درجہ</label>
+                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="multi"> ایک سے زیادہ درجات</label>
+                    </div>
+
+                    <div id="att-col-one-wrap" class="att-col-hidden">
+                        <div class="input-group" style="max-width:280px;">
+                            <label>درجہ</label>
+                            <select id="att-col-class-one" class="input-control"><option value="">درجہ منتخب کریں...</option></select>
+                        </div>
+                    </div>
+                    <div id="att-col-multi-wrap" class="att-col-hidden">
+                        <div class="att-col-class-list" id="att-col-class-list"></div>
+                    </div>
+
+                    <div class="form-grid att-col-filters">
+                        <div class="input-group">
+                            <label>تاریخ</label>
+                            <input type="date" id="att-col-date" class="input-control">
+                        </div>
+                        <div class="input-group att-col-auto-wrap">
+                            <label class="checkbox-label" style="margin-top:22px;">
+                                <input type="checkbox" id="att-col-auto-date" checked> تاریخ خودکار رکھیں (آج)
+                            </label>
+                        </div>
+                        <div class="input-group">
+                            <label>دکھانے کا طریقہ</label>
+                            <select id="att-col-label-mode" class="input-control">
+                                <option value="book">کتاب یا مضمون کا نام</option>
+                                <option value="teacher">استاد کا نام</option>
+                            </select>
+                        </div>
+                        <div class="input-group" style="justify-content:flex-end;">
+                            <button type="button" class="btn btn-primary" id="btn-att-col-open"><i class="fas fa-folder-open"></i> رجسٹر کھولیں</button>
+                        </div>
+                    </div>
+
+                    <div id="att-col-register-strip" class="att-col-register-strip att-col-hidden">
+                        <div class="att-col-strip-head">
+                            <h4 class="att-col-strip-title">پورے منتخب رجسٹر کی حاضری</h4>
+                            <div class="att-col-strip-meta">
+                                <span id="att-col-summary" class="evt-count-badge">طلبہ: 0</span>
+                                <span id="att-col-save-status-chip" class="att-save-status-chip att-save-status--idle att-save-status-hidden" aria-live="polite" aria-hidden="true"></span>
+                                <span id="att-col-saving" class="att-col-saving att-col-hidden" aria-live="polite">اس آلے پر محفوظ…</span>
+                                <button type="button" class="btn btn-outline btn-sm" id="btn-att-col-undo" disabled title="گزشتہ اجتماعی کارروائی واپس"><i class="fas fa-undo"></i> آخری تبدیلی واپس</button>
+                            </div>
+                        </div>
+                        <div class="att-cell-controls att-col-register-controls" id="att-col-bulk-all"></div>
+                    </div>
+                    <p id="att-col-notice" class="att-col-notice att-col-hidden"></p>
+
+                    <div id="att-col-table-wrap" class="att-col-table-wrap">
+                        <p class="att-col-placeholder">اوپر انتخاب کر کے «رجسٹر کھولیں» دبائیں — صرف منتخب تاریخ کا ایک روزہ رجسٹر کھلے گا۔</p>
+                    </div>
+                    <div id="att-col-pager" class="att-col-pager att-col-hidden"></div>
                 </div>
             </div>
         
@@ -1682,7 +1815,7 @@
                                 <tr>
                                     <th>نام و ID</th>
                                     <th>درجہ/عہدہ</th>
-                                    <th>کل ایام</th>
+                                    <th>کل گھنٹے</th>
                                     <th>حاضر</th>
                                     <th>غیر حاضر</th>
                                     <th>رخصت</th>
@@ -2123,6 +2256,16 @@
                         </div>
                     </div>
         
+            <div class="modal-overlay" id="exam-import-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="exam-import-title" onclick="if(event.target===this)window.examCloseResultImport()">
+                <div class="modal-content exam-import-modal-content">
+                    <div class="modal-header">
+                        <h3 id="exam-import-title"><i class="fas fa-file-import"></i> Excel / CSV نتائج درآمد</h3>
+                        <button type="button" class="modal-close" onclick="window.examCloseResultImport()" aria-label="بند کریں">×</button>
+                    </div>
+                    <div id="exam-import-body"></div>
+                </div>
+            </div>
+
                     <div id="exam-win-settings" class="premium-card exam-tab-content">
                         <div class="dashboard-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
                             <div style="background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #cbd5e1;">
@@ -2471,6 +2614,9 @@
                             <div class="input-group" style="justify-content: flex-end;">
                                 <button class="btn btn-primary" id="btn-generate-mark-sheet"><i class="fas fa-table"></i> ایکسل گرڈ تیار کریں</button>
                             </div>
+                            <div class="input-group" style="justify-content: flex-end;">
+                                <button class="btn btn-success" id="btn-import-exam-results" onclick="window.examOpenResultImport()"><i class="fas fa-file-excel"></i> Excel / CSV نتائج درآمد</button>
+                            </div>
                             <div style="grid-column:1/-1;font-size:12px;color:#64748b;">
                                 نیا نتیجہ = نئی تاریخ منتخب کر کے محفوظ کریں۔ پرانا نتیجہ تبدیل کیے بغیر لامحدود تواریخ محفوظ ہو سکتی ہیں۔
                             </div>
@@ -2529,7 +2675,7 @@
                         <div class="btn-action-group" style="margin-top: 20px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn btn-success" id="btn-save-all-marks" style="display:none; flex:1; min-width:240px; font-size:16px; padding:15px;"><i class="fas fa-save"></i> تمام نمبرات ڈیٹا بیس میں محفوظ کریں</button>
                             <button class="btn btn-outline" id="btn-export-marks" style="display:none;" onclick="window.examExportMarksGrid()"><i class="fas fa-file-excel"></i> گرڈ برآمد (CSV)</button>
-                            <button class="btn btn-outline" id="btn-import-marks" style="display:none;" onclick="document.getElementById('mrk-import-file').click()"><i class="fas fa-file-import"></i> CSV درآمد</button>
+                            <button class="btn btn-outline" id="btn-import-marks" style="display:none;" onclick="document.getElementById('mrk-import-file').click()"><i class="fas fa-file-import"></i> فوری CSV درآمد</button>
                             <input type="file" id="mrk-import-file" accept=".csv,text/csv" style="display:none;" onchange="window.examImportMarksCSV(this)">
                         </div>
                     </div>
@@ -6469,8 +6615,8 @@
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
     <script defer src="auth.js?v=20260809_tenant_loop"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260811_att_cur_lib"></script>
-    <script defer src="ems-lazy-loader.js?v=20260811_att_cur_lib"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260818_tenant_isolation_hardening"></script>
+    <script defer src="ems-lazy-loader.js?v=20260818_tenant_isolation_hardening"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>

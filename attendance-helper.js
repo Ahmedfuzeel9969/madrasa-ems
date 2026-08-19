@@ -64,6 +64,23 @@
     var _attKeysByMonthCache = Object.create(null);
     var _attAllKeysIndexed = false;
 
+    function activeTenantId() {
+        if (typeof global.emsGetTenantId === 'function') {
+            var tid = global.emsGetTenantId();
+            if (tid) return String(tid);
+        }
+        return global.CURRENT_MADRASA_TENANT_ID ? String(global.CURRENT_MADRASA_TENANT_ID) : null;
+    }
+
+    function attKeyBelongsToActiveTenant(key) {
+        var tenantId = activeTenantId();
+        if (!tenantId || !key) return false;
+        if (typeof global.emsIsActiveTenantAttendanceKey === 'function') {
+            return global.emsIsActiveTenantAttendanceKey(key, tenantId);
+        }
+        return key.indexOf('att_rec_' + tenantId + '_') === 0;
+    }
+
     function attParseSheet(raw) {
         if (raw == null) return null;
         try {
@@ -75,7 +92,7 @@
 
     function attMonthFromAttKey(key) {
         if (!key || key.indexOf('att_rec_') !== 0) return null;
-        var m = key.match(/att_rec_(?:[^_]+_)?(\d{4}-\d{2})_/);
+        var m = key.match(/_(\d{4}-\d{2})_/);
         if (m) return m[1];
         return key.length >= 15 ? key.substring(8, 15) : null;
     }
@@ -83,6 +100,7 @@
     function attBuildKeyIndexFromKeys(keys) {
         (keys || []).forEach(function (key) {
             if (!key || key.indexOf('att_rec_') !== 0) return;
+            if (!attKeyBelongsToActiveTenant(key)) return;
             var month = attMonthFromAttKey(key);
             if (!month) return;
             if (!_attKeysByMonthCache[month]) _attKeysByMonthCache[month] = [];
@@ -97,7 +115,7 @@
             if (typeof localStorage === 'undefined') return;
             for (var i = 0; i < localStorage.length; i++) {
                 var k = localStorage.key(i);
-                if (k && k.indexOf('att_rec_') === 0) attBuildKeyIndexFromKeys([k]);
+                if (k && attKeyBelongsToActiveTenant(k)) attBuildKeyIndexFromKeys([k]);
             }
         } catch (e) { /* ignore */ }
     }
@@ -108,7 +126,9 @@
         }
         var chain;
         if (typeof global.emsIdbKvKeysByPrefix === 'function') {
-            chain = global.emsIdbKvKeysByPrefix('att_rec_').then(function (idbKeys) {
+            var tenantId = activeTenantId();
+            if (!tenantId) return Promise.resolve(_attKeysByMonthCache);
+            chain = global.emsIdbKvKeysByPrefix('att_rec_' + tenantId + '_').then(function (idbKeys) {
                 attBuildKeyIndexFromKeys(idbKeys || []);
                 if (!idbKeys || !idbKeys.length) attHarvestLegacyLocalStorageKeysOnce();
                 return _attKeysByMonthCache;
@@ -116,7 +136,7 @@
         } else if (typeof global.emsIdbKvKeys === 'function') {
             chain = global.emsIdbKvKeys().then(function (all) {
                 attBuildKeyIndexFromKeys((all || []).filter(function (k) {
-                    return k && k.indexOf('att_rec_') === 0;
+                    return attKeyBelongsToActiveTenant(k);
                 }));
                 if (!all || !all.length) attHarvestLegacyLocalStorageKeysOnce();
                 return _attKeysByMonthCache;
@@ -466,7 +486,9 @@
                         return {
                             month: monthStr,
                             records: sheet.records,
-                            remarks: sheet.remarks || {}
+                            remarks: sheet.remarks || {},
+                            periodRecords: sheet.periodRecords || {},
+                            timestamp: attSheetTimestamp(sheet)
                         };
                     });
                 })).then(function (rows) {

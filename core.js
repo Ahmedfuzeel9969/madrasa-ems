@@ -61,25 +61,63 @@ try {
 // 2. ڈیٹا سنک — local SSOT only; cloud push via emsCloudEmitMutation (mutation: true)
 const originalSetItem = localStorage.setItem.bind(localStorage);
 const originalGetItem = localStorage.getItem.bind(localStorage);
+const originalRemoveItem = localStorage.removeItem.bind(localStorage);
 window._emsOriginalSetItem = originalSetItem;
 window._emsOriginalGetItem = originalGetItem;
+window._emsOriginalRemoveItem = originalRemoveItem;
+
+function emsResolveBrowserStorageKey(key) {
+    if (typeof key !== 'string') return key;
+    if (typeof window.emsResolveCacheKey === 'function') {
+        return window.emsResolveCacheKey(key);
+    }
+    return key;
+}
+
 window.emsSafeLocalGet = function (key) {
-    return originalGetItem(key);
+    var resolved = emsResolveBrowserStorageKey(key);
+    return resolved ? originalGetItem(resolved) : null;
 };
 window._emsSuppressSync = false;
 
+/**
+ * Tenant data is scoped at the browser-storage boundary too. This protects
+ * older modules that still call localStorage directly, not just cache-layer
+ * callers. Unknown tenant identity returns no data instead of a legacy value.
+ */
+localStorage.getItem = function (key) {
+    var resolved = emsResolveBrowserStorageKey(key);
+    return resolved ? originalGetItem(resolved) : null;
+};
+
 /** Phase C: no ambient cloud push on localStorage writes — local persist only. */
 localStorage.setItem = function (key, value) {
-    originalSetItem(key, value);
+    var resolved = emsResolveBrowserStorageKey(key);
+    if (!resolved) return;
+    originalSetItem(resolved, value);
+    if (typeof window.emsCacheInvalidate === 'function') {
+        window.emsCacheInvalidate(resolved);
+    }
     if (window._emsSuppressSync) return;
-    if (!key || (key.indexOf('ems_') !== 0 && key.indexOf('att_rec_') !== 0)) return;
+    if (!resolved || (resolved.indexOf('ems_') !== 0 && resolved.indexOf('att_rec_') !== 0)) return;
     if (window.EmsCachePolicy && typeof window.EmsCachePolicy.touchKey === 'function') {
-        try { window.EmsCachePolicy.touchKey(key); } catch (eTouch) { /* ignore */ }
+        try { window.EmsCachePolicy.touchKey(resolved); } catch (eTouch) { /* ignore */ }
+    }
+};
+
+localStorage.removeItem = function (key) {
+    var resolved = emsResolveBrowserStorageKey(key);
+    if (resolved) {
+        originalRemoveItem(resolved);
+        if (typeof window.emsCacheInvalidate === 'function') window.emsCacheInvalidate(resolved);
     }
 };
 
 if (window.EmsCachePolicy && typeof window.EmsCachePolicy.wrapGetItem === 'function') {
-    localStorage.getItem = window.EmsCachePolicy.wrapGetItem(originalGetItem);
+    localStorage.getItem = window.EmsCachePolicy.wrapGetItem(function (key) {
+        var resolved = emsResolveBrowserStorageKey(key);
+        return resolved ? originalGetItem(resolved) : null;
+    });
 }
 
 // restoreFromCloud → backup-service.js (EmsBackupService) میں تعریف
@@ -274,29 +312,38 @@ window.emsSaveModuleData = function (key, value, options) {
     options = options || {};
     var str = (typeof value === 'string') ? value : JSON.stringify(value);
     var oldStr = null;
-    var isBlob = typeof window.emsIsLargeBlobKey === 'function' && window.emsIsLargeBlobKey(key);
+    var physicalKey = typeof window.emsResolveCacheKey === 'function'
+        ? window.emsResolveCacheKey(key)
+        : key;
+    if (!physicalKey) {
+        return Promise.resolve({ status: 'blocked_no_tenant', key: key });
+    }
+    var isBlob = typeof window.emsIsLargeBlobKey === 'function' && window.emsIsLargeBlobKey(physicalKey);
 
     if (isBlob && typeof window.emsDurableReadRaw === 'function' && typeof window.emsDurableWriteRaw === 'function') {
-        oldStr = window.emsDurableReadRaw(key);
-        window.emsDurableWriteRaw(key, str);
+        oldStr = window.emsDurableReadRaw(physicalKey);
+        window.emsDurableWriteRaw(physicalKey, str);
     } else {
-        oldStr = originalGetItem(key);
+        oldStr = originalGetItem(physicalKey);
         window._emsSuppressSync = true;
-        originalSetItem.call(localStorage, key, str);
+        originalSetItem.call(localStorage, physicalKey, str);
         window._emsSuppressSync = false;
     }
     if (typeof window.emsCacheInvalidate === 'function') {
+        window.emsCacheInvalidate(physicalKey);
         window.emsCacheInvalidate(key);
     }
     if (window.EmsCachePolicy && typeof window.EmsCachePolicy.markDirty === 'function') {
-        window.EmsCachePolicy.markDirty(key);
+        window.EmsCachePolicy.markDirty(physicalKey);
     }
 
     if (options.mutation === true || options.autoDelta === true) {
-        return window.emsPushModuleCloudDelta(key, oldStr, str, options);
+        return window.emsPushModuleCloudDelta(key, oldStr, str, Object.assign({}, options, {
+            tenantId: window.EMS_ACTIVE_TENANT_ID || window.CURRENT_MADRASA_TENANT_ID
+        }));
     }
 
-    return Promise.resolve({ status: 'local_only', key: key });
+    return Promise.resolve({ status: 'local_only', key: physicalKey });
 };
 
 /** Explicit item-level save: local array + single-item cloud push. */

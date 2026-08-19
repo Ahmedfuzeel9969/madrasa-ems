@@ -17,18 +17,11 @@
     var lastResult = null;
 
     function resolveTenantId() {
-        if (typeof global.emsResolveFirestoreTenantId === 'function') {
-            return global.emsResolveFirestoreTenantId();
-        }
-        if (typeof global.emsRequireTenantId === 'function') {
-            var required = global.emsRequireTenantId();
-            if (required) return required;
-        }
+        // Cloud pull is a live data write. Only the verified session tenant is
+        // allowed — never auth.uid fallback (staff UID ≠ madrasa) and never a
+        // stale persisted tenant from a previous Gmail.
         if (global.CURRENT_MADRASA_TENANT_ID) return global.CURRENT_MADRASA_TENANT_ID;
-        try {
-            var u = firebase.auth().currentUser;
-            if (u && u.uid) return u.uid;
-        } catch (e) { /* ignore */ }
+        if (global.EMS_ACTIVE_TENANT_ID) return global.EMS_ACTIVE_TENANT_ID;
         return null;
     }
 
@@ -550,9 +543,10 @@
                 throw new Error('Firestore دستیاب نہیں — آن لائن موڈ آن کریں');
             }
             var pullTenant = (target && target.tenantId) || opts.tenantId || resolveTenantId();
-            if (!pullTenant) {
+            var verified = resolveTenantId();
+            if (!pullTenant || !verified || String(pullTenant) !== String(verified)) {
                 toastOutcome({ ok: false, reason: 'no_tenant' }, null, null, pullScope);
-                return { ok: false, reason: 'no_tenant' };
+                return { ok: false, reason: 'tenant_mismatch' };
             }
             var pullPath = isDeptPullScope(pullScope)
                 ? firestorePathFor(pullTenant, pullScope)

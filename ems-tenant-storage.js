@@ -10,6 +10,47 @@
         'ems_full_users', 'ems_rejected_users', 'ems_reg_repo_archive'
     ];
 
+    /*
+     * Every business-data blob must be scoped, not merely hidden at render time.
+     * The old global names are deliberately treated as legacy imports only.
+     */
+    var TENANT_DATA_KEYS = [
+        'ems_full_users', 'ems_rejected_users', 'ems_reg_repo_archive',
+        'ems_full_exams', 'ems_exam_types', 'ems_library_books', 'ems_exam_templates',
+        'ems_exam_locks', 'ems_master_sheet_meta',
+        'ems_curriculum_plans', 'ems_curriculum_daily', 'ems_curriculum_settings', 'ems_curriculum_audit',
+        'ems_tar_prayer', 'ems_tar_ethics', 'ems_tar_discipline', 'ems_tar_reform',
+        'ems_tar_awards', 'ems_tar_warnings', 'ems_tar_settings', 'ems_tar_audit',
+        'ems_fee_categories', 'ems_class_fee_structure', 'ems_student_fee_setup',
+        'ems_fee_collections', 'ems_fee_bills',
+        'ems_full_ledger', 'ems_ledger_master_categories', 'ems_ledger_blackouts',
+        'ems_payroll_history', 'ems_full_salary', 'ems_ledger_funds', 'ems_ledger_budgets',
+        'ems_ledger_audit_log', 'ems_ledger_settings', 'ems_ledger_liabilities',
+        'ems_ledger_employee_dues', 'ems_payroll_special', 'ems_ledger_archive',
+        'ems_announcements', 'ems_full_announcements', 'ems_ann_categories', 'ems_ann_programs',
+        'ems_ann_poster_templates', 'ems_ann_audit_log', 'ems_ann_settings', 'ems_ann_groups',
+        'ems_full_complaints', 'ems_ledger_db', 'ems_exams_db', 'ems_classes',
+        'ems_att_periods', 'ems_att_symbols', 'ems_att_settings', 'ems_att_holidays',
+        'ems_att_custom_teachers', 'ems_att_audit', 'ems_att_recycle', 'ems_att_keys_index'
+    ];
+    var TENANT_KEY_EXCLUSIONS = {
+        ems_att_canonical_unified: true,
+        ems_persisted_tenant_id_v1: true,
+        ems_sys_theme: true,
+        ems_sys_dict: true,
+        ems_sys_config_v2: true,
+        ems_sys_settings_audit: true,
+        ems_sys_config_backup: true,
+        ems_cache_meta: true,
+        ems_offline_session_v1: true,
+        ems_online_mode: true,
+        ems_debug: true
+    };
+    var TENANT_DATA_SET = Object.create(null);
+    TENANT_DATA_KEYS.forEach(function (key) { TENANT_DATA_SET[key] = true; });
+    var TENANT_KEY_PREFIX = 'ems_t_';
+    var LEGACY_MIGRATION_PREFIX = 'ems_tenant_blob_migration_v2__';
+
     global.EMS_ACTIVE_TENANT_ID = null;
     global.EMS_LITE_LOGIN = false;
     global.EMS_CACHE_RECORD_CAP = 0;
@@ -40,12 +81,58 @@
         return tenantId ? 'ems_dashboard_' + tenantId : null;
     };
 
+    global.emsVerifiedTenantId = function () {
+        return global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID || null;
+    };
+
+    global.emsIsTenantDataKey = function (baseKey) {
+        if (!baseKey || typeof baseKey !== 'string') return false;
+        if (baseKey.indexOf(TENANT_KEY_PREFIX) === 0 || baseKey.indexOf('att_rec_') === 0) return false;
+        if (TENANT_KEY_EXCLUSIONS[baseKey]) return false;
+        if (TENANT_DATA_SET[baseKey]) return true;
+        return /^(ems_fee_|ems_ledger_|ems_payroll_|ems_exam_|ems_ann_|ems_curriculum_|ems_tar_|ems_att_|ems_class)/.test(baseKey);
+    };
+
+    /** Physical IndexedDB/localStorage key belongs to this madrasa partition. */
+    global.emsPhysicalKeyBelongsToTenant = function (key, tenantId) {
+        tenantId = tenantId || global.emsVerifiedTenantId();
+        if (!key || typeof key !== 'string') return false;
+        if (TENANT_KEY_EXCLUSIONS[key] || key.indexOf('ems_sys_') === 0 || key.indexOf('ems_persisted_') === 0) {
+            return true;
+        }
+        if (!tenantId) return false;
+        if (key.indexOf(TENANT_KEY_PREFIX + tenantId + '__') === 0) return true;
+        if (key.indexOf('att_rec_' + tenantId + '_') === 0) return true;
+        if (key.indexOf('ems_repo_' + tenantId) === 0) return true;
+        if (key.indexOf('ems_cache_' + tenantId) === 0) return true;
+        if (key.indexOf('ems_dashboard_' + tenantId) === 0) return true;
+        if (key.indexOf(TENANT_KEY_PREFIX) === 0 || key.indexOf('att_rec_') === 0) return false;
+        if (key.indexOf('ems_repo_') === 0 || key.indexOf('ems_cache_') === 0) return false;
+        if (global.emsIsTenantDataKey(key)) return false;
+        return true;
+    };
+
+    global.emsTenantDataKey = function (baseKey, tenantId) {
+        tenantId = tenantId || global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID;
+        if (!baseKey || !tenantId || !global.emsIsTenantDataKey(baseKey)) return null;
+        return TENANT_KEY_PREFIX + String(tenantId) + '__' + baseKey;
+    };
+
+    global.emsTenantStorageReady = function () {
+        return !!(global.EMS_ACTIVE_TENANT_ID && global.EMS_TENANT_STORAGE_READY === true);
+    };
+
     global.emsScopedKey = function (baseKey, tenantId) {
         tenantId = tenantId || global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID;
-        if (!tenantId || !baseKey) return baseKey;
-        if (baseKey === 'ems_full_users') return 'ems_repo_' + tenantId;
-        if (baseKey === 'ems_rejected_users') return 'ems_repo_' + tenantId + '_rejected';
-        if (baseKey === 'ems_reg_repo_archive') return 'ems_cache_' + tenantId + '_archive';
+        if (!baseKey) return null;
+        if (tenantId && baseKey === 'ems_full_users') return 'ems_repo_' + tenantId;
+        if (tenantId && baseKey === 'ems_rejected_users') return 'ems_repo_' + tenantId + '_rejected';
+        if (tenantId && baseKey === 'ems_reg_repo_archive') return 'ems_cache_' + tenantId + '_archive';
+        if (global.emsIsTenantDataKey(baseKey)) {
+            // Fail closed: no identity means no cache read/write and no old data flash.
+            return global.emsTenantDataKey(baseKey, tenantId);
+        }
+        if (!tenantId) return baseKey;
         if (REGISTRATION_BASE_KEYS.indexOf(baseKey) >= 0) {
             return 'ems_cache_' + tenantId + '__' + baseKey;
         }
@@ -62,7 +149,74 @@
         return key.indexOf('ems_repo_') === 0 || key.indexOf('ems_cache_') === 0;
     };
 
-    /** Remove only unscoped legacy keys — never delete tenant-scoped ems_repo_* IDB cache. */
+    function rawLocalGet(key) {
+        try {
+            return global._emsOriginalGetItem
+                ? global._emsOriginalGetItem.call(localStorage, key)
+                : localStorage.getItem(key);
+        } catch (e) { return null; }
+    }
+
+    function legacyMigrationSafeFor(tenantId, persistedBeforeActivation) {
+        if (!tenantId) return false;
+        // Without a matching pre-existing tenant marker there is no reliable
+        // owner for a legacy global blob. Keep it quarantined rather than
+        // assigning it to whichever Gmail happened to log in first.
+        if (!persistedBeforeActivation) return String(tenantId).indexOf('local_') === 0;
+        return String(persistedBeforeActivation) === String(tenantId);
+    }
+
+    /**
+     * Copy (never delete) legacy global data to a tenant key once its ownership is
+     * known. A mismatched prior tenant is quarantined in place for manual recovery,
+     * never guessed or exposed to the newly signed-in madrasa.
+     */
+    global.emsMigrateLegacyTenantData = function (tenantId, persistedBeforeActivation) {
+        if (!tenantId || !legacyMigrationSafeFor(tenantId, persistedBeforeActivation)) {
+            return Promise.resolve({ migrated: 0, deferred: true });
+        }
+        var flag = LEGACY_MIGRATION_PREFIX + tenantId;
+        if (rawLocalGet(flag) === '1') return Promise.resolve({ migrated: 0, done: true });
+        var migrated = 0;
+        var chain = Promise.resolve();
+        TENANT_DATA_KEYS.forEach(function (baseKey) {
+            chain = chain.then(function () {
+                var target = global.emsScopedKey(baseKey, tenantId);
+                if (!target) return null;
+                var localValue = rawLocalGet(baseKey);
+                var idbRead = typeof global.emsIdbKvGet === 'function'
+                    ? global.emsIdbKvGet(baseKey)
+                    : Promise.resolve(null);
+                return idbRead.then(function (idbValue) {
+                    var source = localValue != null ? localValue : idbValue;
+                    if (source == null) return null;
+                    var targetExists = rawLocalGet(target);
+                    var targetRead = targetExists != null || typeof global.emsIdbKvGet !== 'function'
+                        ? Promise.resolve(targetExists)
+                        : global.emsIdbKvGet(target);
+                    return targetRead.then(function (existing) {
+                        if (existing != null) return null;
+                        var str = typeof source === 'string' ? source : JSON.stringify(source);
+                        migrated++;
+                        if (typeof global.emsDurableWriteRaw === 'function') {
+                            global.emsDurableWriteRaw(target, str);
+                        } else if (typeof global.emsIdbKvSet === 'function') {
+                            global.emsIdbKvSet(target, str);
+                        } else {
+                            localStorage.setItem(target, str);
+                        }
+                        return null;
+                    });
+                });
+            });
+        });
+        return chain.then(function () {
+            try { localStorage.setItem(flag, '1'); } catch (e) { /* ignore */ }
+            return { migrated: migrated, done: true };
+        });
+    };
+
+    /** Remove only unscoped legacy registration keys — tenant data is retained. */
     function removeLegacyGlobalKeys() {
         var legacy = REGISTRATION_BASE_KEYS.concat(['registrations_cache', 'ems_users']);
         legacy.forEach(function (base) {
@@ -87,6 +241,12 @@
     global.emsActivateTenantStorage = function (tenantId) {
         if (!tenantId) return;
         var prev = global.EMS_ACTIVE_TENANT_ID;
+        var persistedBeforeActivation = global.emsReadPersistedBootTenantId
+            ? global.emsReadPersistedBootTenantId()
+            : null;
+        global.EMS_TENANT_LEGACY_MIGRATION_ALLOWED =
+            legacyMigrationSafeFor(tenantId, persistedBeforeActivation);
+        global.EMS_TENANT_STORAGE_READY = false;
         if (prev && prev !== tenantId) {
             if (typeof global.emsStopRegistrationLiveSync === 'function') {
                 global.emsStopRegistrationLiveSync();
@@ -100,6 +260,19 @@
             if (typeof global.emsResetRegistrationBoot === 'function') {
                 global.emsResetRegistrationBoot();
             }
+            if (typeof global.emsAttOfflineKeyIndexInvalidate === 'function') {
+                global.emsAttOfflineKeyIndexInvalidate();
+            }
+            if (typeof global.emsInvalidateAttDashboardCache === 'function') {
+                global.emsInvalidateAttDashboardCache();
+            }
+            if (typeof global.emsDurableReleaseInactiveTenants === 'function') {
+                global.emsDurableReleaseInactiveTenants(tenantId);
+            }
+            if (typeof global.emsRepo === 'object' && global.emsRepo) {
+                if (typeof global.emsRepo.useTenant === 'function') global.emsRepo.useTenant(tenantId);
+                if (typeof global.emsRepo.invalidateCache === 'function') global.emsRepo.invalidateCache();
+            }
             removeLegacyGlobalKeys();
         } else if (!prev) {
             removeLegacyGlobalKeys();
@@ -107,6 +280,9 @@
         global.EMS_ACTIVE_TENANT_ID = tenantId;
         if (!global.CURRENT_MADRASA_TENANT_ID) {
             global.CURRENT_MADRASA_TENANT_ID = tenantId;
+        }
+        if (typeof global.emsRepo === 'object' && global.emsRepo && typeof global.emsRepo.useTenant === 'function') {
+            global.emsRepo.useTenant(tenantId);
         }
         try {
             localStorage.setItem('ems_persisted_tenant_id_v1', tenantId);
@@ -117,6 +293,13 @@
         if (typeof global.emsRefreshCacheRecordCap === 'function') {
             global.emsRefreshCacheRecordCap();
         }
+        global.emsMigrateLegacyTenantData(tenantId, persistedBeforeActivation).finally(function () {
+            global.EMS_TENANT_STORAGE_READY = true;
+            if (typeof global.emsCacheInvalidate === 'function') global.emsCacheInvalidate();
+            if (typeof global.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+                global.dispatchEvent(new CustomEvent('ems:tenant-storage-ready', { detail: { tenantId: tenantId } }));
+            }
+        });
     };
 
     global.emsLiteLoginPrepare = function (tenantId) {

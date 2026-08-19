@@ -164,6 +164,23 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
   font-size: 12px;
   color: #64748b;
 }
+
+/* امتحانات — Excel/CSV نتیجہ درآمد */
+.exam-import-modal-content { width: min(980px, 94vw); max-height: 88vh; overflow: auto; }
+.exam-import-modal-content .modal-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
+.exam-import-modal-content .modal-header h3 { margin:0; color:var(--primary); }
+.exam-import-modal-content .modal-close { border:0; background:transparent; font-size:28px; line-height:1; cursor:pointer; color:#64748b; }
+.exam-import-hint { color:#64748b; font-size:13px; line-height:1.7; }
+.exam-import-errors { margin-top:14px; padding:10px 14px; border:1px solid #fecaca; border-radius:8px; color:#991b1b; background:#fef2f2; font-size:13px; }
+.exam-import-errors ul { margin:7px 0 0; padding-right:20px; }
+
+#att-dashboard-panel .att-dash-period-sequence-panel {
+  margin-bottom: 16px;
+}
+#att-dashboard-panel .att-dash-period-sequence-panel .att-dash-table-wrap {
+  margin-top: 10px;
+  overflow-x: auto;
+}
 #att-dashboard-panel .att-dash-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1159,6 +1176,19 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 
 /* ================= ٹیبلز اور موڈل ================= */
 .smart-toggle { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; background: var(--bg-light); padding: 15px; border-radius: 6px; border: 1px solid #bdc3c7; }
+.smart-register-search-group { position: relative; }
+.smart-register-search-wrap { position: relative; }
+.smart-register-search-results {
+  position: absolute; top: calc(100% + 4px); right: 0; left: 0; z-index: 40;
+  max-height: 260px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1;
+  border-radius: 7px; box-shadow: 0 10px 24px rgba(15, 23, 42, .16); padding: 5px;
+}
+.smart-register-search-result {
+  display: block; width: 100%; border: 0; border-radius: 5px; background: transparent;
+  padding: 9px 10px; text-align: right; cursor: pointer; color: #1e293b; font: inherit;
+}
+.smart-register-search-result:hover, .smart-register-search-result:focus { background: #eff6ff; outline: none; }
+.smart-register-search-empty { margin: 0; padding: 10px; color: #64748b; font-size: 13px; }
 
 .data-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
 .data-table th, .data-table td { border: 1px solid #bdc3c7; padding: 12px; text-align: right; font-size: 14px; }
@@ -1310,6 +1340,135 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 #smart-register-table td.att-cell-p { background: #ecfdf5 !important; }
 #smart-register-table td.att-cell-a { background: #fef2f2 !important; }
 #smart-register-table td.att-cell-l { background: #fffbeb !important; }
+#smart-register-table td.att-cell-partial { background: #eff6ff !important; }
+#smart-register-table td.att-cell-incomplete { background: #f8fafc !important; color: #64748b; }
+
+.att-col-hidden { display: none !important; }
+.att-col-lead { color: #64748b; font-size: 13px; margin: 0 0 14px; }
+.att-col-scope-bar {
+  display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  background: #eef2f6; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px;
+  position: relative; z-index: 32;
+}
+.att-col-scope-label { font-weight: 700; color: var(--primary); }
+.att-col-class-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px 12px; background: #f8fafc; border: 1px solid #cbd5e1;
+  border-radius: 6px; padding: 12px; margin-bottom: 12px; max-height: 220px; overflow-y: auto;
+}
+.att-col-class-list label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 13px; cursor: pointer; }
+.att-col-filters { background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #cbd5e1; margin-bottom: 14px; position: relative; z-index: 32; }
+#att-col-one-wrap, #att-col-multi-wrap { position: relative; z-index: 32; }
+
+/* پورے رجسٹر کی چوڑی پٹی — جدول کے بالکل اوپر، اسکرول پر قائم */
+.att-col-register-strip {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+.att-col-strip-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px 12px; margin-bottom: 10px;
+}
+.att-col-strip-title {
+  margin: 0; font-size: 15px; font-weight: 800; color: var(--primary);
+  font-family: 'Noto Nastaliq Urdu', serif;
+}
+.att-col-strip-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* حاضری محفوظ — local-first status chip (Phase 1) */
+.att-save-status-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; font-weight: 700; line-height: 1.35;
+  padding: 5px 12px; border-radius: 999px; border: 1px solid transparent;
+  white-space: nowrap; max-width: 100%;
+}
+.att-save-status-hidden { display: none !important; }
+.att-save-status--idle { display: none; }
+.att-save-status--ok {
+  color: #047857; background: #ecfdf5; border-color: #6ee7b7;
+}
+.att-save-status--pending {
+  color: #b45309; background: #fff7ed; border-color: #fdba74;
+}
+.att-save-status--warn {
+  color: #b91c1c; background: #fef2f2; border-color: #fca5a5;
+}
+.att-save-status--failed {
+  color: #fff; background: #dc2626; border-color: #b91c1c;
+}
+.att-save-status-clickable { cursor: pointer; }
+.att-save-status-clickable:hover { filter: brightness(0.97); box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12); }
+
+.att-save-queue-panel {
+  margin: 0 0 12px; padding: 12px 14px; border-radius: 8px;
+  border: 1px solid #cbd5e1; background: #f8fafc;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+.att-save-queue-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px;
+}
+.att-save-queue-summary { margin: 0 0 8px; font-size: 13px; color: #475569; }
+.att-save-queue-list {
+  margin: 0 0 10px; padding: 0 0 0 18px; max-height: 140px; overflow-y: auto; font-size: 12px;
+}
+.att-save-queue-list li { margin-bottom: 6px; word-break: break-all; }
+.att-save-queue-type { color: #64748b; font-size: 11px; }
+.att-save-queue-fail { color: #b91c1c; font-weight: 700; font-size: 11px; }
+.att-save-queue-err { color: #94a3b8; font-size: 11px; margin-top: 2px; }
+.att-save-queue-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.att-col-saving {
+  font-size: 12px; font-weight: 700; color: #b45309;
+  background: #fff7ed; border: 1px solid #fdba74; border-radius: 999px;
+  padding: 4px 10px;
+}
+
+/* اجتماعی حاضری — اسمارٹ رجسٹر جیسے att-cell-btn / att-cell-controls */
+.att-col-register-controls { padding: 4px 0; }
+#att-col-table .att-cell-controls { margin-top: 4px; }
+#att-col-table td.att-cell-empty { background: #fff !important; }
+#att-col-table td.att-cell-p { background: #ecfdf5 !important; }
+#att-col-table td.att-cell-a { background: #fef2f2 !important; }
+#att-col-table td.att-cell-l { background: #fffbeb !important; }
+
+.att-col-stu-actions { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1; }
+.att-col-stu-actions-title {
+  font-size: 11px; font-weight: 800; color: #475569; margin-bottom: 6px; line-height: 1.35;
+}
+
+.att-col-notice { color: var(--danger); font-weight: 700; margin: 0 0 8px; }
+.att-col-table-wrap {
+  overflow-x: auto; overflow-y: auto; max-height: 58vh;
+  border: 2px solid #2c3e50; border-radius: 8px; background: #fff;
+}
+.att-col-placeholder { text-align: center; color: #94a3b8; padding: 28px 12px; margin: 0; }
+#att-col-table { min-width: 900px; text-align: center; font-size: 13px; margin: 0; border: none; }
+#att-col-table th.att-col-name, #att-col-table td.att-col-name {
+  position: sticky; right: 0; z-index: 6; background: #f8fafc;
+  min-width: 220px; text-align: right; border-left: 1px solid #cbd5e1;
+  box-shadow: -3px 0 8px rgba(15, 23, 42, 0.08);
+}
+#att-col-table thead th.att-col-name { background: var(--secondary); color: #fff; z-index: 8; top: 0; }
+#att-col-table thead th { position: sticky; top: 0; z-index: 4; background: var(--secondary); color: #fff; min-width: 150px; }
+#att-col-table td.att-col-period { min-width: 150px; vertical-align: top; padding: 8px 6px; }
+.att-col-period-label { font-weight: 700; font-size: 12px; color: #0f172a; margin-bottom: 4px; line-height: 1.4; }
+.att-col-period-meta { font-size: 10px; color: #64748b; margin-bottom: 6px; }
+.att-col-stu-name { font-weight: 700; }
+.att-col-stu-sub { color: var(--accent); font-size: 11px; margin-top: 2px; }
+.att-col-pager { text-align: center; padding: 8px; font-size: 13px; }
+.att-col-empty-period { color: #94a3b8; font-size: 12px; padding: 12px 4px; }
+
+@media print {
+  .att-col-register-strip, .att-col-scope-bar, .att-col-filters, .att-col-pager, #btn-att-col-open { display: none !important; }
+  #att-col-table .att-cell-controls, .att-col-register-controls { display: none !important; }
+}
 
 .att-tab-hidden { display: none !important; }
 

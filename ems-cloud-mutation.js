@@ -50,9 +50,12 @@
         var op = rawOp === 'atomic' ? 'atomic' : normalizeOp(env.op);
         var queueType = queueTypeForEnvelope(env);
         var tenantId = env.tenantId
-            || (typeof global.emsGetTenantId === 'function' ? global.emsGetTenantId() : null)
             || global.CURRENT_MADRASA_TENANT_ID
+            || global.EMS_ACTIVE_TENANT_ID
             || null;
+        if (!tenantId) {
+            return { ok: false, reason: 'no_tenant' };
+        }
 
         var meta = Object.assign({}, env.meta || {});
         if (domain === 'registration') {
