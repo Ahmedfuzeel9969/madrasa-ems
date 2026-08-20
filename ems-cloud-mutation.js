@@ -153,26 +153,32 @@
 
         return global.emsOfflineQueueUpsert(row.type, row.docId, queueRow).then(function () {
             if (!canPushNow({ mutation: true })) {
-                return {
-                    ok: true,
-                    queued: true,
-                    synced: false,
-                    offline: true,
-                    docId: row.docId,
-                    type: row.type,
-                    domain: row.domain,
-                    op: row.op
-                };
+                var offlineRes = typeof global.emsNormalizeCloudResult === 'function'
+                    ? global.emsNormalizeCloudResult({
+                        synced: false, offline: true, queued: true, docId: row.docId
+                    }, { localSaved: true, docId: row.docId, type: row.type })
+                    : {
+                        ok: true, queued: true, synced: false, offline: true,
+                        localSaved: true, cloudState: 'offline',
+                        docId: row.docId, type: row.type, domain: row.domain, op: row.op
+                    };
+                offlineRes.domain = row.domain;
+                offlineRes.op = row.op;
+                return offlineRes;
             }
             if (typeof global.emsOfflineFlushMutationRow !== 'function') {
-                return {
-                    ok: true,
-                    queued: true,
-                    synced: false,
-                    offline: true,
-                    docId: row.docId,
-                    type: row.type
-                };
+                var queuedRes = typeof global.emsNormalizeCloudResult === 'function'
+                    ? global.emsNormalizeCloudResult({
+                        synced: false, queued: true, offline: true, docId: row.docId
+                    }, { localSaved: true, docId: row.docId, type: row.type })
+                    : {
+                        ok: true, queued: true, synced: false, offline: true,
+                        localSaved: true, cloudState: 'queued',
+                        docId: row.docId, type: row.type
+                    };
+                queuedRes.domain = row.domain;
+                queuedRes.op = row.op;
+                return queuedRes;
             }
             return global.emsOfflineFlushMutationRow(queueRow).then(function (flushRes) {
                 var synced = !!(flushRes && flushRes.synced);
@@ -186,18 +192,25 @@
                         type: row.type
                     });
                 }
-                return {
-                    ok: true,
-                    queued: !synced,
-                    synced: synced,
-                    offline: !synced,
-                    docId: row.docId,
-                    type: row.type,
-                    domain: row.domain,
-                    op: row.op,
-                    error: flushRes && flushRes.error,
-                    code: flushRes && flushRes.code
-                };
+                var out = typeof global.emsNormalizeCloudResult === 'function'
+                    ? global.emsNormalizeCloudResult(flushRes, {
+                        localSaved: true, docId: row.docId, type: row.type
+                    })
+                    : {
+                        ok: true,
+                        queued: !synced,
+                        synced: synced,
+                        offline: !synced,
+                        error: flushRes && flushRes.error,
+                        code: flushRes && flushRes.code,
+                        docId: row.docId,
+                        type: row.type
+                    };
+                out.domain = row.domain;
+                out.op = row.op;
+                out.docId = row.docId;
+                out.type = row.type;
+                return out;
             });
         }).catch(function (err) {
             console.warn('[EMS] cloud mutation failed', row.docId, err);

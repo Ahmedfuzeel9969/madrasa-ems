@@ -18,14 +18,16 @@ describe('Smart register cloud save status', function () {
         var src = fs.readFileSync(path.join(ROOT, 'att-save-status.js'), 'utf8');
         expect(src).toContain("local_only: 'مقامی طور پر محفوظ'");
         expect(src).toContain("local_and_cloud: 'کلاؤڈ پر محفوظ'");
-        expect(src).toContain("cloud_failed: 'کلاؤڈ پر ناکام'");
+        expect(src).toContain("cloud_failed: 'مقامی طور پر محفوظ — کلاؤڈ پر ناکام'");
         expect(src).not.toContain("'اس آلے پر محفوظ ✓ · سنک انتظار…'");
     });
 
     it('does not classify a Firebase flush error as offline success', function () {
         var src = fs.readFileSync(path.join(ROOT, 'ems-offline-write.js'), 'utf8');
-        expect(src).toContain('var failed = !!(res && (res.error || res.code));');
-        expect(src).toContain('ok: !failed');
-        expect(src).toContain('offline: !synced && !failed');
+        expect(src).toContain('function normalizeCloudResult');
+        expect(src).toContain('global.emsNormalizeCloudResult');
+        expect(src).toContain('cloudState');
+        var mut = fs.readFileSync(path.join(ROOT, 'ems-cloud-mutation.js'), 'utf8');
+        expect(mut).toContain('emsNormalizeCloudResult');
     });
 });

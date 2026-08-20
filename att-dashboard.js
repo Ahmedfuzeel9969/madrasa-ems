@@ -10,6 +10,9 @@
     var _attSheetCache = { month: null, tenantId: null, sheets: null };
     var _attTabBootHandlers = Object.create(null);
     var _attRibbonDelegated = false;
+    /** Classes below this coverage % are excluded from best/worst ranking (named, not buried). */
+    var ATT_DASH_MIN_RANKING_COVERAGE_PCT = 50;
+    global.ATT_DASH_MIN_RANKING_COVERAGE_PCT = ATT_DASH_MIN_RANKING_COVERAGE_PCT;
 
     function attPanelIsVisible(panelId) {
         var el = document.getElementById(panelId);
@@ -200,55 +203,112 @@
         var p = stats.present || 0;
         var a = stats.absent || 0;
         var l = stats.leave || 0;
+        var partial = stats.partial || 0;
+        var incomplete = stats.incomplete || 0;
+        var other = stats.other || 0;
         var unmarked = stats.notMarked || 0;
         var total = stats.total || 0;
         var marked = p + a + l;
+        var observed = marked + partial + incomplete + other;
         if (marked > total) {
             var msg = '[EMS] att-dash invariant: marked(' + marked + ') > target(' + total + ') — ' + (ctx || '');
             console.error(msg, { present: p, absent: a, leave: l, unmarked: unmarked, total: total });
             stats.diagnosticError = msg;
             stats.invariantBroken = true;
         }
-        if (p + a + l + unmarked !== total) {
-            // Repair unmarked rather than silently publishing bad math
-            stats.notMarked = Math.max(0, total - marked);
-            if (p + a + l + stats.notMarked !== total) {
+        if (other > 0) {
+            stats.diagnosticError = (stats.diagnosticError || '') +
+                ' | OTHER=' + other + ' unclassified daily states';
+            console.warn('[EMS] att-dash OTHER states', { other: other, ctx: ctx || '' });
+        }
+        var sum = p + a + l + partial + incomplete + unmarked + other;
+        if (sum !== total) {
+            stats.notMarked = Math.max(0, total - observed);
+            unmarked = stats.notMarked;
+            sum = p + a + l + partial + incomplete + unmarked + other;
+            if (sum !== total) {
                 stats.invariantBroken = true;
                 stats.diagnosticError = (stats.diagnosticError || '') +
-                    ' | P+A+L+unmarked !== target';
+                    ' | P+A+L+PARTIAL+INCOMPLETE+UNMARKED+OTHER !== target';
                 console.error('[EMS] att-dash invariant failed', stats);
             }
         }
         return stats;
     }
 
+    function attDashAttachCoverage(stats) {
+        if (typeof global.attMetricsAttachCoverage === 'function') {
+            return global.attMetricsAttachCoverage(stats);
+        }
+        stats = stats || {};
+        var target = Number(stats.total) || 0;
+        var observed = stats.observedTotal != null
+            ? Number(stats.observedTotal) || 0
+            : (Number(stats.present) || 0) + (Number(stats.absent) || 0) + (Number(stats.leave) || 0)
+                + (Number(stats.partial) || 0) + (Number(stats.incomplete) || 0) + (Number(stats.other) || 0);
+        stats.target = target;
+        stats.observed = observed;
+        stats.unmarked = stats.notMarked != null ? stats.notMarked : Math.max(0, target - observed);
+        stats.coverageRate = target > 0 ? Math.round((observed / target) * 100) : 0;
+        return stats;
+    }
+
+    function attDashRemoteAggregateIsImpossible(present, absent, leave, target) {
+        var pal = (Number(present) || 0) + (Number(absent) || 0) + (Number(leave) || 0);
+        return pal > (Number(target) || 0);
+    }
+
     function attDashStatsFromFinalMarks(finalDataset, rosterUsers) {
-        var total = (rosterUsers || []).length;
+        var rosterLen = Object.keys((finalDataset && finalDataset.roster) || {}).length;
+        var total = rosterLen || (rosterUsers || []).length;
         var present = 0;
         var absent = 0;
         var leave = 0;
-        var marks = (finalDataset && finalDataset.marks) || {};
-        Object.keys(marks).forEach(function (uid) {
-            var st = marks[uid] && marks[uid].status;
-            if (st === 'P') present++;
-            else if (st === 'A') absent++;
-            else if (st === 'L') leave++;
-        });
+        var partial = 0;
+        var incomplete = 0;
+        var other = 0;
+        if (typeof global.attMetricsStatsFromFinalMarks === 'function') {
+            var shared = global.attMetricsStatsFromFinalMarks(finalDataset, rosterUsers);
+            if (shared.total) total = shared.total;
+            present = shared.present || 0;
+            absent = shared.absent || 0;
+            leave = shared.leave || 0;
+            partial = shared.partial || 0;
+            incomplete = shared.incomplete || 0;
+            other = shared.other || 0;
+        } else {
+            var marks = (finalDataset && finalDataset.marks) || {};
+            Object.keys(marks).forEach(function (uid) {
+                var st = marks[uid] && marks[uid].status;
+                if (st === 'P') present++;
+                else if (st === 'A') absent++;
+                else if (st === 'L') leave++;
+                else if (st === 'PARTIAL') partial++;
+                else if (st === 'INCOMPLETE') incomplete++;
+                else if (st) other++;
+            });
+        }
         var rateInfo = attDashComputeRate(present, absent, leave);
-        var notMarked = Math.max(0, total - rateInfo.markedTotal);
+        var observedTotal = present + absent + leave + partial + incomplete + other;
+        var notMarked = Math.max(0, total - observedTotal);
         var stats = {
             present: present,
             absent: absent,
             leave: leave,
+            partial: partial,
+            incomplete: incomplete,
+            other: other,
             notMarked: notMarked,
             total: total,
             markedTotal: rateInfo.markedTotal,
+            observedTotal: observedTotal,
             rate: rateInfo.rate,
-            notTaken: rateInfo.notTaken,
+            notTaken: observedTotal <= 0,
             lockedSheets: 0,
             source: 'local',
-            rows: marks
+            rows: (finalDataset && finalDataset.marks) || {}
         };
+        attDashAttachCoverage(stats);
         return attDashAssertStatsInvariant(stats, 'stats-from-final');
     }
 
@@ -263,7 +323,10 @@
                     total: 0,
                     present: 0,
                     absent: 0,
-                    leave: 0
+                    leave: 0,
+                    partial: 0,
+                    incomplete: 0,
+                    other: 0
                 };
             }
             byClass[cls].total++;
@@ -277,18 +340,27 @@
             if (m.status === 'P') byClass[cls].present++;
             else if (m.status === 'A') byClass[cls].absent++;
             else if (m.status === 'L') byClass[cls].leave++;
+            else if (m.status === 'PARTIAL') byClass[cls].partial++;
+            else if (m.status === 'INCOMPLETE') byClass[cls].incomplete++;
+            else if (m.status) byClass[cls].other++;
         });
         return Object.keys(byClass).sort().map(function (k) {
             var row = byClass[k];
             var rateInfo = attDashComputeRate(row.present, row.absent, row.leave);
-            row.notMarked = Math.max(0, row.total - rateInfo.markedTotal);
+            var observed = rateInfo.markedTotal + (row.partial || 0) + (row.incomplete || 0) + (row.other || 0);
+            row.notMarked = Math.max(0, row.total - observed);
             row.markedTotal = rateInfo.markedTotal;
+            row.observedTotal = observed;
             row.rate = rateInfo.rate;
-            row.notTaken = rateInfo.notTaken;
+            row.notTaken = observed <= 0;
+            attDashAttachCoverage(row);
             attDashAssertStatsInvariant({
                 present: row.present,
                 absent: row.absent,
                 leave: row.leave,
+                partial: row.partial || 0,
+                incomplete: row.incomplete || 0,
+                other: row.other || 0,
                 notMarked: row.notMarked,
                 total: row.total,
                 markedTotal: row.markedTotal
@@ -298,11 +370,30 @@
     }
 
     function attDashApplyStatsKpis(stats) {
-        var notTaken = stats.rate == null || stats.notTaken;
-        setTxt('att-dash-present', notTaken ? '—' : stats.present);
-        setTxt('att-dash-absent', notTaken ? '—' : stats.absent);
-        setTxt('att-dash-leave', notTaken ? '—' : stats.leave);
-        setTxt('att-dash-rate', notTaken ? 'حاضری نہیں لی گئی' : (stats.rate + '%'));
+        var noneObserved = !!(stats.notTaken || (stats.observedTotal || 0) <= 0);
+        setTxt('att-dash-present', noneObserved ? '—' : stats.present);
+        setTxt('att-dash-absent', noneObserved ? '—' : stats.absent);
+        setTxt('att-dash-leave', noneObserved ? '—' : stats.leave);
+        setTxt('att-dash-partial', noneObserved ? '—' : (stats.partial || 0));
+        setTxt('att-dash-incomplete', noneObserved ? '—' : (stats.incomplete || 0));
+        setTxt('att-dash-unmarked', stats.notMarked != null ? stats.notMarked : 0);
+        setTxt('att-dash-coverage', (stats.coverageRate != null ? stats.coverageRate : 0) + '%');
+        var rateTxt = noneObserved
+            ? 'حاضری نہیں لی گئی'
+            : (stats.rate == null ? '—' : (stats.rate + '%'));
+        setTxt('att-dash-rate', rateTxt);
+        var tp = stats.teacherPeriod;
+        if (tp && !noneObserved) {
+            var completion = tp.periodCompletionRate != null ? tp.periodCompletionRate : tp.completionRate;
+            setTxt('att-dash-period-completion', completion == null ? '—' : (completion + '%'));
+            setTxt('att-dash-period-att-rate', tp.periodAttendanceRate == null ? '—' : (tp.periodAttendanceRate + '%'));
+        } else {
+            setTxt('att-dash-period-completion', '—');
+            setTxt('att-dash-period-att-rate', '—');
+        }
+        if (stats.other > 0) {
+            setTxt('att-dash-other', stats.other);
+        }
         if (stats.invariantBroken && typeof global.showToast === 'function') {
             global.showToast('حاضری شماریات میں تضاد — تفصیل کنسول میں', 'error');
         }
@@ -311,7 +402,8 @@
     function attDashMergeRemoteStats(localStats, remote, users) {
         if (!remote) return localStats;
         // Local normalized sheets are SSOT — never stack cloud summary on top (double-count).
-        if (localStats && localStats.markedTotal > 0) {
+        if (localStats && (localStats.markedTotal > 0 || (localStats.observedTotal || 0) > 0
+            || (localStats.partial || 0) > 0 || (localStats.incomplete || 0) > 0)) {
             return localStats;
         }
         var rosterIds = Object.create(null);
@@ -348,18 +440,35 @@
 
         var rateInfo = attDashComputeRate(present, absent, leave);
         var total = (users && users.length) || localStats.total || 0;
-        return attDashAssertStatsInvariant({
+        if (attDashRemoteAggregateIsImpossible(present, absent, leave, total)) {
+            console.error('[EMS] att-dash remote merge rejected: P+A+L > target', {
+                present: present, absent: absent, leave: leave, target: total
+            });
+            localStats.remoteRejected = true;
+            localStats.remoteRejectReason = 'P+A+L > target';
+            return attDashAttachCoverage(localStats);
+        }
+        var merged = attDashAssertStatsInvariant({
             present: present,
             absent: absent,
             leave: leave,
             notMarked: Math.max(0, total - rateInfo.markedTotal),
             total: total,
             markedTotal: rateInfo.markedTotal,
+            observedTotal: rateInfo.markedTotal,
             rate: rateInfo.rate,
             notTaken: rateInfo.notTaken,
             lockedSheets: localStats.lockedSheets || 0,
             source: remote.source || 'cloud'
         }, 'remote-merge');
+        attDashAttachCoverage(merged);
+        if (merged.invariantBroken) {
+            console.error('[EMS] att-dash remote merge rejected: invariant broken', merged);
+            localStats.remoteRejected = true;
+            localStats.remoteRejectReason = merged.diagnosticError || 'invariant broken';
+            return attDashAttachCoverage(localStats);
+        }
+        return merged;
     }
 
     function attDashSheetTimestamp(data) {
@@ -376,13 +485,25 @@
     }
 
     function attDashRecordMarkCount(data) {
-        var rec = (data && data.records) || {};
         var n = 0;
+        var rec = (data && data.records) || {};
         Object.keys(rec).forEach(function (uid) {
             var dayRec = rec[uid];
             if (!dayRec) return;
             Object.keys(dayRec).forEach(function (d) {
                 if (dayRec[d]) n++;
+            });
+        });
+        var pr = (data && data.periodRecords) || {};
+        Object.keys(pr).forEach(function (uid) {
+            var days = pr[uid];
+            if (!days || typeof days !== 'object') return;
+            Object.keys(days).forEach(function (d) {
+                var map = days[d];
+                if (!map || typeof map !== 'object') return;
+                Object.keys(map).forEach(function (pid) {
+                    if (map[pid]) n++;
+                });
             });
         });
         return n;
@@ -394,14 +515,14 @@
         }
         if (typeof global.emsCacheGet === 'function') {
             var cached = global.emsCacheGet(key, null);
-            if (cached && cached.records) return Promise.resolve(cached);
+            if (cached && (cached.records || cached.periodRecords)) return Promise.resolve(cached);
         }
         if (typeof global.emsIdbKvGet === 'function') {
             return global.emsIdbKvGet(key).then(function (raw) {
                 if (raw == null) return null;
                 try {
                     var data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                    return data && data.records ? data : null;
+                    return data && (data.records || data.periodRecords) ? data : null;
                 } catch (eParse) {
                     return null;
                 }
@@ -594,7 +715,19 @@
         return t;
     }
 
-    function attDashFilterUsers(users, roleFilter, classFilter) {
+    function attDashFilterUsers(users, roleFilter, classFilter, dateStr) {
+        classFilter = String(classFilter || '').trim();
+        dateStr = dateStr || todayStr();
+        if (classFilter && typeof global.attMetricsResolveTargetRoster === 'function') {
+            var resolved = global.attMetricsResolveTargetRoster(
+                dateStr,
+                users,
+                '',
+                [],
+                { classFilter: classFilter, roleFilter: roleFilter }
+            );
+            return resolved;
+        }
         return users.filter(function (u) {
             if (!u) return false;
             var t = attDashNormType(u);
@@ -602,6 +735,8 @@
             if (roleFilter === 'teacher' && t !== 'teacher') return false;
             if (roleFilter === 'staff' && t !== 'staff') return false;
             if (classFilter) {
+                if (t === 'staff') return roleFilter === 'staff';
+                if (t === 'teacher') return false;
                 var cls = String(u.class || u.className || u.grade || '').trim();
                 if (cls !== classFilter) return false;
             }
@@ -641,11 +776,12 @@
 
     /** Count P/A/L for a given day from sheets + user roster (deduped final-state). */
     function attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets, periodFilter) {
-        users = users || attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter);
+        users = users || attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter, dateStr);
         var total = users.length;
         if (attDashIsFutureDate(dateStr)) {
             return {
-                present: 0, absent: 0, leave: 0, notMarked: total, total: total,
+                present: 0, absent: 0, leave: 0, partial: 0, incomplete: 0, other: 0,
+                notMarked: total, total: total, observedTotal: 0,
                 markedTotal: 0, rate: null, notTaken: true, lockedSheets: 0, source: 'local'
             };
         }
@@ -661,6 +797,14 @@
         stats.lockedSheets = lockedSheets;
         stats.source = 'local';
         stats.periodFilter = String(periodFilter || '').trim();
+        if (!periodFilter && users.length && users.every(function (u) { return attDashNormType(u) === 'teacher'; })
+            && typeof global.attMetricsTeacherRosterDayAggregate === 'function') {
+            stats.teacherPeriod = global.attMetricsTeacherRosterDayAggregate(dateStr, sheets, users);
+            if (stats.teacherPeriod && stats.teacherPeriod.periodAttendanceRate != null) {
+                stats.periodAttendanceRate = stats.teacherPeriod.periodAttendanceRate;
+                stats.periodCompletionRate = stats.teacherPeriod.completionRate;
+            }
+        }
         return stats;
     }
 
@@ -679,7 +823,7 @@
     }
 
     function attDashMonthlySummary(monthStr, roleFilter, classFilter, sheets) {
-        var users = attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter);
+        var users = attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter, monthStr + '-01');
         sheets = sheets || [];
         if (typeof global.attMetricsMonthlySummary === 'function') {
             return global.attMetricsMonthlySummary(monthStr, sheets, users);
@@ -715,6 +859,38 @@
         sel.innerHTML = '<option value="">تمام درجات</option>' +
             classes.map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
         if (curr) sel.value = curr;
+    }
+
+    function attDashListPeriodsAll() {
+        try {
+            if (typeof global.attReadAllTimetablePeriodsRaw === 'function') {
+                var all = global.attReadAllTimetablePeriodsRaw();
+                if (Array.isArray(all)) return all;
+            }
+            var raw = localStorage.getItem('ems_att_periods');
+            var list = raw ? JSON.parse(raw) : [];
+            return Array.isArray(list) ? list : [];
+        } catch (eAll) {
+            return attDashListPeriods();
+        }
+    }
+
+    function attDashPeriodIdsWithSavedObservations(dateStr, sheets) {
+        var dayNum = dayNumOf(dateStr);
+        var ids = Object.create(null);
+        (sheets || attDashCollectSheets(monthOf(dateStr)) || []).forEach(function (sh) {
+            if (!sh || !sh.data) return;
+            var pr = sh.data.periodRecords || {};
+            Object.keys(pr).forEach(function (uid) {
+                var dayMap = pr[uid] && (pr[uid][dayNum] || pr[uid][String(dayNum)]);
+                if (!dayMap || typeof dayMap !== 'object') return;
+                Object.keys(dayMap).forEach(function (pid) {
+                    if (dayMap[pid] != null && dayMap[pid] !== '') ids[pid] = true;
+                });
+            });
+            if (sh.period && sh.period !== 'all') ids[String(sh.period)] = true;
+        });
+        return ids;
     }
 
     function attDashListPeriods() {
@@ -756,10 +932,29 @@
         if (!sel) return;
         f = f || {};
         var classFilter = String(f.classFilter || '').trim();
-        var periods = attDashListPeriods().filter(function (p) {
+        var dateStr = f.dateStr || todayStr();
+        var weekday = 0;
+        try {
+            weekday = typeof global.attMetricsWeekdayOf === 'function'
+                ? global.attMetricsWeekdayOf(dateStr)
+                : new Date(String(dateStr) + 'T12:00:00+05:00').getUTCDay();
+        } catch (eWd) {
+            weekday = new Date().getDay();
+        }
+        var savedIds = attDashPeriodIdsWithSavedObservations(dateStr);
+        var periods = attDashListPeriodsAll().filter(function (p) {
             if (!p || !p.id) return false;
-            if (classFilter && String(p.className || '').trim() !== classFilter) return false;
-            return true;
+            if (classFilter && String(p.className || '').trim() !== classFilter) {
+                if (!savedIds[String(p.id)]) return false;
+            }
+            var archived = !!(p.archived || p.deleted);
+            var onDay = true;
+            var days = Array.isArray(p.days) ? p.days : null;
+            if (days && days.length) {
+                onDay = days.some(function (d) { return Number(d) === Number(weekday); });
+            }
+            if (archived) return !!savedIds[String(p.id)];
+            return onDay || !!savedIds[String(p.id)];
         }).slice().sort(function (a, b) {
             var c = String(a.className || '').localeCompare(String(b.className || ''), 'ur');
             if (c) return c;
@@ -821,21 +1016,24 @@
     function attDashOrderedPeriodsForDay(dateStr, classFilter) {
         var weekday = 0;
         try {
-            weekday = new Date(String(dateStr) + 'T12:00:00').getDay();
+            weekday = typeof global.attMetricsWeekdayOf === 'function'
+                ? global.attMetricsWeekdayOf(dateStr)
+                : new Date(String(dateStr) + 'T12:00:00+05:00').getUTCDay();
         } catch (eWd) {
             weekday = new Date().getDay();
         }
         var classF = String(classFilter || '').trim();
         var seen = Object.create(null);
         var out = [];
-        attDashListPeriods().forEach(function (p) {
+        var savedIdsOrd = attDashPeriodIdsWithSavedObservations(dateStr);
+        attDashListPeriodsAll().forEach(function (p) {
             if (!p || !p.id) return;
-            if (classF && String(p.className || '').trim() !== classF) return;
+            var archived = !!(p.archived || p.deleted);
+            if (classF && String(p.className || '').trim() !== classF && !savedIdsOrd[String(p.id)]) return;
             var days = Array.isArray(p.days) ? p.days : null;
-            if (days && days.length) {
-                var onDay = days.some(function (d) { return Number(d) === weekday; });
-                if (!onDay) return;
-            }
+            var onDay = !days || !days.length || days.some(function (d) { return Number(d) === Number(weekday); });
+            if (archived && !savedIdsOrd[String(p.id)]) return;
+            if (!archived && !onDay && !savedIdsOrd[String(p.id)]) return;
             var id = String(p.id);
             if (seen[id]) return;
             seen[id] = true;
@@ -976,14 +1174,23 @@
             var monthStr = monthOf(dateStr);
             var monthSheets = attDashSheetsForMonth(sheetsByMonth, monthStr);
             var dayStats = attDashStatsForDay(dateStr, roleFilter, classFilter, users, monthSheets, periodFilter);
-            points.push({
+            var point = {
                 date: dateStr,
                 label: attDashWeekdayLabel(dateStr),
                 present: dayStats.present,
                 rate: dayStats.rate,
                 total: dayStats.total,
+                markedTotal: dayStats.markedTotal || 0,
                 notTaken: dayStats.notTaken
-            });
+            };
+            if (roleFilter === 'teacher' && dayStats.teacherPeriod) {
+                point.present = dayStats.teacherPeriod.presentPeriods;
+                point.markedTotal = dayStats.teacherPeriod.palPeriods;
+                point.rate = dayStats.teacherPeriod.periodAttendanceRate;
+                point.completionRate = dayStats.teacherPeriod.completionRate;
+                point.notTaken = dayStats.teacherPeriod.notTaken;
+            }
+            points.push(point);
         }
         return points;
     }
@@ -1021,14 +1228,25 @@
             el.textContent = 'منتخب فلٹر (' + role + cls + periodPart + ') کے لیے کوئی حاضری ہدف نہیں — رجسٹر یا فلٹر چیک کریں۔';
             return;
         }
-        if (stats.rate == null || stats.notTaken || attDashIsFutureDate(f.dateStr)) {
+        if (stats.notTaken || attDashIsFutureDate(f.dateStr)) {
             el.textContent = f.dateStr + ' — ' + role + cls + periodPart + ': حاضری نہیں لی گئی (نشان زد نہیں: ' +
                 fmt(stats.notMarked != null ? stats.notMarked : stats.total) + ' / ' + fmt(stats.total) + ')';
             return;
         }
+        var extra = '';
+        if (stats.partial) extra += '، ' + fmt(stats.partial) + ' جزوی';
+        if (stats.incomplete) extra += '، ' + fmt(stats.incomplete) + ' نامکمل';
+        if (stats.other) extra += '، ' + fmt(stats.other) + ' دیگر (تشخیص)';
+        var ratePart = stats.rate == null ? 'شرح —' : ('شرح ' + stats.rate + '%');
+        if (stats.teacherPeriod && stats.teacherPeriod.periodAttendanceRate != null) {
+            ratePart += ' · گھنٹہ حاضری ' + stats.teacherPeriod.periodAttendanceRate + '%';
+            if (stats.teacherPeriod.completionRate != null) {
+                ratePart += ' · گھنٹہ تکمیل ' + stats.teacherPeriod.completionRate + '%';
+            }
+        }
         el.textContent = f.dateStr + ' — ' + role + cls + periodPart + ': ' +
             fmt(stats.present) + ' حاضر، ' + fmt(stats.absent) + ' غائب، ' +
-            fmt(stats.leave) + ' رخصت، ' + fmt(stats.notMarked) + ' نشان زد نہیں (کل ' + fmt(stats.total) + ') — شرح ' + stats.rate + '%';
+            fmt(stats.leave) + ' رخصت' + extra + '، ' + fmt(stats.notMarked) + ' نشان زد نہیں (کل ' + fmt(stats.total) + ') — ' + ratePart;
     }
 
     function attDashRenderTrendSummary(trend) {
@@ -1038,23 +1256,38 @@
             el.textContent = 'گزشتہ 7 دن کا ڈیٹا دستیاب نہیں — پہلے رجسٹر میں حاضری درج کریں۔';
             return;
         }
-        var rates = trend.map(function (d) { return d.rate; }).filter(function (r) { return r != null; });
+        var presentSum = 0;
+        var markedSum = 0;
+        var rates = [];
+        (trend || []).forEach(function (d) {
+            if (d.notTaken || d.rate == null) return;
+            rates.push(d.rate);
+            presentSum += Number(d.present) || 0;
+            markedSum += Number(d.markedTotal) || 0;
+        });
         if (!rates.length) {
             el.textContent = 'حاضری نہیں لی گئی — گزشتہ 7 دن میں کوئی نشان زد دن نہیں';
             return;
         }
-        var sum = rates.reduce(function (a, b) { return a + b; }, 0);
-        var avg = Math.round(sum / rates.length);
+        var avg = markedSum > 0
+            ? Math.round((presentSum / markedSum) * 100)
+            : Math.round(rates.reduce(function (a, b) { return a + b; }, 0) / rates.length);
         var min = Math.min.apply(null, rates);
         var max = Math.max.apply(null, rates);
-        el.textContent = 'اوسط شرح ' + avg + '% · کم از کم ' + min + '% · زیادہ سے زیادہ ' + max + '%';
+        el.textContent = 'وزن شدہ شرح ' + avg + '% · کم از کم ' + min + '% · زیادہ سے زیادہ ' + max + '%';
+    }
+
+    function attDashClassEligibleForRanking(row) {
+        var minCov = Number(global.ATT_DASH_MIN_RANKING_COVERAGE_PCT);
+        if (!isFinite(minCov)) minCov = ATT_DASH_MIN_RANKING_COVERAGE_PCT;
+        return !!(row && row.total > 0 && row.rate != null && (Number(row.coverageRate) || 0) >= minCov);
     }
 
     function attDashRenderClassHighlights(rows) {
         var bestEl = document.getElementById('att-dash-class-best-val');
         var worstEl = document.getElementById('att-dash-class-worst-val');
         if (!bestEl || !worstEl) return;
-        var withData = rows.filter(function (r) { return r.total > 0 && r.rate != null; });
+        var withData = (rows || []).filter(attDashClassEligibleForRanking);
         if (!withData.length) {
             bestEl.textContent = '—';
             worstEl.textContent = '—';
@@ -1063,14 +1296,14 @@
         var sorted = withData.slice().sort(function (a, b) { return b.rate - a.rate; });
         var top = sorted[0];
         var bottom = sorted[sorted.length - 1];
-        bestEl.textContent = top.className + ' — ' + top.rate + '%';
-        worstEl.textContent = bottom.className + ' — ' + bottom.rate + '%';
+        bestEl.textContent = top.className + ' — ' + top.rate + '% (کوریج ' + (top.coverageRate || 0) + '%)';
+        worstEl.textContent = bottom.className + ' — ' + bottom.rate + '% (کوریج ' + (bottom.coverageRate || 0) + '%)';
     }
 
     function attDashRenderTodayLegend(stats) {
         var legend = document.getElementById('att-dash-today-legend');
         if (!legend) return;
-        if (stats.rate == null || stats.notTaken) {
+        if (stats.notTaken) {
             legend.innerHTML = '<span style="color:#94a3b8;font-size:13px;">حاضری نہیں لی گئی</span>';
             return;
         }
@@ -1079,16 +1312,19 @@
             { color: '#e74c3c', label: 'غائب', val: stats.absent },
             { color: '#f39c12', label: 'رخصت', val: stats.leave }
         ];
+        if (stats.partial > 0) items.push({ color: '#8b5cf6', label: 'جزوی حاضری', val: stats.partial });
+        if (stats.incomplete > 0) items.push({ color: '#0ea5e9', label: 'نامکمل', val: stats.incomplete });
         if (stats.notMarked > 0) {
             items.push({ color: '#94a3b8', label: 'نشان زد نہیں', val: stats.notMarked });
         }
+        if (stats.other > 0) items.push({ color: '#64748b', label: 'دیگر (تشخیص)', val: stats.other });
         legend.innerHTML = items.map(function (it) {
             return '<span><i style="background:' + it.color + '"></i>' + it.label + ' <strong>(' + fmt(it.val) + ')</strong></span>';
         }).join('');
     }
 
     function attDashRenderCharts(stats, trend, classRows) {
-        var notTaken = stats.rate == null || stats.notTaken;
+        var notTaken = !!stats.notTaken;
         if (notTaken) {
             setHTML('att-dash-chart-today', '<p style="color:#94a3b8;font-size:13px;text-align:center;padding:24px 8px;">حاضری نہیں لی گئی</p>');
             attDashRenderTodayLegend(stats);
@@ -1098,16 +1334,22 @@
                 { label: 'غائب', value: stats.absent, color: '#e74c3c' },
                 { label: 'رخصت', value: stats.leave, color: '#f39c12' }
             ];
-            var totalSeg = stats.present + stats.absent + stats.leave;
+            if (stats.partial > 0) segs.push({ label: 'جزوی', value: stats.partial, color: '#8b5cf6' });
+            if (stats.incomplete > 0) segs.push({ label: 'نامکمل', value: stats.incomplete, color: '#0ea5e9' });
+            if (stats.notMarked > 0) segs.push({ label: 'نشان زد نہیں', value: stats.notMarked, color: '#94a3b8' });
+            if (stats.other > 0) segs.push({ label: 'دیگر', value: stats.other, color: '#64748b' });
+            var center = stats.rate == null ? '—' : (stats.rate + '%');
+            var totalSeg = segs.reduce(function (n, s) { return n + (s.value || 0); }, 0);
             if (typeof global.emsDonutSVG === 'function') {
-                setHTML('att-dash-chart-today', global.emsDonutSVG(segs, stats.rate + '%', 'شرح'));
+                setHTML('att-dash-chart-today', global.emsDonutSVG(segs, center, 'شرح'));
+                attDashRenderTodayLegend(stats);
             } else if (typeof global.emsDonutCompactSVG === 'function') {
-                setHTML('att-dash-chart-today', global.emsDonutCompactSVG(segs, stats.rate + '%', 'شرح', 160));
+                setHTML('att-dash-chart-today', global.emsDonutCompactSVG(segs, center, 'شرح', 160));
                 attDashRenderTodayLegend(stats);
             } else if (totalSeg > 0) {
                 setHTML('att-dash-chart-today',
-                    '<div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#27ae60 0% ' + stats.rate + '%, #e2e8f0 ' + stats.rate + '% 100%);display:flex;align-items:center;justify-content:center;margin:0 auto;">' +
-                    '<div style="width:100px;height:100px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#0f766e;">' + stats.rate + '%</div></div>');
+                    '<div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#27ae60 0% ' + (stats.rate || 0) + '%, #e2e8f0 ' + (stats.rate || 0) + '% 100%);display:flex;align-items:center;justify-content:center;margin:0 auto;">' +
+                    '<div style="width:100px;height:100px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#0f766e;">' + center + '</div></div>');
                 attDashRenderTodayLegend(stats);
             } else {
                 setHTML('att-dash-chart-today', '<p style="color:#94a3b8;font-size:13px;text-align:center;">حاضری نہیں لی گئی</p>');
@@ -1153,7 +1395,7 @@
         var tbody = document.getElementById('att-dash-class-tbody');
         if (!tbody) return;
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">آج کے لیے درجہ وار ریکارڈ نہیں</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">آج کے لیے درجہ وار ریکارڈ نہیں</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(function (r) {
@@ -1162,6 +1404,7 @@
             var pTxt = r.rate == null ? '—' : r.present;
             var aTxt = r.rate == null ? '—' : r.absent;
             var lTxt = r.rate == null ? '—' : r.leave;
+            var covTxt = r.coverageRate != null ? (r.coverageRate + '%') : '—';
             return '<tr style="cursor:pointer;" onclick="window.attDashOpenClassRegister(\'' +
                 String(r.className).replace(/'/g, "\\'") + '\')">' +
                 '<td><strong>' + r.className + '</strong></td>' +
@@ -1169,6 +1412,7 @@
                 '<td style="color:#27ae60;font-weight:bold;">' + pTxt + '</td>' +
                 '<td style="color:#e74c3c;font-weight:bold;">' + aTxt + '</td>' +
                 '<td style="color:#f39c12;">' + lTxt + '</td>' +
+                '<td>' + covTxt + '</td>' +
                 '<td style="color:' + col + ';font-weight:bold;">' + rateTxt + '</td></tr>';
         }).join('');
     }
@@ -1232,7 +1476,7 @@
         // Eligible + department-scoped roster (inactive/suspended/expelled excluded).
         var users = attDashGetUsers();
         attDashUpdateDeptHint(rawUsers, users, f);
-        var allUsers = attDashFilterUsers(users, f.roleFilter, f.classFilter);
+        var allUsers = attDashFilterUsers(users, f.roleFilter, f.classFilter, f.dateStr);
         var monthStr = monthOf(f.dateStr);
 
         var trendMonths = [];
@@ -1270,8 +1514,14 @@
             present: stats.present,
             absent: stats.absent,
             leave: stats.leave,
+            partial: stats.partial || 0,
+            incomplete: stats.incomplete || 0,
+            other: stats.other || 0,
             unmarked: stats.notMarked,
             markedTotal: stats.markedTotal,
+            observedTotal: stats.observedTotal || 0,
+            observed: stats.observed != null ? stats.observed : (stats.observedTotal || 0),
+            coverageRate: stats.coverageRate != null ? stats.coverageRate : 0,
             classRows: classRows,
             periodSequence: periodSeqRows,
             invariantBroken: !!stats.invariantBroken,
@@ -1315,8 +1565,14 @@
                     .then(function (remote) {
                         if (!remote) return;
                         var merged = attDashMergeRemoteStats(stats, remote, allUsers);
+                        if (merged.remoteRejected) return;
                         if (merged.markedTotal <= 0 && stats.markedTotal <= 0) return;
                         stats = merged;
+                        if (global._attDashLastCalc) {
+                            global._attDashLastCalc.coverageRate = stats.coverageRate;
+                            global._attDashLastCalc.observed = stats.observed;
+                            global._attDashLastCalc.source = stats.source;
+                        }
                         attDashApplyStatsKpis(stats);
                         setTxt('att-dash-source', remote.source === 'summary' ? 'Summary' : (remote.source === 'firestore' ? 'Firestore' : 'کلاؤڈ'));
                         attDashUpdateLiveIndicator(remote.source || 'cloud');
@@ -1379,6 +1635,10 @@
             ['حاضر', g('att-dash-present')],
             ['غائب', g('att-dash-absent')],
             ['رخصت', g('att-dash-leave')],
+            ['جزوی حاضری', g('att-dash-partial')],
+            ['نامکمل', g('att-dash-incomplete')],
+            ['نشان زد نہیں', g('att-dash-unmarked')],
+            ['کوریج', g('att-dash-coverage')],
             ['آج کی شرح', g('att-dash-rate')],
             ['حاضری ہدف', g('att-dash-total-roster')],
             ['ماہانہ شرح', g('att-dash-month-rate')],
@@ -1397,10 +1657,16 @@
             '<table style="width:100%;border-collapse:collapse;font-size:15px;margin-bottom:24px;">' + rows + '</table>' +
             (global._attDashLastCalc
                 ? '<p style="font-size:13px;color:#64748b;">نشان زد: ' + (global._attDashLastCalc.markedTotal || 0)
+                    + ' · جزوی: ' + (global._attDashLastCalc.partial || 0)
+                    + ' · نامکمل: ' + (global._attDashLastCalc.incomplete || 0)
                     + ' · نشان زد نہیں: ' + (global._attDashLastCalc.unmarked || 0)
-                    + ' · invariant: P+A+L+unmarked='
+                    + ' · کوریج: ' + (global._attDashLastCalc.coverageRate != null ? global._attDashLastCalc.coverageRate : 0) + '%'
+                    + ((global._attDashLastCalc.other || 0) ? (' · دیگر: ' + global._attDashLastCalc.other) : '')
+                    + ' · invariant: P+A+L+PARTIAL+INCOMPLETE+UNMARKED+OTHER='
                     + ((global._attDashLastCalc.present || 0) + (global._attDashLastCalc.absent || 0)
-                        + (global._attDashLastCalc.leave || 0) + (global._attDashLastCalc.unmarked || 0))
+                        + (global._attDashLastCalc.leave || 0) + (global._attDashLastCalc.partial || 0)
+                        + (global._attDashLastCalc.incomplete || 0) + (global._attDashLastCalc.unmarked || 0)
+                        + (global._attDashLastCalc.other || 0))
                     + ' / target ' + (global._attDashLastCalc.target || 0)
                     + (global._attDashLastCalc.invariantBroken ? ' ⚠️ تضاد' : ' ✓')
                     + '</p>'
@@ -1547,6 +1813,11 @@
     global.attDashStatsFromFinalMarks = attDashStatsFromFinalMarks;
     global.attDashClassBreakdownFromFinal = attDashClassBreakdownFromFinal;
     global.attDashAssertStatsInvariant = attDashAssertStatsInvariant;
+    global.attDashAttachCoverage = attDashAttachCoverage;
+    global.attDashRemoteAggregateIsImpossible = attDashRemoteAggregateIsImpossible;
+    global.attDashMergeRemoteStats = attDashMergeRemoteStats;
+    global.attDashRenderClassHighlights = attDashRenderClassHighlights;
+    global.attDashClassEligibleForRanking = attDashClassEligibleForRanking;
     global.attDashMarkCandidateBetter = attDashMarkCandidateBetter;
 
     if (document.readyState === 'loading') {

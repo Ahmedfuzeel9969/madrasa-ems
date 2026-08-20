@@ -73,8 +73,8 @@
       local_and_cloud: 'کلاؤڈ پر محفوظ',
       local_cloud_pending: 'مقامی طور پر محفوظ',
       cloud_syncing: 'مقامی طور پر محفوظ',
-      local_cloud_conflict: 'کلاؤڈ پر ناکام',
-      cloud_failed: 'کلاؤڈ پر ناکام',
+      local_cloud_conflict: 'مقامی طور پر محفوظ — کلاؤڈ پر ناکام',
+      cloud_failed: 'مقامی طور پر محفوظ — کلاؤڈ پر ناکام',
       local_failed: 'اس آلے پر محفوظ ناکام'
     };
     return labels[key] || labels.local_only;
@@ -161,8 +161,22 @@
   }
 
   function interpretCloudResult(res) {
-    if (!res) return { cloud: 'failed', error: 'unknown' };
-    if (res.synced) return { cloud: 'synced' };
+    var n = typeof global.emsNormalizeCloudResult === 'function'
+      ? global.emsNormalizeCloudResult(res || {}, { localSaved: true })
+      : null;
+    if (n) {
+      return {
+        cloud: n.cloudState,
+        error: n.error || '',
+        code: n.code || '',
+        localSaved: n.localSaved,
+        synced: n.synced,
+        queued: n.queued,
+        offline: n.offline
+      };
+    }
+    if (!res) return { cloud: 'failed', error: 'unknown', code: '' };
+    if (res.synced) return { cloud: 'synced', error: res.error || '', code: res.code || '' };
     if (res.code === 'VERSION_CONFLICT') {
       return { cloud: 'conflict', error: res.error || '', code: res.code };
     }
@@ -172,10 +186,29 @@
     if (res.code === 'PERMISSION_DENIED' || res.code === 'permission-denied') {
       return { cloud: 'failed', error: res.error || 'permission denied', code: res.code };
     }
-    if (res.offline || res.queued) return { cloud: res.offline ? 'offline' : 'queued' };
+    if (res.offline || res.queued) {
+      return { cloud: res.offline ? 'offline' : 'queued', error: res.error || '', code: res.code || '' };
+    }
     if (res.ok === false) return { cloud: 'failed', error: res.error || res.reason || '', code: res.code || '' };
-    return { cloud: 'queued' };
+    return { cloud: 'queued', error: res.error || '', code: res.code || '' };
   }
+
+  global.attNormalizeSaveResult = function (res, extras) {
+    if (typeof global.emsNormalizeCloudResult === 'function') {
+      return global.emsNormalizeCloudResult(res, extras);
+    }
+    var parsed = interpretCloudResult(res || {});
+    return {
+      localSaved: extras && extras.localSaved != null ? !!extras.localSaved : true,
+      cloudState: parsed.cloud,
+      synced: parsed.cloud === 'synced',
+      queued: parsed.cloud === 'queued',
+      offline: parsed.cloud === 'offline',
+      error: parsed.error || '',
+      code: parsed.code || '',
+      ok: extras && extras.localSaved === false ? false : true
+    };
+  };
 
   function refreshQueueSummary() {
     var chain = Promise.resolve({ pending: 0, failed: 0, deadLetter: 0, rows: [] });
@@ -196,7 +229,13 @@
           };
           rows.filter(function (r) { return r && isAttQueueType(r.type) && r.docId; }).forEach(function (r) {
             if (r.failed) {
-              global.attSaveStatusMarkCloud(r.docId, r.lastErrorCode === 'VERSION_CONFLICT' ? 'conflict' : 'queued', r);
+              var parsed = interpretCloudResult({
+                ok: false,
+                error: r.lastError,
+                code: r.lastErrorCode,
+                synced: false
+              });
+              global.attSaveStatusMarkCloud(r.docId, parsed.cloud, parsed);
             } else {
               global.attSaveStatusMarkCloud(r.docId, 'queued');
             }
@@ -270,14 +309,14 @@
   global.attSaveStatusOnOutboxEvent = function (detail) {
     detail = detail || {};
     if (!detail.docId || !isAttQueueType(detail.type)) return;
-    if (detail.error || detail.code) {
-      global.attSaveStatusMarkCloud(detail.docId, 'failed', detail);
-    } else if (detail.cloud) {
+    if (detail.cloud) {
       global.attSaveStatusMarkCloud(detail.docId, detail.cloud, detail);
     } else if (detail.synced) {
       global.attSaveStatusMarkCloud(detail.docId, 'synced');
     } else if (detail.code === 'VERSION_CONFLICT') {
       global.attSaveStatusMarkCloud(detail.docId, 'conflict', detail);
+    } else if (detail.error || detail.code) {
+      global.attSaveStatusMarkCloud(detail.docId, 'failed', detail);
     }
     scheduleQueueRefresh();
   };

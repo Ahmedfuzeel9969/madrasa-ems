@@ -39,8 +39,8 @@
         ]);
     }
 
-    /** Pakistan calendar day — must match att-dashboard ATT_DASH_TZ. */
-    function todayParts() {
+    function attHelperKarachiDateParts(d) {
+        d = d || new Date();
         var todayStr = '';
         try {
             var fmt = new Intl.DateTimeFormat('en-CA', {
@@ -50,20 +50,33 @@
                 day: '2-digit'
             });
             var y = '', m = '', day = '';
-            fmt.formatToParts(new Date()).forEach(function (p) {
+            fmt.formatToParts(d).forEach(function (p) {
                 if (p.type === 'year') y = p.value;
                 if (p.type === 'month') m = p.value;
                 if (p.type === 'day') day = p.value;
             });
             if (y && m && day) todayStr = y + '-' + m + '-' + day;
         } catch (eTz) { /* fall through */ }
-        if (!todayStr) todayStr = new Date().toISOString().split('T')[0];
+        if (!todayStr) {
+            var off = new Date(d.getTime() + (5 * 60 * 60 * 1000));
+            todayStr = off.toISOString().split('T')[0];
+        }
         return {
             todayStr: todayStr,
             todayMonth: todayStr.substring(0, 7),
             todayDateNum: parseInt(todayStr.substring(8, 10), 10)
         };
     }
+
+    /** Pakistan calendar day — must match att-dashboard ATT_DASH_TZ. */
+    function todayParts() {
+        return attHelperKarachiDateParts(new Date()); // Asia/Karachi
+    }
+
+    function emsAttTrendDateForDay(d) {
+        return attHelperKarachiDateParts(d).todayStr;
+    }
+    global.emsAttTrendDateForDay = emsAttTrendDateForDay;
 
     var _attKeysByMonthCache = Object.create(null);
     var _attAllKeysIndexed = false;
@@ -246,6 +259,18 @@
         return st === sym.L || st === 'L' || st === 'رخصت' || st === 'Leave';
     }
 
+    function attHelperObserveStatus(st) {
+        if (typeof global.attMetricsClassifyStatus === 'function') {
+            var kind = global.attMetricsClassifyStatus(st);
+            if (kind === 'P' || kind === 'A' || kind === 'L') return kind;
+            return '';
+        }
+        if (attHelperStatusPresent(st)) return 'P';
+        if (attHelperStatusAbsent(st)) return 'A';
+        if (attHelperStatusLeave(st)) return 'L';
+        return '';
+    }
+
     function attHelperEmptyDayStats(source) {
         return {
             present: 0,
@@ -260,32 +285,72 @@
     }
 
     function attHelperStatsFromSets(sets, source) {
-        var presentIds = Array.from(sets.present);
-        var absentIds = Array.from(sets.absent).filter(function (id) { return !sets.present.has(id); });
-        var leaveIds = Array.from(sets.leave).filter(function (id) {
-            return !sets.present.has(id) && !sets.absent.has(id);
+        if (sets && sets.best) {
+            var presentIds = [];
+            var absentIds = [];
+            var leaveIds = [];
+            Object.keys(sets.best).forEach(function (uid) {
+                var st = sets.best[uid] && sets.best[uid].status;
+                if (st === 'P') presentIds.push(uid);
+                else if (st === 'A') absentIds.push(uid);
+                else if (st === 'L') leaveIds.push(uid);
+            });
+            return {
+                present: presentIds.length,
+                absent: absentIds.length,
+                leave: leaveIds.length,
+                markedTotal: presentIds.length + absentIds.length + leaveIds.length,
+                presentIds: presentIds,
+                absentIds: absentIds,
+                leaveIds: leaveIds,
+                source: source || 'cache'
+            };
+        }
+        var presentIdsLegacy = Array.from(sets.present || []);
+        var absentIdsLegacy = Array.from(sets.absent || []).filter(function (id) {
+            return !(sets.present && sets.present.has(id));
+        });
+        var leaveIdsLegacy = Array.from(sets.leave || []).filter(function (id) {
+            return !(sets.present && sets.present.has(id)) && !(sets.absent && sets.absent.has(id));
         });
         return {
-            present: presentIds.length,
-            absent: absentIds.length,
-            leave: leaveIds.length,
-            markedTotal: presentIds.length + absentIds.length + leaveIds.length,
-            presentIds: presentIds,
-            absentIds: absentIds,
-            leaveIds: leaveIds,
+            present: presentIdsLegacy.length,
+            absent: absentIdsLegacy.length,
+            leave: leaveIdsLegacy.length,
+            markedTotal: presentIdsLegacy.length + absentIdsLegacy.length + leaveIdsLegacy.length,
+            presentIds: presentIdsLegacy,
+            absentIds: absentIdsLegacy,
+            leaveIds: leaveIdsLegacy,
             source: source || 'cache'
         };
     }
 
     function countDayMarksFromDoc(data, dayNum, sets) {
-        if (!data || !data.records) return;
-        Object.keys(data.records).forEach(function (uid) {
+        if (!data) return;
+        sets.best = sets.best || Object.create(null);
+        var ts = 0;
+        if (data.timestamp) ts = Number(data.timestamp) || 0;
+        else if (data.clientUpdatedAt) ts = Number(data.clientUpdatedAt) || 0;
+        function consider(uid, raw) {
+            var status = attHelperObserveStatus(raw);
+            var cleared = !status;
+            var cand = { ts: ts, status: status, cleared: cleared, isAll: true };
+            var inc = sets.best[uid];
+            var better = false;
+            if (!inc) better = true;
+            else if (typeof global.attMetricsMarkCandidateBetter === 'function') {
+                better = global.attMetricsMarkCandidateBetter(cand, inc);
+            } else if (cand.ts !== inc.ts) better = cand.ts > inc.ts;
+            else if (cand.cleared !== inc.cleared) better = !!cand.cleared;
+            if (better) sets.best[uid] = cand;
+        }
+        Object.keys(data.records || {}).forEach(function (uid) {
             var dayRec = data.records[uid];
             if (!dayRec) return;
-            var st = dayRec[dayNum] || dayRec[String(dayNum)];
-            if (attHelperStatusPresent(st)) sets.present.add(uid);
-            else if (attHelperStatusAbsent(st)) sets.absent.add(uid);
-            else if (attHelperStatusLeave(st)) sets.leave.add(uid);
+            var st = dayRec[dayNum];
+            if (st == null || st === '') st = dayRec[String(dayNum)];
+            if (st == null) return;
+            consider(uid, st);
         });
     }
 
@@ -371,6 +436,44 @@
 
         return global.emsOfflineListAttendanceKeysAsync(parts.todayMonth).then(function (keys) {
             return Promise.all(keys.map(attReadSheetByKeyAsync)).then(function (sheets) {
+                if (typeof global.attMetricsBuildFinalMarksForDay === 'function') {
+                    var metricSheets = (sheets || []).filter(Boolean).map(function (sheet, idx) {
+                        return {
+                            key: keys[idx] || ('cache_' + idx),
+                            type: 'students',
+                            classId: '',
+                            period: 'all',
+                            data: sheet
+                        };
+                    });
+                    var ids = Object.create(null);
+                    metricSheets.forEach(function (sh) {
+                        Object.keys((sh.data && sh.data.records) || {}).forEach(function (id) { ids[id] = true; });
+                        Object.keys((sh.data && sh.data.periodRecords) || {}).forEach(function (id) { ids[id] = true; });
+                    });
+                    var roster = Object.keys(ids).map(function (id) { return { id: id, type: 'student' }; });
+                    var finalDs = global.attMetricsBuildFinalMarksForDay(parts.todayStr, metricSheets, roster, '');
+                    var st = global.attMetricsStatsFromFinalMarks(finalDs, roster);
+                    var presentIds = [];
+                    var absentIds = [];
+                    var leaveIds = [];
+                    Object.keys(finalDs.marks || {}).forEach(function (uid) {
+                        var status = finalDs.marks[uid] && finalDs.marks[uid].status;
+                        if (status === 'P') presentIds.push(uid);
+                        else if (status === 'A') absentIds.push(uid);
+                        else if (status === 'L') leaveIds.push(uid);
+                    });
+                    return {
+                        present: st.present,
+                        absent: st.absent,
+                        leave: st.leave,
+                        markedTotal: st.markedTotal,
+                        presentIds: presentIds,
+                        absentIds: absentIds,
+                        leaveIds: leaveIds,
+                        source: 'cache'
+                    };
+                }
                 var sets = {
                     present: new Set(),
                     absent: new Set(),
@@ -402,30 +505,56 @@
         days = days || 7;
         var db = getDb();
         var uid = getTenantId();
-        var dates = [];
-        var now = new Date();
+        var dateStrs = [];
+        var nowParts = todayParts();
+        var cursor = new Date(nowParts.todayStr + 'T12:00:00+05:00');
         for (var i = days - 1; i >= 0; i--) {
-            dates.push(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i));
+            var d = new Date(cursor.getTime() - i * 86400000);
+            dateStrs.push(emsAttTrendDateForDay(d));
         }
-        function ymd(d) { return d.toISOString().split('T')[0]; }
-        function monthOf(d) { return ymd(d).substring(0, 7); }
+
+        function sheetsToMetric(month, rawSheets) {
+            return (rawSheets || []).map(function (sheet, idx) {
+                if (sheet && sheet.data) return sheet;
+                return {
+                    key: 'trend_' + month + '_' + idx,
+                    type: 'students',
+                    classId: '',
+                    period: 'all',
+                    data: sheet
+                };
+            });
+        }
 
         function accumulate(docs) {
-            // docs: [{ month, data }]
-            return dates.map(function (d) {
-                var ms = monthOf(d), dayNum = d.getDate(), present = 0;
-                docs.forEach(function (it) {
-                    if (it.month !== ms || !it.data || !it.data.records) return;
-                    var rec = it.data.records;
-                    for (var u in rec) { if (rec[u] && rec[u][dayNum] === 'P') present++; }
-                });
-                return { date: ymd(d).substring(5), present: present };
+            return dateStrs.map(function (dateStr) {
+                var ms = dateStr.substring(0, 7);
+                var monthDocs = docs.filter(function (it) { return it.month === ms; });
+                var metricSheets = sheetsToMetric(ms, monthDocs.map(function (it) { return it.data; }));
+                var present = 0;
+                if (typeof global.attMetricsBuildFinalMarksForDay === 'function') {
+                    var ids = Object.create(null);
+                    metricSheets.forEach(function (sh) {
+                        Object.keys((sh.data && sh.data.records) || {}).forEach(function (id) { ids[id] = true; });
+                    });
+                    var roster = Object.keys(ids).map(function (id) { return { id: id, type: 'student' }; });
+                    var finalDs = global.attMetricsBuildFinalMarksForDay(dateStr, metricSheets, roster, '');
+                    var stats = global.attMetricsStatsFromFinalMarks(finalDs, roster);
+                    present = stats.present || 0;
+                } else {
+                    var sets = { present: new Set(), absent: new Set(), leave: new Set() };
+                    monthDocs.forEach(function (it) {
+                        countDayMarksFromDoc(it.data, parseInt(dateStr.substring(8, 10), 10), sets);
+                    });
+                    present = attHelperStatsFromSets(sets, 'trend').present;
+                }
+                return { date: dateStr.substring(5), present: present };
             });
         }
 
         function fromCache() {
             var monthsNeeded = {};
-            dates.forEach(function (d) { monthsNeeded[monthOf(d)] = true; });
+            dateStrs.forEach(function (ds) { monthsNeeded[ds.substring(0, 7)] = true; });
             var monthKeys = Object.keys(monthsNeeded);
             return Promise.all(monthKeys.map(function (m) {
                 return global.emsOfflineLoadAttendanceSheetsForMonth(m).then(function (sheets) {
@@ -442,7 +571,7 @@
 
         if (shouldUseFirestore()) {
             var monthsNeeded = {};
-            dates.forEach(function (d) { monthsNeeded[monthOf(d)] = true; });
+            dateStrs.forEach(function (ds) { monthsNeeded[ds.substring(0, 7)] = true; });
             var monthKeys = Object.keys(monthsNeeded);
             return withTimeout(
                 Promise.all(monthKeys.map(function (m) {

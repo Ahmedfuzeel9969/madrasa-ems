@@ -34,6 +34,10 @@ describe('Attendance dashboard calculation fixes', function () {
         var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
         expect(js).toContain('function attDashMergeRemoteStats');
         expect(js).toMatch(/attDashMergeRemoteStats[\s\S]{0,1200}rosterIds/);
+        expect(js).toContain('function attDashRemoteAggregateIsImpossible');
+        expect(js).toMatch(/attDashMergeRemoteStats[\s\S]{0,2500}remoteRejected/);
+        expect(js).toMatch(/ATT_DASH_MIN_RANKING_COVERAGE_PCT/);
+        expect(js).toContain('function attDashClassEligibleForRanking');
         expect(js).toMatch(/attDashComputeRate[\s\S]{0,300}Math\.min\(100/);
     });
 
@@ -50,6 +54,7 @@ describe('Attendance dashboard calculation fixes', function () {
         var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
         var metrics = fs.readFileSync(path.join(ROOT, 'att-metrics.js'), 'utf8');
         var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+        expect(html).toContain('id="att-dash-coverage"');
         expect(html).toContain('id="att-dash-period-filter"');
         expect(html).toContain('تجزیہ کی بنیاد');
         expect(js).toContain('function attDashPopulatePeriodFilter');

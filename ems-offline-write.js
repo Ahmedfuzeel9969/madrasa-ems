@@ -6,7 +6,7 @@
     'use strict';
 
     var IDB_NAME = 'EMS_OfflineWriteDB';
-    var IDB_VER = 2;
+    var IDB_VER = 3;
     var STORE = 'queue';
     var DEAD_LETTER_STORE = 'dead_letter';
     var MAX_FLUSH_RETRIES = 5;
@@ -23,9 +23,83 @@
         return Math.min(BACKOFF_BASE_MS * Math.pow(2, n), BACKOFF_MAX_MS);
     }
 
+    function isSoftCloudCode(code) {
+        return code === 'TENANT_PENDING' || code === 'TENANT_MISMATCH' || code === 'TENANT_REQUIRED';
+    }
+
+    function isHardCloudCode(code) {
+        return code === 'PERMISSION_DENIED' || code === 'permission-denied'
+            || code === 'VERSION_CONFLICT' || code === 'FLUSH_ERROR' || code === 'INVALID_ROW';
+    }
+
+    /**
+     * Explicit save/cloud result contract.
+     * localSaved, cloudState, synced, queued, offline, error, code
+     * Never reports synced without confirmation. Never drops error/code.
+     */
+    function normalizeCloudResult(res, extras) {
+        extras = extras || {};
+        res = res || {};
+        var code = res.code || '';
+        var error = res.error || res.reason || '';
+        var synced = !!res.synced;
+        var skipped = !!res.skipped;
+        var localSaved = extras.localSaved != null
+            ? !!extras.localSaved
+            : (res.localSaved != null ? !!res.localSaved : res.local !== false);
+        var cloudState;
+        if (synced) {
+            cloudState = 'synced';
+        } else if (code === 'VERSION_CONFLICT') {
+            cloudState = 'conflict';
+        } else if (isHardCloudCode(code) && !isSoftCloudCode(code)) {
+            cloudState = code === 'VERSION_CONFLICT' ? 'conflict' : 'failed';
+        } else if (res.ok === false && !isSoftCloudCode(code) && !res.queued && !res.offline && !skipped) {
+            cloudState = 'failed';
+        } else if (res.offline && !isHardCloudCode(code)) {
+            cloudState = 'offline';
+        } else {
+            cloudState = 'queued';
+        }
+        return {
+            localSaved: localSaved,
+            cloudState: cloudState,
+            synced: cloudState === 'synced',
+            queued: cloudState === 'queued',
+            offline: cloudState === 'offline',
+            error: error,
+            code: code,
+            ok: localSaved,
+            reason: res.reason || error,
+            docId: extras.docId || res.docId,
+            type: extras.type || res.type
+        };
+    }
+
+    global.emsNormalizeCloudResult = normalizeCloudResult;
+
+    function isAttendanceQueueType(type) {
+        return type === 'attendance' || type === 'attendance_patch';
+    }
+
+    function defaultQueueTenantId(type) {
+        return isAttendanceQueueType(type) ? getVerifiedAttendanceTenantId() : getTenantId();
+    }
+
+    function queueMapKey(type, docId, tenantId) {
+        return String(tenantId || '') + '|' + String(type) + '|' + String(docId);
+    }
+
+    function queueRowsSameIdentity(a, b) {
+        if (!a || !b) return false;
+        return String(a.type) === String(b.type)
+            && String(a.docId) === String(b.docId)
+            && String(a.tenantId || '') === String(b.tenantId || '');
+    }
+
     function rowBelongsToActiveTenant(row) {
         if (!row || !row.tenantId) return false;
-        var isAtt = row.type === 'attendance' || row.type === 'attendance_patch';
+        var isAtt = isAttendanceQueueType(row.type);
         var active = isAtt ? getVerifiedAttendanceTenantId() : getTenantId();
         if (!active) return false;
         return String(row.tenantId) === String(active);
@@ -99,8 +173,8 @@
 
     function refreshSyncFailureCounts() {
         return Promise.all([listQueue(), listDeadLetter()]).then(function (parts) {
-            var rows = parts[0] || [];
-            var deadRows = parts[1] || [];
+            var rows = (parts[0] || []).filter(rowBelongsToActiveTenant);
+            var deadRows = (parts[1] || []).filter(rowBelongsToActiveTenant);
             var failed = 0;
             rows.forEach(function (r) { if (r && r.failed) failed++; });
             _syncFailureState.failed = failed;
@@ -125,7 +199,7 @@
                 if (row.id != null) tx.objectStore(STORE).delete(row.id);
                 tx.oncomplete = function () {
                     if (row.type && row.docId != null) {
-                        delete _queueDocIdMap[queueMapKey(row.type, row.docId)];
+                        delete _queueDocIdMap[queueMapKey(row.type, row.docId, row.tenantId)];
                     }
                     resolve();
                 };
@@ -376,20 +450,30 @@
         try { return JSON.parse(raw); } catch (e) { return null; }
     }
 
+    function ensureQueueStoreIndexes(store) {
+        if (!store.indexNames.contains('type')) store.createIndex('type', 'type', { unique: false });
+        if (!store.indexNames.contains('docId')) store.createIndex('docId', 'docId', { unique: false });
+        if (!store.indexNames.contains('tenantId')) store.createIndex('tenantId', 'tenantId', { unique: false });
+        if (!store.indexNames.contains('tenantTypeDoc')) {
+            store.createIndex('tenantTypeDoc', ['tenantId', 'type', 'docId'], { unique: false });
+        }
+    }
+
     function openQueueIdb() {
         return new Promise(function (resolve, reject) {
             var req = indexedDB.open(IDB_NAME, IDB_VER);
             req.onupgradeneeded = function (e) {
                 var idb = e.target.result;
+                var tx = e.target.transaction;
                 if (!idb.objectStoreNames.contains(STORE)) {
-                    var os = idb.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true });
-                    os.createIndex('type', 'type', { unique: false });
-                    os.createIndex('docId', 'docId', { unique: false });
+                    ensureQueueStoreIndexes(idb.createObjectStore(STORE, { keyPath: 'id', autoIncrement: true }));
+                } else {
+                    ensureQueueStoreIndexes(tx.objectStore(STORE));
                 }
                 if (!idb.objectStoreNames.contains(DEAD_LETTER_STORE)) {
-                    var dl = idb.createObjectStore(DEAD_LETTER_STORE, { keyPath: 'id', autoIncrement: true });
-                    dl.createIndex('type', 'type', { unique: false });
-                    dl.createIndex('docId', 'docId', { unique: false });
+                    ensureQueueStoreIndexes(idb.createObjectStore(DEAD_LETTER_STORE, { keyPath: 'id', autoIncrement: true }));
+                } else {
+                    ensureQueueStoreIndexes(tx.objectStore(DEAD_LETTER_STORE));
                 }
             };
             req.onsuccess = function (e) { resolve(e.target.result); };
@@ -468,44 +552,68 @@
         return keys;
     }
 
-    function queueMapKey(type, docId) {
-        return String(type) + ':' + String(docId);
-    }
-
     function ensureQueueDocIdMap() {
         if (_queueMapLoaded) return listQueue().then(function () { return _queueDocIdMap; });
         _queueMapLoaded = true;
         return listQueue().then(function (rows) {
             (rows || []).forEach(function (r) {
                 if (r && r.type && r.docId != null && r.id != null) {
-                    _queueDocIdMap[queueMapKey(r.type, r.docId)] = r.id;
+                    _queueDocIdMap[queueMapKey(r.type, r.docId, r.tenantId)] = r.id;
                 }
             });
             return _queueDocIdMap;
         });
     }
 
-    function findQueueRowByDocId(type, docId) {
-        var hitId = _queueDocIdMap[queueMapKey(type, docId)];
+    function findQueueRowByDocId(type, docId, tenantId) {
+        var hitId = _queueDocIdMap[queueMapKey(type, docId, tenantId)];
         if (hitId != null) {
-            return Promise.resolve({ id: hitId, type: type, docId: docId });
+            return openQueueIdb().then(function (idb) {
+                return new Promise(function (resolve, reject) {
+                    var tx = idb.transaction(STORE, 'readonly');
+                    var req = tx.objectStore(STORE).get(hitId);
+                    req.onsuccess = function () {
+                        var row = req.result || null;
+                        if (row && queueRowsSameIdentity(row, { type: type, docId: docId, tenantId: tenantId })) {
+                            resolve(row);
+                            return;
+                        }
+                        resolve(null);
+                    };
+                    req.onerror = function () { reject(req.error); };
+                });
+            }).catch(function () {
+                return { id: hitId, type: type, docId: docId, tenantId: tenantId };
+            });
         }
         return openQueueIdb().then(function (idb) {
             return new Promise(function (resolve, reject) {
                 var tx = idb.transaction(STORE, 'readonly');
-                var idx = tx.objectStore(STORE).index('docId');
-                var req = idx.getAll(String(docId));
-                req.onsuccess = function () {
-                    var rows = (req.result || []).filter(function (r) { return r.type === type; });
-                    resolve(rows[0] || null);
+                var store = tx.objectStore(STORE);
+                var finish = function (rows) {
+                    var tid = String(tenantId || '');
+                    var match = (rows || []).filter(function (r) {
+                        return r.type === type && String(r.tenantId || '') === tid;
+                    });
+                    resolve(match[0] || null);
                 };
+                if (tenantId && store.indexNames.contains('tenantTypeDoc')) {
+                    var creq = store.index('tenantTypeDoc').getAll([String(tenantId), String(type), String(docId)]);
+                    creq.onsuccess = function () { finish(creq.result || []); };
+                    creq.onerror = function () { reject(creq.error); };
+                    return;
+                }
+                var idx = store.index('docId');
+                var req = idx.getAll(String(docId));
+                req.onsuccess = function () { finish(req.result || []); };
                 req.onerror = function () { reject(req.error); };
             });
         }).catch(function () { return null; });
     }
 
     function enqueue(row) {
-        row = Object.assign({ ts: Date.now(), tenantId: getTenantId() }, row);
+        row = Object.assign({ ts: Date.now() }, row);
+        if (!row.tenantId) row.tenantId = defaultQueueTenantId(row.type);
         return openQueueIdb().then(function (idb) {
             return new Promise(function (resolve, reject) {
                 var tx = idb.transaction(STORE, 'readwrite');
@@ -513,7 +621,7 @@
                 req.onsuccess = function () {
                     if (row.id == null && req.result != null) row.id = req.result;
                     if (row.type && row.docId != null && row.id != null) {
-                        _queueDocIdMap[queueMapKey(row.type, row.docId)] = row.id;
+                        _queueDocIdMap[queueMapKey(row.type, row.docId, row.tenantId)] = row.id;
                     }
                 };
                 tx.oncomplete = function () { resolve(row); };
@@ -522,6 +630,18 @@
         }).catch(function (err) {
             console.warn('[EMS] offline queue enqueue failed', err);
             return row;
+        });
+    }
+
+    function listQueueForActiveTenant() {
+        return listQueue().then(function (rows) {
+            return (rows || []).filter(rowBelongsToActiveTenant);
+        });
+    }
+
+    function listDeadLetterForActiveTenant() {
+        return listDeadLetter().then(function (rows) {
+            return (rows || []).filter(rowBelongsToActiveTenant);
         });
     }
 
@@ -582,13 +702,18 @@
     }
 
     function upsertQueueByDocId(type, docId, row) {
+        row = row || {};
+        row.type = row.type || type;
+        row.docId = row.docId != null ? row.docId : docId;
+        if (!row.tenantId) row.tenantId = defaultQueueTenantId(type);
         return ensureQueueDocIdMap().then(function () {
-            return findQueueRowByDocId(type, docId).then(function (existing) {
+            return findQueueRowByDocId(type, docId, row.tenantId).then(function (existing) {
                 if (existing && existing.id != null) row.id = existing.id;
                 // Merge attendance field patches so unrelated period marks are not dropped.
                 if (existing && type === 'attendance_patch'
                     && existing.payload && typeof existing.payload === 'object'
-                    && row.payload && typeof row.payload === 'object') {
+                    && row.payload && typeof row.payload === 'object'
+                    && queueRowsSameIdentity(existing, row)) {
                     row.payload = mergeAttendancePatchPayload(existing.payload, row.payload);
                 }
                 return enqueue(row);
@@ -954,7 +1079,7 @@
                                         source: 'outbox',
                                         docId: row.docId,
                                         type: row.type,
-                                        cloud: res && res.code === 'VERSION_CONFLICT' ? 'conflict' : 'queued',
+                                        cloud: (normalizeCloudResult(res, { localSaved: true }).cloudState),
                                         error: res && res.error,
                                         code: res && res.code
                                     }
@@ -971,7 +1096,7 @@
             delete row.failedAt;
             return listQueue().then(function (rows) {
                 var hit = rows.find(function (r) {
-                    return r.type === row.type && String(r.docId) === String(row.docId);
+                    return queueRowsSameIdentity(r, row);
                 });
                 if (hit && hit.id != null) {
                     return deleteQueueRow(hit.id).then(function () {
@@ -1003,9 +1128,12 @@
     }
 
     global.emsOfflineQueueUpsert = upsertQueueByDocId;
-    global.emsOfflineListQueue = listQueue;
+    global.emsOfflineListQueue = listQueueForActiveTenant;
+    global.emsOfflineListQueueAll = listQueue;
     global.emsOfflineFlushMutationRow = flushMutationRowAndDequeue;
     global.emsOfflineFlushRowInternal = flushRow;
+    global.emsOutboxQueueMapKey = queueMapKey;
+    global.emsOutboxQueueRowsSameIdentity = queueRowsSameIdentity;
 
     function emitCloudMutation(envelope) {
         if (typeof global.emsCloudEmitMutation === 'function') {
@@ -1042,21 +1170,15 @@
         };
         return upsertQueueByDocId(qType, env.docId, queueRow).then(function () {
             if (!canCloudWrite()) {
-                return { ok: true, synced: false, offline: true, docId: env.docId };
+                return normalizeCloudResult({
+                    synced: false,
+                    offline: true,
+                    queued: true,
+                    docId: env.docId
+                }, { localSaved: true, docId: env.docId, type: qType });
             }
             return flushMutationRowAndDequeue(queueRow).then(function (res) {
-                var synced = !!(res && res.synced);
-                var failed = !!(res && (res.error || res.code));
-                return {
-                    // A rejected Firebase write is a failure, not an offline wait.
-                    // Keep the row in the queue, but make the caller/UI show it clearly.
-                    ok: !failed,
-                    synced: synced,
-                    offline: !synced && !failed,
-                    docId: env.docId,
-                    error: res && res.error,
-                    code: res && res.code
-                };
+                return normalizeCloudResult(res, { localSaved: true, docId: env.docId, type: qType });
             });
         });
     }
@@ -1133,10 +1255,20 @@
 
     global.emsOfflinePersistAttendance = function (cloudDocId, data, opts) {
         opts = opts || {};
-        if (!cloudDocId) return Promise.resolve({ ok: false, reason: 'no_key' });
+        if (!cloudDocId) {
+            return Promise.resolve(normalizeCloudResult({
+                ok: false,
+                reason: 'no_key'
+            }, { localSaved: false }));
+        }
         var tenantId = getVerifiedAttendanceTenantId();
         if (!tenantId) {
-            return Promise.resolve({ ok: false, reason: 'no_tenant', code: 'TENANT_PENDING' });
+            return Promise.resolve(normalizeCloudResult({
+                ok: false,
+                reason: 'no_tenant',
+                code: 'TENANT_PENDING',
+                queued: true
+            }, { localSaved: !!opts.skipLocalSync, docId: cloudDocId }));
         }
         var localKey = opts.localKey || cloudDocId;
 
@@ -1150,15 +1282,12 @@
                     localKey: localKey,
                     tenantId: tenantId
                 }).then(function (syncRes) {
-                    return {
-                        ok: true,
+                    return Object.assign(normalizeCloudResult(syncRes, { localSaved: true, docId: cloudDocId }), {
                         local: true,
-                        synced: !!(syncRes && syncRes.synced),
-                        offline: !!(syncRes && syncRes.offline),
                         key: cloudDocId,
                         localKey: localKey,
                         patch: true
-                    };
+                    });
                 });
             }
             return emitCloudMutation({
@@ -1169,18 +1298,18 @@
                 localKey: localKey,
                 tenantId: tenantId
             }).then(function (syncRes) {
-                return {
-                    ok: true,
+                return Object.assign(normalizeCloudResult(syncRes, { localSaved: true, docId: cloudDocId }), {
                     local: true,
-                    synced: !!(syncRes && syncRes.synced),
-                    offline: !!(syncRes && syncRes.offline),
                     key: cloudDocId,
                     localKey: localKey
-                };
+                });
             });
         }).catch(function (err) {
             console.error('[EMS] offline persist attendance failed', err);
-            return { ok: false, error: err && err.message ? err.message : String(err) };
+            return normalizeCloudResult({
+                ok: false,
+                error: err && err.message ? err.message : String(err)
+            }, { localSaved: false, docId: cloudDocId });
         });
     };
 
@@ -1302,7 +1431,8 @@
         opts = opts || {};
         if (!canCloudWrite({ manual: true, force: opts.force })) {
             return listQueue().then(function (rows) {
-                return { ok: true, flushed: 0, pending: rows.length, failed: rows.filter(function (r) { return r.failed; }).length, reason: 'offline_or_no_db' };
+                var scoped = (rows || []).filter(rowBelongsToActiveTenant);
+                return { ok: true, flushed: 0, pending: scoped.length, failed: scoped.filter(function (r) { return r.failed; }).length, reason: 'offline_or_no_db' };
             });
         }
         return listQueue().then(function (rows) {
@@ -1351,7 +1481,7 @@
                         flushed: flushed,
                         failed: failed,
                         skipped: skipped,
-                        pending: Math.max(0, rows.length - flushed),
+                        pending: Math.max(0, (rows || []).filter(rowBelongsToActiveTenant).length - flushed),
                         queueFailed: counts.failed,
                         deadLetter: counts.deadLetter
                     };
@@ -1388,14 +1518,20 @@
             return new Promise(function (resolve, reject) {
                 var tx = idb.transaction(DEAD_LETTER_STORE, 'readwrite');
                 var store = tx.objectStore(DEAD_LETTER_STORE);
-                var countReq = store.count();
-                countReq.onsuccess = function () {
-                    var n = countReq.result || 0;
-                    store.clear();
-                    tx.oncomplete = function () { resolve({ ok: true, cleared: n }); };
+                var req = store.getAll();
+                req.onsuccess = function () {
+                    var cleared = 0;
+                    (req.result || []).forEach(function (row) {
+                        if (!rowBelongsToActiveTenant(row)) return;
+                        if (row.id != null) {
+                            store.delete(row.id);
+                            cleared++;
+                        }
+                    });
+                    tx.oncomplete = function () { resolve({ ok: true, cleared: cleared }); };
                     tx.onerror = function () { reject(tx.error); };
                 };
-                countReq.onerror = function () { reject(countReq.error); };
+                req.onerror = function () { reject(req.error); };
             });
         }).then(function (res) {
             return refreshSyncFailureCounts().then(function (counts) {
@@ -1404,7 +1540,7 @@
         });
     }
 
-    global.emsOfflineListDeadLetter = listDeadLetter;
+    global.emsOfflineListDeadLetter = listDeadLetterForActiveTenant;
     global.emsOfflineClearDeadLetterQueue = clearDeadLetterQueue;
 
     global.emsUnifiedOutboxEnqueue = function (type, docId, row) {
@@ -1504,7 +1640,9 @@
 
     global.emsOfflineRetryFailedSync = function () {
         return listQueue().then(function (rows) {
-            var failedRows = rows.filter(function (r) { return r && r.failed; });
+            var failedRows = (rows || []).filter(function (r) {
+                return r && r.failed && rowBelongsToActiveTenant(r);
+            });
             if (!failedRows.length) {
                 return refreshSyncFailureCounts().then(function (counts) {
                     return { ok: true, retried: 0, failed: counts.failed, pending: counts.pending };
@@ -1541,7 +1679,7 @@
     global.emsPendingSyncEnqueue = enqueue;
     global.emsPendingSyncFlush = global.emsOfflineFlushAll;
     global.emsPendingSyncCount = function () {
-        return listQueue().then(function (rows) { return rows.length; });
+        return listQueueForActiveTenant().then(function (rows) { return rows.length; });
     };
 
     if (typeof global.addEventListener === 'function') {

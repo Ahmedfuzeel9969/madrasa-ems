@@ -855,15 +855,16 @@ function attRunPendingCloudPersist() {
         window.attSaveStatusOnCloudResult(p.cloudDocId, res || { ok: false, error: 'empty cloud result' });
       }
       if (!p.showToast || typeof window.showToast !== 'function') return;
-      if (res && res.ok) {
-        if (res.offline && !res.synced && !_attSaveToastShown) {
-          _attSaveToastShown = true;
-          window.showToast('✅ حاضری آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'success');
-        } else if (res.synced) {
-          window.showToast('✅ حاضری محفوظ + کلاؤڈ سنک', 'success');
-        }
-      } else if (res && !res.ok) {
-        window.showToast('حاضری محفوظ ناکام', 'error');
+      var n = (typeof window.emsNormalizeCloudResult === 'function')
+        ? window.emsNormalizeCloudResult(res || {}, { localSaved: true })
+        : (res || {});
+      if (n.synced) {
+        window.showToast('✅ حاضری محفوظ + کلاؤڈ سنک', 'success');
+      } else if (n.cloudState === 'failed' || n.cloudState === 'conflict') {
+        window.showToast('مقامی طور پر محفوظ — کلاؤڈ پر ناکام', 'warning');
+      } else if ((n.offline || n.queued) && !_attSaveToastShown) {
+        _attSaveToastShown = true;
+        window.showToast('✅ حاضری آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'success');
       }
     }).catch(function (err) {
       console.error('[EMS] save attendance', err);
@@ -5160,7 +5161,7 @@ function attBuildReportRowHtml(user, allRecords, fromDate, toDate, symbols) {
     '<td style="color:var(--success); font-weight:bold;">' + present + '</td>' +
     '<td style="color:var(--danger); font-weight:bold;">' + absent + '</td>' +
     '<td style="color:var(--warning); font-weight:bold;">' + leave + '</td>' +
-    '<td style="color:' + pctColor + '; font-weight:bold; font-size:16px;">' + percentage + '%</td>' +
+    '<td style="color:' + pctColor + '; font-weight:bold; font-size:16px;" title="گھنٹہ حاضری (P / P+A+L)">' + percentage + '%</td>' +
     '<td><input type="text" class="input-control" value="' + remarksText.replace(/"/g, '&quot;') + '" placeholder="تبصرہ / کیفیت..." style="border:none; border-bottom:1px solid #ccc; width:100%; border-radius:0; background:transparent;"></td>' +
     '</tr>';
 }

@@ -1330,7 +1330,7 @@
                         <div class="dash-panel att-dash-card-today">
                             <div class="dash-panel-head">
                                 <div class="dash-panel-ic att-ic-today"><i class="fas fa-user-check"></i></div>
-                                <div><div class="t">آج کی حاضری</div><div class="s">یومیہ یا منتخب گھنٹہ — حاضر · غائب · رخصت</div></div>
+                                <div><div class="t">آج کی حاضری</div><div class="s">یومیہ یا منتخب گھنٹہ — حاضر · غائب · رخصت · جزوی · نامکمل</div></div>
                                 <button class="dash-open-btn" onclick="switchAttTab('att-smart-register', document.querySelector('#att-ribbon-menu [onclick*=att-smart-register]'))">رجسٹر کھولیں <i class="fas fa-arrow-left"></i></button>
                             </div>
                             <div class="dash-subcards">
@@ -1338,11 +1338,19 @@
                                 <div class="dash-subcard"><div class="v att-val-absent" id="att-dash-absent">0</div><div class="l">غائب</div></div>
                                 <div class="dash-subcard"><div class="v att-val-leave" id="att-dash-leave">0</div><div class="l">رخصت</div></div>
                             </div>
+                            <div class="dash-subcards att-dash-state-extra">
+                                <div class="dash-subcard"><div class="v att-val-partial" id="att-dash-partial">0</div><div class="l">جزوی حاضری</div></div>
+                                <div class="dash-subcard"><div class="v att-val-incomplete" id="att-dash-incomplete">0</div><div class="l">نامکمل</div></div>
+                                <div class="dash-subcard"><div class="v att-val-unmarked" id="att-dash-unmarked">0</div><div class="l">نشان زد نہیں</div></div>
+                            </div>
                             <div class="att-dash-today-body">
                                 <div class="dash-chart-box" id="att-dash-chart-today"></div>
                                 <div class="dash-att-stats">
                                     <div class="row"><span><i class="fas fa-circle att-dot-muted"></i> حاضری ہدف (کل)</span><strong id="att-dash-total-roster">0</strong></div>
+                                    <div class="row"><span><i class="fas fa-clipboard-check att-dot-rate"></i> کوریج</span><strong id="att-dash-coverage">0%</strong></div>
                                     <div class="row"><span><i class="fas fa-percent att-dot-rate"></i> آج کی شرح</span><strong id="att-dash-rate">0%</strong></div>
+                                    <div class="row"><span><i class="fas fa-clock att-dot-rate"></i> گھنٹہ تکمیل</span><strong id="att-dash-period-completion">—</strong></div>
+                                    <div class="row"><span><i class="fas fa-user-clock att-dot-rate"></i> گھنٹہ حاضری</span><strong id="att-dash-period-att-rate">—</strong></div>
                                     <div class="row"><span><i class="fas fa-lock att-dot-lock"></i> لاک شدہ رجسٹر</span><strong id="att-dash-locked">0</strong></div>
                                 </div>
                             </div>
@@ -1374,7 +1382,7 @@
                         <div class="dash-panel att-dash-card-class">
                             <div class="dash-panel-head">
                                 <div class="dash-panel-ic att-ic-class"><i class="fas fa-layer-group"></i></div>
-                                <div><div class="t">درجہ وار موازنہ</div><div class="s">آج — بہترین اور کم ترین درجات</div></div>
+                                <div><div class="t">درجہ وار موازنہ</div><div class="s">آج — بہترین اور کم ترین درجات (کوریج ≥ 50%)</div></div>
                             </div>
                             <div class="dash-subcards two att-dash-class-highlights">
                                 <div class="dash-subcard"><div class="v att-val-present att-val-sm" id="att-dash-class-best-val">—</div><div class="l">بہترین درجہ</div></div>
@@ -1425,9 +1433,9 @@
                             <div class="att-dash-table-wrap">
                                 <table class="data-table att-dash-table">
                                     <thead>
-                                        <tr><th>درجہ</th><th>ہدف</th><th>حاضر</th><th>غائب</th><th>رخصت</th><th>شرح</th></tr>
+                                        <tr><th>درجہ</th><th>ہدف</th><th>حاضر</th><th>غائب</th><th>رخصت</th><th>کوریج</th><th>شرح</th></tr>
                                     </thead>
-                                    <tbody id="att-dash-class-tbody"><tr><td colspan="6" style="text-align:center;">لوڈ ہو رہا ہے…</td></tr></tbody>
+                                    <tbody id="att-dash-class-tbody"><tr><td colspan="7" style="text-align:center;">لوڈ ہو رہا ہے…</td></tr></tbody>
                                 </table>
                             </div>
                         </div>

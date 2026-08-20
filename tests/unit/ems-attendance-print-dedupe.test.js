@@ -45,7 +45,9 @@ function loadDashNormalizeApi() {
         + 'this.attDashBuildFinalMarksForDay = attDashBuildFinalMarksForDay;'
         + 'this.attDashStatsFromFinalMarks = attDashStatsFromFinalMarks;'
         + 'this.attDashClassBreakdownFromFinal = attDashClassBreakdownFromFinal;'
-        + 'this.attDashAssertStatsInvariant = attDashAssertStatsInvariant;',
+        + 'this.attDashAssertStatsInvariant = attDashAssertStatsInvariant;'
+        + 'this.attDashAttachCoverage = attDashAttachCoverage;'
+        + 'this.attDashRemoteAggregateIsImpossible = attDashRemoteAggregateIsImpossible;',
         sandbox
     );
     return sandbox;
@@ -115,6 +117,10 @@ describe('Attendance print/dashboard dedupe + final-state', function () {
         expect(stats.present + stats.absent + stats.leave + stats.notMarked).toBe(stats.total);
         expect(stats.markedTotal).toBeLessThanOrEqual(stats.total);
         expect(stats.invariantBroken).toBeFalsy();
+        expect(stats.target).toBe(10);
+        expect(stats.observed).toBe(10);
+        expect(stats.unmarked).toBe(0);
+        expect(stats.coverageRate).toBe(100);
 
         expect(classRows.length).toBe(1);
         expect(classRows[0].total).toBe(10);
@@ -122,6 +128,7 @@ describe('Attendance print/dashboard dedupe + final-state', function () {
         expect(classRows[0].absent).toBe(2);
         expect(classRows[0].leave).toBe(1);
         expect(classRows[0].present + classRows[0].absent + classRows[0].leave).toBe(10);
+        expect(classRows[0].coverageRate).toBe(100);
 
         // Exact calculated rows for 2026-08-06
         var rows = Object.keys(final.marks).sort().map(function (uid) {
@@ -259,5 +266,22 @@ describe('Attendance print/dashboard dedupe + final-state', function () {
         expect(hour.leave).toBe(1);
         expect(hour.notMarked).toBe(1);
         expect(hour.present + hour.absent + hour.leave + hour.notMarked).toBe(4);
+    });
+
+    it('coverageRate is observed/target and impossible remote PAL is detected', function () {
+        var api = loadDashNormalizeApi();
+        var users = makeRoster(10, 'A');
+        var records = {};
+        for (var i = 1; i <= 4; i++) records['S' + i] = { 6: 'P' };
+        var stats = api.attDashStatsFromFinalMarks(
+            api.attDashBuildFinalMarksForDay('2026-08-06', [sheet({ period: 'all', ts: 1000, records: records })], users),
+            users
+        );
+        expect(stats.target).toBe(10);
+        expect(stats.observed).toBe(4);
+        expect(stats.unmarked).toBe(6);
+        expect(stats.coverageRate).toBe(40);
+        expect(api.attDashRemoteAggregateIsImpossible(8, 3, 2, 10)).toBe(true);
+        expect(api.attDashRemoteAggregateIsImpossible(7, 2, 1, 10)).toBe(false);
     });
 });

@@ -209,6 +209,9 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
 #att-dashboard-panel .att-val-present { color: #27ae60; }
 #att-dashboard-panel .att-val-absent { color: #e74c3c; }
 #att-dashboard-panel .att-val-leave { color: #f39c12; }
+#att-dashboard-panel .att-val-partial { color: #8b5cf6; }
+#att-dashboard-panel .att-val-incomplete { color: #0ea5e9; }
+#att-dashboard-panel .att-val-unmarked { color: #64748b; }
 #att-dashboard-panel .att-val-month { color: #0f766e; }
 #att-dashboard-panel .att-ic-today { background: linear-gradient(135deg,#1abc9c,#0f766e); }
 #att-dashboard-panel .att-ic-week { background: linear-gradient(135deg,#6366f1,#4f46e5); }

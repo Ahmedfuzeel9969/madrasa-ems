@@ -110,29 +110,62 @@ function emsDash360CollectAttendanceAsync(user) {
 
     var stats = { present: 0, absent: 0, leave: 0, other: 0, total: 0, rate: 0, monthsScanned: 0 };
     var months = [];
-    var now = new Date();
-    for (var m = 0; m < 3; m++) {
-        months.push(new Date(now.getFullYear(), now.getMonth() - m, 1).toISOString().substring(0, 7));
+    if (typeof window.emsAttTrendDateForDay === 'function') {
+        var todayStr = window.emsAttTrendDateForDay(new Date());
+        var y = parseInt(todayStr.substring(0, 4), 10);
+        var mo = parseInt(todayStr.substring(5, 7), 10);
+        for (var m = 0; m < 3; m++) {
+            var mm = mo - m;
+            var yy = y;
+            while (mm <= 0) { mm += 12; yy -= 1; }
+            months.push(yy + '-' + (mm < 10 ? '0' + mm : String(mm)));
+        }
+    } else {
+        var now = new Date();
+        for (var m2 = 0; m2 < 3; m2++) {
+            months.push(new Date(now.getFullYear(), now.getMonth() - m2, 1).toISOString().substring(0, 7));
+        }
     }
 
     function classifyStatus(st) {
+        if (typeof window.attMetricsClassifyStatus === 'function') {
+            var kind = window.attMetricsClassifyStatus(st);
+            if (kind === 'P') return 'present';
+            if (kind === 'A') return 'absent';
+            if (kind === 'L') return 'leave';
+            if (!kind || kind === 'UNMARKED') return '';
+            return 'other';
+        }
         if (st === 'P' || st === 'حاضر') return 'present';
         if (st === 'A' || st === 'غائب') return 'absent';
         if (st === 'L' || st === 'رخصت') return 'leave';
         return 'other';
     }
 
-    function scanSheet(sheet) {
-        if (!sheet || !sheet.records) return;
-        Object.keys(sheet.records).forEach(function (uid) {
-            if (!aliasSet[uid] && !aliasSet[String(uid).toUpperCase()]) return;
-            var dayRec = sheet.records[uid];
-            if (!dayRec || typeof dayRec !== 'object') return;
-            Object.keys(dayRec).forEach(function (day) {
-                var bucket = classifyStatus(dayRec[day]);
-                stats[bucket]++;
-                stats.total++;
+    function scanSheets(sheets) {
+        var best = Object.create(null);
+        (sheets || []).forEach(function (sheet) {
+            if (!sheet) return;
+            var ts = Number(sheet.timestamp) || 0;
+            var recs = sheet.records || {};
+            Object.keys(recs).forEach(function (uid) {
+                if (!aliasSet[uid] && !aliasSet[String(uid).toUpperCase()]) return;
+                var dayRec = recs[uid];
+                if (!dayRec || typeof dayRec !== 'object') return;
+                Object.keys(dayRec).forEach(function (day) {
+                    var bucket = classifyStatus(dayRec[day]);
+                    if (!bucket) return;
+                    var key = String(day);
+                    var cand = { ts: ts, bucket: bucket };
+                    if (!best[key] || cand.ts >= best[key].ts) best[key] = cand;
+                });
             });
+        });
+        Object.keys(best).forEach(function (day) {
+            var bucket = best[day].bucket;
+            if (stats[bucket] == null) stats.other++;
+            else stats[bucket]++;
+            stats.total++;
         });
     }
 
@@ -142,7 +175,7 @@ function emsDash360CollectAttendanceAsync(user) {
 
     return Promise.all(months.map(function (month) {
         return window.emsOfflineLoadAttendanceSheetsForMonth(month).then(function (sheets) {
-            (sheets || []).forEach(scanSheet);
+            scanSheets(sheets);
             stats.monthsScanned++;
         });
     })).then(function () {
