@@ -82,6 +82,45 @@
         return type === 'attendance' || type === 'attendance_patch';
     }
 
+    function isTenantBoundSyncModuleKey(key) {
+        if (!key) return false;
+        if (typeof global.emsIsTenantDataKey === 'function') {
+            return global.emsIsTenantDataKey(String(key));
+        }
+        return String(key).indexOf('ems_att_') === 0;
+    }
+
+    function assertTenantBoundSyncModuleEnqueue(key, opts) {
+        opts = opts || {};
+        if (!isTenantBoundSyncModuleKey(key)) {
+            return { ok: true, tenantId: opts.tenantId || getTenantId() };
+        }
+        if (typeof global.emsIsTenantTransitionInProgress === 'function'
+            && global.emsIsTenantTransitionInProgress()) {
+            return { ok: false, reason: 'TENANT_TRANSITION', code: 'TENANT_TRANSITION' };
+        }
+        var tenantId = opts.tenantId || null;
+        if (!tenantId) {
+            tenantId = typeof global.emsGetCanonicalTenantId === 'function'
+                ? global.emsGetCanonicalTenantId()
+                : (getVerifiedAttendanceTenantId() || getTenantId());
+        }
+        if (!tenantId) {
+            return { ok: false, reason: 'NO_TENANT', code: 'TENANT_REQUIRED' };
+        }
+        if (typeof global.emsAssertTenantBoundMutation === 'function') {
+            var bound = global.emsAssertTenantBoundMutation(tenantId, opts.generation);
+            if (!bound.ok) {
+                return {
+                    ok: false,
+                    reason: bound.reason || 'TENANT_BOUND_REJECT',
+                    code: bound.reason || 'TENANT_MISMATCH'
+                };
+            }
+        }
+        return { ok: true, tenantId: tenantId };
+    }
+
     function defaultQueueTenantId(type) {
         return isAttendanceQueueType(type) ? getVerifiedAttendanceTenantId() : getTenantId();
     }
@@ -100,7 +139,21 @@
     function rowBelongsToActiveTenant(row) {
         if (!row || !row.tenantId) return false;
         var isAtt = isAttendanceQueueType(row.type);
-        var active = isAtt ? getVerifiedAttendanceTenantId() : getTenantId();
+        var active;
+        if (isAtt) {
+            active = getVerifiedAttendanceTenantId();
+        } else if (row.type === 'sync_module') {
+            var modKey = (row.payload && row.payload.key) || row.docId;
+            if (isTenantBoundSyncModuleKey(modKey)) {
+                active = typeof global.emsGetCanonicalTenantId === 'function'
+                    ? global.emsGetCanonicalTenantId()
+                    : (getVerifiedAttendanceTenantId() || getTenantId());
+            } else {
+                active = getTenantId();
+            }
+        } else {
+            active = getTenantId();
+        }
         if (!active) return false;
         return String(row.tenantId) === String(active);
     }
@@ -283,6 +336,10 @@
     function canCloudWrite(opts) {
         opts = opts || {};
         if (global.EMS_OFFLINE_ONLY === true) return false;
+        if (typeof global.emsIsTenantTransitionInProgress === 'function'
+            && global.emsIsTenantTransitionInProgress()) {
+            return false;
+        }
         if (!getDb() || !getTenantId()) return false;
         if (typeof global.emsMayPushToCloud === 'function') {
             if (opts.manual) return global.emsMayPushToCloud({ manual: true });
@@ -378,21 +435,51 @@
         return keys;
     }
 
-    function resolveOfflinePhysicalKey(key) {
+    function resolveOfflinePhysicalKey(key, tenantId) {
         if (!key) return null;
         if (typeof global.emsResolvePhysicalWriteKey === 'function') {
-            return global.emsResolvePhysicalWriteKey(key);
+            return global.emsResolvePhysicalWriteKey(key, tenantId);
         }
         if (typeof global.emsIsTenantDataKey === 'function'
             && global.emsIsTenantDataKey(key)
             && typeof global.emsResolveCacheKey === 'function') {
+            if (tenantId && typeof global.emsScopedKey === 'function') {
+                return global.emsScopedKey(key, tenantId) || null;
+            }
             return global.emsResolveCacheKey(key) || null;
         }
         return key;
     }
 
-    function writeLocal(key, data) {
-        var physicalKey = resolveOfflinePhysicalKey(key);
+    function assertTenantBoundWrite(key, opts) {
+        opts = opts || {};
+        if (typeof global.emsIsTenantDataKey !== 'function' || !global.emsIsTenantDataKey(key)) {
+            return { ok: true };
+        }
+        var sourceTenantId = opts.tenantId || opts.sourceTenantId || null;
+        if (sourceTenantId) {
+            return typeof global.emsAssertTenantBoundMutation === 'function'
+                ? global.emsAssertTenantBoundMutation(sourceTenantId, opts.generation)
+                : { ok: true };
+        }
+        sourceTenantId = typeof global.emsGetCanonicalTenantId === 'function'
+            ? global.emsGetCanonicalTenantId()
+            : null;
+        if (!sourceTenantId) {
+            return { ok: false, reason: 'NO_TENANT' };
+        }
+        opts.tenantId = sourceTenantId;
+        return { ok: true, tenantId: sourceTenantId };
+    }
+
+    function writeLocal(key, data, opts) {
+        opts = opts || {};
+        var bound = assertTenantBoundWrite(key, opts);
+        if (!bound.ok) {
+            return Promise.resolve({ ok: false, reason: bound.reason || 'TENANT_BOUND_REJECT', key: key });
+        }
+        var tenantId = opts.tenantId || bound.tenantId || null;
+        var physicalKey = resolveOfflinePhysicalKey(key, tenantId);
         if (!physicalKey) {
             return Promise.resolve({ ok: false, reason: 'NO_TENANT_PARTITION', key: key });
         }
@@ -419,9 +506,16 @@
     }
 
     /** Synchronous local write — survives immediate tab/app close. */
-    global.emsOfflineWriteLocalSync = function (key, data) {
+    global.emsOfflineWriteLocalSync = function (key, data, opts) {
+        opts = opts || {};
         if (!key) return false;
-        var physicalKey = resolveOfflinePhysicalKey(key);
+        var bound = assertTenantBoundWrite(key, opts);
+        if (!bound.ok) {
+            console.warn('[EMS] offline local sync write blocked — tenant bound check failed', key, bound);
+            return false;
+        }
+        var tenantId = opts.tenantId || bound.tenantId || null;
+        var physicalKey = resolveOfflinePhysicalKey(key, tenantId);
         if (!physicalKey) {
             console.warn('[EMS] offline local sync write blocked — no tenant partition for', key);
             return false;
@@ -1032,6 +1126,14 @@
         if (!tid || !key || value == null) {
             return Promise.resolve({ ok: false, error: 'invalid_sync_module', code: 'INVALID_ROW' });
         }
+        var activeTid = isTenantBoundSyncModuleKey(key)
+            ? (typeof global.emsGetCanonicalTenantId === 'function'
+                ? global.emsGetCanonicalTenantId()
+                : (getVerifiedAttendanceTenantId() || getTenantId()))
+            : getTenantId();
+        if (!activeTid || String(tid) !== String(activeTid)) {
+            return Promise.resolve({ ok: false, error: 'tenant_mismatch', code: 'TENANT_MISMATCH', skip: true });
+        }
         if (global.EmsSyncEngine && typeof global.EmsSyncEngine.writeModuleKey === 'function') {
             return flushOp(global.EmsSyncEngine.writeModuleKey(tid, key, value), {
                 type: 'sync_module', docId: key, tenantId: tid
@@ -1570,6 +1672,11 @@
 
     global.emsOfflineEnqueueSyncModule = function (key, value, opts) {
         opts = opts || {};
+        var bound = assertTenantBoundSyncModuleEnqueue(key, opts);
+        if (!bound.ok) {
+            console.warn('[EMS] sync_module enqueue blocked — tenant bound check failed', key, bound);
+            return Promise.resolve({ ok: false, reason: bound.reason, code: bound.code || 'TENANT_REQUIRED' });
+        }
         var moduleName = opts.module
             || (global.EmsSyncEngine && typeof global.EmsSyncEngine.getRegistryModule === 'function'
                 ? global.EmsSyncEngine.getRegistryModule(key) : 'General');
@@ -1577,7 +1684,7 @@
             type: 'sync_module',
             docId: String(key),
             payload: { key: String(key), value: value },
-            tenantId: opts.tenantId || getTenantId(),
+            tenantId: bound.tenantId,
             meta: { module: moduleName },
             retryCount: 0
         });

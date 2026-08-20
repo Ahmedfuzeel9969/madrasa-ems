@@ -54,6 +54,10 @@
     global.EMS_ACTIVE_TENANT_ID = null;
     global.EMS_LITE_LOGIN = false;
     global.EMS_CACHE_RECORD_CAP = 0;
+    /** Monotonic generation — bumped on every tenant transition/logout. */
+    global.EMS_TENANT_GENERATION = 0;
+    /** True while switching; business-data access must fail closed. */
+    global.EMS_TENANT_TRANSITION_IN_PROGRESS = false;
 
     global.emsRefreshCacheRecordCap = function () {
         if (typeof global.emsIsUnlimitedLocalCache === 'function' && global.emsIsUnlimitedLocalCache()) {
@@ -67,22 +71,96 @@
     };
 
     global.emsRepoKey = function (tenantId) {
-        tenantId = tenantId || global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID;
+        tenantId = tenantId || global.emsGetCanonicalTenantId();
         return tenantId ? 'ems_repo_' + tenantId : null;
     };
 
     global.emsTenantCacheKey = function (tenantId) {
-        tenantId = tenantId || global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID;
+        tenantId = tenantId || global.emsGetCanonicalTenantId();
         return tenantId ? 'ems_cache_' + tenantId : null;
     };
 
     global.emsDashboardCacheKey = function (tenantId) {
-        tenantId = tenantId || global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID;
+        tenantId = tenantId || global.emsGetCanonicalTenantId();
         return tenantId ? 'ems_dashboard_' + tenantId : null;
     };
 
+    global.emsGetTenantGeneration = function () {
+        return Number(global.EMS_TENANT_GENERATION) || 0;
+    };
+
+    global.emsIsTenantTransitionInProgress = function () {
+        return global.EMS_TENANT_TRANSITION_IN_PROGRESS === true;
+    };
+
+    /**
+     * ONE authoritative tenant for business-data reads/writes.
+     * Fail closed when:
+     * - tenant transition is in progress, or
+     * - EMS_ACTIVE_TENANT_ID and CURRENT_MADRASA_TENANT_ID disagree.
+     * Never silently picks one side of a mismatch.
+     * Never uses auth UID / persisted boot as authority here.
+     */
+    global.emsGetCanonicalTenantId = function () {
+        if (global.EMS_TENANT_TRANSITION_IN_PROGRESS === true) {
+            return null;
+        }
+        var active = global.EMS_ACTIVE_TENANT_ID ? String(global.EMS_ACTIVE_TENANT_ID) : null;
+        var current = global.CURRENT_MADRASA_TENANT_ID ? String(global.CURRENT_MADRASA_TENANT_ID) : null;
+        if (active && current && active !== current) {
+            try {
+                console.error('[EMS] TENANT_IDENTITY_MISMATCH — fail closed', {
+                    active: active,
+                    current: current,
+                    generation: global.EMS_TENANT_GENERATION
+                });
+            } catch (eLog) { /* ignore */ }
+            if (typeof global.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
+                try {
+                    global.dispatchEvent(new CustomEvent('ems:tenant-identity-mismatch', {
+                        detail: { active: active, current: current }
+                    }));
+                } catch (eEvt) { /* ignore */ }
+            }
+            return null;
+        }
+        return active || current || null;
+    };
+
+    /**
+     * Guard async/listener mutations: source tenant must match canonical active tenant
+     * and listener generation must match current (when provided).
+     */
+    global.emsAssertTenantBoundMutation = function (sourceTenantId, listenerGeneration) {
+        if (!sourceTenantId) {
+            return { ok: false, reason: 'NO_SOURCE_TENANT' };
+        }
+        if (global.EMS_TENANT_TRANSITION_IN_PROGRESS === true) {
+            return { ok: false, reason: 'TENANT_TRANSITION' };
+        }
+        var gen = Number(global.EMS_TENANT_GENERATION) || 0;
+        if (listenerGeneration != null && Number(listenerGeneration) !== gen) {
+            return {
+                ok: false,
+                reason: 'STALE_GENERATION',
+                expected: Number(listenerGeneration),
+                actual: gen
+            };
+        }
+        var canonical = global.emsGetCanonicalTenantId();
+        if (!canonical || String(canonical) !== String(sourceTenantId)) {
+            return {
+                ok: false,
+                reason: 'TENANT_MISMATCH',
+                source: String(sourceTenantId),
+                canonical: canonical
+            };
+        }
+        return { ok: true, tenantId: canonical, generation: gen };
+    };
+
     global.emsVerifiedTenantId = function () {
-        return global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID || null;
+        return global.emsGetCanonicalTenantId();
     };
 
     global.emsIsTenantDataKey = function (baseKey) {
@@ -113,17 +191,19 @@
     };
 
     global.emsTenantDataKey = function (baseKey, tenantId) {
-        tenantId = tenantId || global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID;
+        tenantId = tenantId || global.emsGetCanonicalTenantId();
         if (!baseKey || !tenantId || !global.emsIsTenantDataKey(baseKey)) return null;
         return TENANT_KEY_PREFIX + String(tenantId) + '__' + baseKey;
     };
 
     global.emsTenantStorageReady = function () {
-        return !!(global.EMS_ACTIVE_TENANT_ID && global.EMS_TENANT_STORAGE_READY === true);
+        if (global.EMS_TENANT_TRANSITION_IN_PROGRESS === true) return false;
+        var tid = global.emsGetCanonicalTenantId();
+        return !!(tid && global.EMS_TENANT_STORAGE_READY === true);
     };
 
     global.emsScopedKey = function (baseKey, tenantId) {
-        tenantId = tenantId || global.EMS_ACTIVE_TENANT_ID || global.CURRENT_MADRASA_TENANT_ID;
+        tenantId = tenantId || global.emsGetCanonicalTenantId();
         if (!baseKey) return null;
         if (tenantId && baseKey === 'ems_full_users') return 'ems_repo_' + tenantId;
         if (tenantId && baseKey === 'ems_rejected_users') return 'ems_repo_' + tenantId + '_rejected';
@@ -255,19 +335,48 @@
         }
     };
 
+    function stopTenantBoundListenersForTransition() {
+        var stops = [
+            'emsStopAttendanceSync',
+            'emsStopRegistrationLiveSync',
+            'emsStopDashboardLive',
+            'emsStopDashboardStatsListener',
+            'emsStopModuleSummariesListener'
+        ];
+        stops.forEach(function (fnName) {
+            if (typeof global[fnName] === 'function') {
+                try { global[fnName](); } catch (e) { /* ignore */ }
+            }
+        });
+    }
+
+    /**
+     * Atomic tenant activation — ACTIVE and CURRENT always set together.
+     * Transition order: freeze → bump generation → stop listeners → clear old
+     * in-memory hooks → set both identities → partition ready.
+     */
     global.emsActivateTenantStorage = function (tenantId) {
         if (!tenantId) return;
-        var prev = global.EMS_ACTIVE_TENANT_ID;
+        var prevActive = global.EMS_ACTIVE_TENANT_ID;
+        var prevCurrent = global.CURRENT_MADRASA_TENANT_ID;
+        var switching = (prevActive && prevActive !== tenantId)
+            || (prevCurrent && prevCurrent !== tenantId);
+
+        global.EMS_TENANT_TRANSITION_IN_PROGRESS = true;
+        global.EMS_TENANT_STORAGE_READY = false;
+        global.EMS_TENANT_GENERATION = (Number(global.EMS_TENANT_GENERATION) || 0) + 1;
+        var generation = global.EMS_TENANT_GENERATION;
+
+        // Invalidate old tenant async work BEFORE identity flip.
+        stopTenantBoundListenersForTransition();
+
         var persistedBeforeActivation = global.emsReadPersistedBootTenantId
             ? global.emsReadPersistedBootTenantId()
             : null;
         global.EMS_TENANT_LEGACY_MIGRATION_ALLOWED =
             legacyMigrationSafeFor(tenantId, persistedBeforeActivation);
-        global.EMS_TENANT_STORAGE_READY = false;
-        if (prev && prev !== tenantId) {
-            if (typeof global.emsStopRegistrationLiveSync === 'function') {
-                global.emsStopRegistrationLiveSync();
-            }
+
+        if (switching) {
             if (typeof global.emsRegRepoReset === 'function') {
                 global.emsRegRepoReset();
             }
@@ -291,13 +400,14 @@
                 if (typeof global.emsRepo.invalidateCache === 'function') global.emsRepo.invalidateCache();
             }
             removeLegacyGlobalKeys();
-        } else if (!prev) {
+        } else if (!prevActive) {
             removeLegacyGlobalKeys();
         }
+
+        // Canonical identity: never leave ACTIVE ≠ CURRENT after activation.
         global.EMS_ACTIVE_TENANT_ID = tenantId;
-        if (!global.CURRENT_MADRASA_TENANT_ID) {
-            global.CURRENT_MADRASA_TENANT_ID = tenantId;
-        }
+        global.CURRENT_MADRASA_TENANT_ID = tenantId;
+
         if (typeof global.emsRepo === 'object' && global.emsRepo && typeof global.emsRepo.useTenant === 'function') {
             global.emsRepo.useTenant(tenantId);
         }
@@ -311,10 +421,16 @@
             global.emsRefreshCacheRecordCap();
         }
         global.emsMigrateLegacyTenantData(tenantId, persistedBeforeActivation).finally(function () {
+            if (global.EMS_TENANT_GENERATION !== generation) {
+                return; // superseded by a newer activation
+            }
             global.EMS_TENANT_STORAGE_READY = true;
+            global.EMS_TENANT_TRANSITION_IN_PROGRESS = false;
             if (typeof global.emsCacheInvalidate === 'function') global.emsCacheInvalidate();
             if (typeof global.dispatchEvent === 'function' && typeof CustomEvent !== 'undefined') {
-                global.dispatchEvent(new CustomEvent('ems:tenant-storage-ready', { detail: { tenantId: tenantId } }));
+                global.dispatchEvent(new CustomEvent('ems:tenant-storage-ready', {
+                    detail: { tenantId: tenantId, generation: generation }
+                }));
             }
         });
     };

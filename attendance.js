@@ -641,8 +641,10 @@ function attOnRepositoryDataReady() {
 // فائر بیس لائیو سنک (حاضری ماڈیول) — tenantId via emsGetTenantId()
 // =========================================================
 function getAttendanceTenantId() {
-  // Attendance is business data: fail closed until the authenticated/context
-  // tenant is established. A persisted boot value is never a read authority.
+  // Canonical verified tenant only — fail closed on mismatch / transition.
+  if (typeof window.emsGetCanonicalTenantId === 'function') {
+    return window.emsGetCanonicalTenantId();
+  }
   if (typeof window.emsGetTenantId === 'function') {
     var tid = window.emsGetTenantId();
     if (tid) return tid;
@@ -1161,24 +1163,58 @@ function stopAttendanceFirestoreSync() {
   }
 }
 
+/** Reject Firestore snapshot callbacks from a stale tenant or generation. */
+function attSnapshotMayMutateTenantState(sourceTenantId, listenerGeneration) {
+  if (!sourceTenantId) return false;
+  if (typeof window.emsAssertTenantBoundMutation === 'function') {
+    return window.emsAssertTenantBoundMutation(sourceTenantId, listenerGeneration).ok === true;
+  }
+  if (typeof window.emsIsTenantTransitionInProgress === 'function'
+    && window.emsIsTenantTransitionInProgress()) {
+    return false;
+  }
+  if (listenerGeneration != null
+    && typeof window.emsGetTenantGeneration === 'function'
+    && window.emsGetTenantGeneration() !== listenerGeneration) {
+    return false;
+  }
+  var active = typeof window.emsGetCanonicalTenantId === 'function'
+    ? window.emsGetCanonicalTenantId()
+    : getAttendanceTenantId();
+  return !!(active && String(active) === String(sourceTenantId));
+}
+
 window.emsStartAttendanceSync = function () {
   if (typeof db === 'undefined' || !db) return;
   var tenantId = getAttendanceTenantId();
   if (!tenantId) return;
   stopAttendanceFirestoreSync();
 
-  attConfigUnsub = attTenantSubCol(db, tenantId, 'Attendance_Config')
-    .doc('periods').onSnapshot(function (doc) {
-      if (doc.exists) {
-        var list = doc.data().list || [];
-        if (typeof window.emsOfflineWriteLocalSync === 'function') {
-          window.emsOfflineWriteLocalSync('ems_att_periods', list);
-        } else {
-          localStorage.setItem('ems_att_periods', JSON.stringify(list));
-        }
-        if (document.getElementById('settings-period-tbody')) window.loadPeriods();
+  var listenerTenantId = tenantId;
+  var listenerGeneration = typeof window.emsGetTenantGeneration === 'function'
+    ? window.emsGetTenantGeneration()
+    : 0;
+
+  var canonCloudRef = attTimetableCanonicalCloudRef(db, tenantId);
+  if (!canonCloudRef) return;
+
+  attConfigUnsub = canonCloudRef
+    .onSnapshot(function (doc) {
+      if (!attSnapshotMayMutateTenantState(listenerTenantId, listenerGeneration)) return;
+      var list = attTimetableListFromCloudSnapshot(doc);
+      if (list == null) return;
+      if (typeof window.emsOfflineWriteLocalSync === 'function') {
+        window.emsOfflineWriteLocalSync('ems_att_periods', list, {
+          tenantId: listenerTenantId,
+          generation: listenerGeneration
+        });
+      } else {
+        localStorage.setItem('ems_att_periods', JSON.stringify(list));
       }
+      if (document.getElementById('settings-period-tbody')) window.loadPeriods();
     });
+
+  attMigrateLegacyCloudTimetablePeriods(tenantId, listenerTenantId, listenerGeneration);
 
   if (window.currentAttState && window.currentAttState.dbKey && !attIsOfflineMode()) {
     setupLiveAttendanceListener(tenantId, window.currentAttState.dbKey);
@@ -1732,8 +1768,14 @@ function setupLiveAttendanceListener(uid, cloudDocId) {
     var fsDb = attGetFirestoreDb();
     if (!fsDb || !uid || !cloudDocId) return;
 
+    var listenerTenantId = uid;
+    var listenerGeneration = typeof window.emsGetTenantGeneration === 'function'
+      ? window.emsGetTenantGeneration()
+      : 0;
+
     currentAttListener = attTenantDoc(fsDb, uid)
       .collection('Attendance').doc(cloudDocId).onSnapshot((doc) => {
+        if (!attSnapshotMayMutateTenantState(listenerTenantId, listenerGeneration)) return;
         if(doc.exists) {
             let data = doc.data();
             if (!window.currentAttState || window.currentAttState.dbKey !== cloudDocId) return;
@@ -4104,17 +4146,156 @@ var ATT_SYMBOLS_KEY = 'ems_att_symbols';
 var ATT_HOLIDAYS_KEY = 'ems_att_holidays';
 var ATT_SETTINGS_KEY = 'ems_att_settings';
 var ATT_PERIODS_KEY = 'ems_att_periods';
+/** Canonical cloud doc: ModuleData/Attendance__ems_att_periods (sync-engine write path). */
+var ATT_PERIODS_CANONICAL_CLOUD_DOC = 'Attendance__ems_att_periods';
+/** Legacy cloud doc: Attendance_Config/periods (read-only migration source). */
+var ATT_PERIODS_LEGACY_CLOUD_COL = 'Attendance_Config';
+var ATT_PERIODS_LEGACY_CLOUD_DOC = 'periods';
+var ATT_TIMETABLE_CLOUD_LEGACY_MIGRATED_KEY = 'ems_timetable_cloud_legacy_migrated_v1';
+
+function attTimetableCanonicalCloudRef(db, tenantId) {
+  if (!db || !tenantId) return null;
+  return attTenantSubCol(db, tenantId, 'ModuleData').doc(ATT_PERIODS_CANONICAL_CLOUD_DOC);
+}
+
+function attTimetableLegacyCloudRef(db, tenantId) {
+  if (!db || !tenantId) return null;
+  return attTenantSubCol(db, tenantId, ATT_PERIODS_LEGACY_CLOUD_COL).doc(ATT_PERIODS_LEGACY_CLOUD_DOC);
+}
+
+function attCloudDocTimestamp(data) {
+  if (!data) return 0;
+  if (data.updatedAt) {
+    var t = data.updatedAt;
+    if (typeof t === 'number') return t;
+    if (t && typeof t.toMillis === 'function') return t.toMillis();
+    if (typeof t === 'string') return Date.parse(t) || 0;
+  }
+  return 0;
+}
+
+function attTimetableListFromCloudSnapshot(doc) {
+  if (!doc || !doc.exists) return null;
+  var data = typeof doc.data === 'function' ? doc.data() : doc.data;
+  if (!data) return [];
+  if (data.data != null) return attParseTimetablePeriodList(data.data);
+  if (Array.isArray(data.list)) return data.list;
+  return attParseTimetablePeriodList(data);
+}
+
+function attTimetableCloudLegacyMigratedPhysicalKey(tenantId) {
+  if (typeof window.emsScopedKey === 'function') {
+    return window.emsScopedKey(ATT_TIMETABLE_CLOUD_LEGACY_MIGRATED_KEY, tenantId);
+  }
+  return ATT_TIMETABLE_CLOUD_LEGACY_MIGRATED_KEY + '__' + tenantId;
+}
+
+function attIsTimetableCloudLegacyMigrated(tenantId) {
+  try {
+    var key = attTimetableCloudLegacyMigratedPhysicalKey(tenantId);
+    if (window._emsOriginalGetItem) {
+      return window._emsOriginalGetItem.call(localStorage, key) === '1';
+    }
+    return localStorage.getItem(key) === '1';
+  } catch (eFlag) { return false; }
+}
+
+function attMarkTimetableCloudLegacyMigrated(tenantId) {
+  try {
+    var key = attTimetableCloudLegacyMigratedPhysicalKey(tenantId);
+    if (window._emsOriginalSetItem) {
+      window._emsOriginalSetItem.call(localStorage, key, '1');
+    } else {
+      localStorage.setItem(key, '1');
+    }
+  } catch (eMark) { /* ignore */ }
+}
+
+/**
+ * One-shot legacy cloud migration: Attendance_Config/periods → canonical ModuleData.
+ * Non-destructive — legacy cloud doc is never deleted.
+ */
+function attMigrateLegacyCloudTimetablePeriods(tenantId, sourceTenantId, generation) {
+  tenantId = tenantId || sourceTenantId;
+  if (!tenantId || attIsOfflineMode()) {
+    return Promise.resolve({ ok: false, reason: 'offline_or_no_tenant' });
+  }
+  if (attIsTimetableCloudLegacyMigrated(tenantId)) {
+    return Promise.resolve({ ok: true, skipped: true, reason: 'already_migrated' });
+  }
+  var fsDb = typeof db !== 'undefined' ? db : null;
+  if (!fsDb) return Promise.resolve({ ok: false, reason: 'no_firestore' });
+
+  var canonRef = attTimetableCanonicalCloudRef(fsDb, tenantId);
+  var legacyRef = attTimetableLegacyCloudRef(fsDb, tenantId);
+  if (!canonRef || !legacyRef) {
+    return Promise.resolve({ ok: false, reason: 'no_cloud_ref' });
+  }
+
+  return Promise.all([
+    canonRef.get({ source: 'server' }).catch(function () { return { exists: false }; }),
+    legacyRef.get({ source: 'server' }).catch(function () { return { exists: false }; })
+  ]).then(function (results) {
+    var canonDoc = results[0];
+    var legacyDoc = results[1];
+    var canonList = canonDoc.exists ? (attTimetableListFromCloudSnapshot(canonDoc) || []) : [];
+    var legacyList = legacyDoc.exists ? (attTimetableListFromCloudSnapshot(legacyDoc) || []) : [];
+
+    if (!legacyList.length) {
+      attMarkTimetableCloudLegacyMigrated(tenantId);
+      return { ok: true, skipped: true, reason: 'no_legacy_cloud' };
+    }
+
+    var promoteLegacy = !canonList.length;
+    if (!promoteLegacy && legacyDoc.exists && canonDoc.exists) {
+      promoteLegacy = attCloudDocTimestamp(legacyDoc.data()) > attCloudDocTimestamp(canonDoc.data());
+    }
+
+    if (!promoteLegacy) {
+      attMarkTimetableCloudLegacyMigrated(tenantId);
+      return { ok: true, skipped: true, reason: 'canonical_newer' };
+    }
+
+    if (!attSnapshotMayMutateTenantState(sourceTenantId, generation)) {
+      return { ok: false, reason: 'tenant_guard' };
+    }
+
+    if (typeof window.emsOfflineWriteLocalSync === 'function') {
+      window.emsOfflineWriteLocalSync(ATT_PERIODS_KEY, legacyList, {
+        tenantId: sourceTenantId,
+        generation: generation
+      });
+    }
+
+    return attPersistConfigBlob(ATT_PERIODS_KEY, legacyList).then(function () {
+      attMarkTimetableCloudLegacyMigrated(tenantId);
+      return {
+        ok: true,
+        migrated: true,
+        count: legacyList.length,
+        source: ATT_PERIODS_LEGACY_CLOUD_COL + '/' + ATT_PERIODS_LEGACY_CLOUD_DOC,
+        destination: 'ModuleData/' + ATT_PERIODS_CANONICAL_CLOUD_DOC
+      };
+    });
+  }).catch(function () {
+    return { ok: false, reason: 'migration_error' };
+  });
+}
 
 function attEnqueueSyncModuleBlob(key, value) {
   if (typeof window.emsOfflineEnqueueSyncModule !== 'function') {
     return Promise.resolve({ ok: true, synced: false, offline: true });
   }
-  var jsonStr = typeof value === 'string' ? value : JSON.stringify(value);
   var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
+  if (!tenantId) {
+    return Promise.resolve({ ok: false, reason: 'tenant_partition_write_blocked', code: 'TENANT_REQUIRED' });
+  }
+  var jsonStr = typeof value === 'string' ? value : JSON.stringify(value);
   return window.emsOfflineEnqueueSyncModule(key, jsonStr, {
     module: 'Attendance',
     tenantId: tenantId
-  }).then(function () {
+  }).then(function (res) {
+    if (res && res.ok === false) return res;
     return { ok: true, synced: false, offline: true };
   });
 }
@@ -4122,8 +4303,9 @@ function attEnqueueSyncModuleBlob(key, value) {
 /** Local persist + Firestore outbox for attendance config blobs (symbols, holidays, etc.). */
 function attPersistConfigBlob(key, value) {
   if (!key) return Promise.resolve({ ok: false, reason: 'no_key' });
+  var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
   if (typeof window.emsOfflineWriteLocalSync === 'function') {
-    if (!window.emsOfflineWriteLocalSync(key, value)) {
+    if (!window.emsOfflineWriteLocalSync(key, value, { tenantId: tenantId })) {
       return Promise.resolve({ ok: false, reason: 'tenant_partition_write_blocked' });
     }
   } else {
@@ -4266,11 +4448,402 @@ function attRecoverLegacyTimetablePeriods(tenantId) {
 
 window.attRecoverLegacyTimetablePeriods = attRecoverLegacyTimetablePeriods;
 
+var ATT_PERIODS_QUARANTINE_SUFFIX = '_quarantine_v1';
+var ATT_TIMETABLE_CONTAMINATION_AUDIT_KEY = 'ems_timetable_contamination_audit_v1';
+var ATT_TIMETABLE_CONTAMINATION_RECOVERY_KEY = 'ems_timetable_contamination_recovery_v1';
+
+function attTimetableScopedPhysicalKey(tenantId) {
+  if (typeof window.emsScopedKey === 'function') {
+    return window.emsScopedKey(ATT_PERIODS_KEY, tenantId);
+  }
+  return tenantId ? ('ems_t_' + tenantId + '__' + ATT_PERIODS_KEY) : null;
+}
+
+function attTimetableQuarantinePhysicalKey(tenantId) {
+  var scoped = attTimetableScopedPhysicalKey(tenantId);
+  return scoped ? (scoped + ATT_PERIODS_QUARANTINE_SUFFIX) : null;
+}
+
+function attEnumeratePhysicalLocalKeys() {
+  var keys = [];
+  try {
+    var store = localStorage;
+    var n = store.length;
+    for (var i = 0; i < n; i++) {
+      var k = store.key(i);
+      if (k) keys.push(k);
+    }
+  } catch (eEnum) {
+    try {
+      if (window._emsOriginalGetItem && typeof localStorage === 'object') {
+        // Fall through — length enumeration still works on wrapper
+      }
+    } catch (e2) { /* ignore */ }
+  }
+  return keys;
+}
+
+function attSummarizeTimetableList(list) {
+  list = Array.isArray(list) ? list : [];
+  var archived = list.filter(function (p) {
+    return p && (p.archived === true || p.deleted === true);
+  });
+  return {
+    count: list.length,
+    active: list.length - archived.length,
+    archived: archived.length,
+    periodIds: list.map(function (p) { return p && p.id; }).filter(Boolean)
+  };
+}
+
+function attPeriodIdSet(list) {
+  var set = Object.create(null);
+  (list || []).forEach(function (p) {
+    if (p && p.id) set[String(p.id)] = true;
+  });
+  return set;
+}
+
+function attIntersectPeriodIds(a, b) {
+  var out = [];
+  Object.keys(a || {}).forEach(function (id) {
+    if (b && b[id]) out.push(id);
+  });
+  return out;
+}
+
+/**
+ * TASK 5.1 — Read-only contamination auditor.
+ * Never writes, never deletes. Maps every timetable copy visible on this device
+ * and flags cross-tenant period-id collisions + unattributed legacy copies.
+ */
+function attAuditTimetableContamination(tenantId, opts) {
+  opts = opts || {};
+  tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
+  var scopedKey = attTimetableScopedPhysicalKey(tenantId);
+  var findings = [];
+  var sources = [];
+
+  function pushSource(label, key, list, attributable, ownerTenantId) {
+    var summary = attSummarizeTimetableList(list);
+    sources.push({
+      label: label,
+      key: key,
+      exists: !!(list && list.length),
+      attributable: !!attributable,
+      ownerTenantId: ownerTenantId || null,
+      summary: summary
+    });
+    return summary;
+  }
+
+  var scopedList = scopedKey
+    ? attParseTimetablePeriodList(attRawLocalGetPhysical(scopedKey))
+    : [];
+  pushSource('scoped_local', scopedKey, scopedList, !!tenantId, tenantId);
+
+  var legacyList = attParseTimetablePeriodList(attRawLocalGetPhysical(ATT_PERIODS_KEY));
+  pushSource('legacy_global_local', ATT_PERIODS_KEY, legacyList, false, null);
+
+  var quarantineKey = attTimetableQuarantinePhysicalKey(tenantId);
+  var quarantineList = quarantineKey
+    ? attParseTimetablePeriodList(attRawLocalGetPhysical(quarantineKey))
+    : [];
+  pushSource('quarantine_local', quarantineKey, quarantineList, !!tenantId, tenantId);
+
+  var otherTenantCopies = [];
+  var prefix = 'ems_t_';
+  var suffix = '__' + ATT_PERIODS_KEY;
+  attEnumeratePhysicalLocalKeys().forEach(function (key) {
+    if (!key || key.indexOf(prefix) !== 0) return;
+    if (key.indexOf(suffix) < 0) return;
+    if (key.indexOf(ATT_PERIODS_QUARANTINE_SUFFIX) >= 0) return;
+    if (scopedKey && key === scopedKey) return;
+    var mid = key.slice(prefix.length, key.length - suffix.length);
+    if (!mid || mid.indexOf('__') >= 0) return;
+    var otherList = attParseTimetablePeriodList(attRawLocalGetPhysical(key));
+    if (!otherList.length) return;
+    otherTenantCopies.push({ tenantId: mid, key: key, list: otherList });
+    pushSource('other_tenant_scoped', key, otherList, true, mid);
+  });
+
+  var scopedIds = attPeriodIdSet(scopedList);
+  var legacyIds = attPeriodIdSet(legacyList);
+
+  if (legacyList.length && !tenantId) {
+    findings.push({
+      code: 'LEGACY_UNATTRIBUTED_NO_TENANT',
+      severity: 'high',
+      detail: 'Global ems_att_periods exists with no verified tenant'
+    });
+  } else if (legacyList.length && scopedList.length === 0) {
+    findings.push({
+      code: 'LEGACY_ONLY_NO_SCOPED',
+      severity: 'medium',
+      detail: 'Legacy global has periods but tenant partition is empty'
+    });
+  } else if (legacyList.length && scopedList.length) {
+    var sharedLegacy = attIntersectPeriodIds(scopedIds, legacyIds);
+    if (sharedLegacy.length) {
+      findings.push({
+        code: 'LEGACY_OVERLAP_SCOPED',
+        severity: 'low',
+        periodIds: sharedLegacy,
+        detail: 'Legacy global shares period ids with scoped partition'
+      });
+    }
+  }
+
+  var crossTenantHits = [];
+  otherTenantCopies.forEach(function (other) {
+    var overlap = attIntersectPeriodIds(scopedIds, attPeriodIdSet(other.list));
+    if (overlap.length) {
+      crossTenantHits.push({
+        otherTenantId: other.tenantId,
+        periodIds: overlap
+      });
+    }
+  });
+  if (crossTenantHits.length) {
+    findings.push({
+      code: 'CROSS_TENANT_PERIOD_ID_COLLISION',
+      severity: 'critical',
+      hits: crossTenantHits,
+      detail: 'Same period ids present in another madrasa partition on this device'
+    });
+  }
+
+  if (opts.cloudCanonicalList && Array.isArray(opts.cloudCanonicalList)) {
+    pushSource('cloud_canonical', 'ModuleData/' + ATT_PERIODS_CANONICAL_CLOUD_DOC,
+      opts.cloudCanonicalList, !!tenantId, tenantId);
+    var cloudIds = attPeriodIdSet(opts.cloudCanonicalList);
+    var localOnly = Object.keys(scopedIds).filter(function (id) { return !cloudIds[id]; });
+    if (localOnly.length && opts.cloudCanonicalList.length) {
+      findings.push({
+        code: 'LOCAL_AHEAD_OR_DIVERGED',
+        severity: 'medium',
+        periodIds: localOnly,
+        detail: 'Scoped local has period ids absent from canonical cloud'
+      });
+    }
+  }
+
+  if (opts.cloudLegacyList && Array.isArray(opts.cloudLegacyList) && opts.cloudLegacyList.length) {
+    pushSource('cloud_legacy', ATT_PERIODS_LEGACY_CLOUD_COL + '/' + ATT_PERIODS_LEGACY_CLOUD_DOC,
+      opts.cloudLegacyList, !!tenantId, tenantId);
+  }
+
+  var report = {
+    ok: true,
+    readOnly: true,
+    tenantId: tenantId || null,
+    at: Date.now(),
+    contaminated: findings.some(function (f) {
+      return f.severity === 'critical' || f.severity === 'high';
+    }),
+    findings: findings,
+    sources: sources,
+    otherTenantCopyCount: otherTenantCopies.length
+  };
+
+  try {
+    if (tenantId) {
+      var auditKey = typeof window.emsScopedKey === 'function'
+        ? window.emsScopedKey(ATT_TIMETABLE_CONTAMINATION_AUDIT_KEY, tenantId)
+        : (ATT_TIMETABLE_CONTAMINATION_AUDIT_KEY + '__' + tenantId);
+      if (window._emsOriginalSetItem) {
+        window._emsOriginalSetItem.call(localStorage, auditKey, JSON.stringify(report));
+      } else {
+        localStorage.setItem(auditKey, JSON.stringify(report));
+      }
+    }
+  } catch (eAuditWrite) { /* ignore */ }
+
+  return report;
+}
+
+/**
+ * TASK 5.2 — Safe recovery for contaminated/unprovable timetable copies.
+ * Prefer canonical cloud when provided. Quarantine suspicious local periods.
+ * Never deletes legacy or other-tenant sources.
+ */
+function attRecoverContaminatedTimetable(tenantId, opts) {
+  opts = opts || {};
+  tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
+  if (!tenantId) {
+    return Promise.resolve({ ok: false, reason: 'NO_TENANT', quarantined: 0, restored: 0 });
+  }
+
+  var audit = attAuditTimetableContamination(tenantId, {
+    cloudCanonicalList: opts.cloudCanonicalList,
+    cloudLegacyList: opts.cloudLegacyList
+  });
+
+  var scopedKey = attTimetableScopedPhysicalKey(tenantId);
+  var quarantineKey = attTimetableQuarantinePhysicalKey(tenantId);
+  var scopedList = attParseTimetablePeriodList(attRawLocalGetPhysical(scopedKey));
+  var preferred = null;
+  var preferredSource = null;
+
+  if (Array.isArray(opts.cloudCanonicalList) && opts.cloudCanonicalList.length) {
+    preferred = opts.cloudCanonicalList.slice();
+    preferredSource = 'cloud_canonical';
+  } else if (Array.isArray(opts.cloudLegacyList) && opts.cloudLegacyList.length && !scopedList.length) {
+    preferred = opts.cloudLegacyList.slice();
+    preferredSource = 'cloud_legacy';
+  }
+
+  var critical = (audit.findings || []).some(function (f) {
+    return f.code === 'CROSS_TENANT_PERIOD_ID_COLLISION';
+  });
+
+  var toQuarantine = [];
+  var restored = 0;
+  var action = 'none';
+
+  if (critical && preferred) {
+    // Contaminated local + trusted cloud: quarantine local, restore cloud.
+    toQuarantine = scopedList.slice();
+    if (typeof window.emsOfflineWriteLocalSync === 'function') {
+      window.emsOfflineWriteLocalSync(ATT_PERIODS_KEY, preferred, { tenantId: tenantId });
+    } else {
+      try {
+        if (window._emsOriginalSetItem && scopedKey) {
+          window._emsOriginalSetItem.call(localStorage, scopedKey, JSON.stringify(preferred));
+        }
+      } catch (eWrite) { /* ignore */ }
+    }
+    restored = preferred.length;
+    action = 'restore_cloud_quarantine_local';
+  } else if (critical && !preferred) {
+    // Contaminated but no cloud truth — quarantine only; leave scoped untouched
+    // so we do not destroy working UI data without a verified replacement.
+    toQuarantine = scopedList.slice();
+    action = 'quarantine_only_no_cloud';
+  } else if (!scopedList.length && preferred) {
+    if (typeof window.emsOfflineWriteLocalSync === 'function') {
+      window.emsOfflineWriteLocalSync(ATT_PERIODS_KEY, preferred, { tenantId: tenantId });
+    }
+    restored = preferred.length;
+    action = 'seed_from_' + preferredSource;
+  } else if (
+    (audit.findings || []).some(function (f) { return f.code === 'LEGACY_ONLY_NO_SCOPED'; })
+    && window.EMS_TENANT_LEGACY_MIGRATION_ALLOWED === false
+  ) {
+    // Unprovable legacy — quarantine global copy under this tenant's quarantine key
+    // without promoting into canonical partition.
+    var legacyOnly = attParseTimetablePeriodList(attRawLocalGetPhysical(ATT_PERIODS_KEY));
+    toQuarantine = legacyOnly.slice();
+    action = 'quarantine_unprovable_legacy';
+  }
+
+  var quarantined = 0;
+  if (toQuarantine.length && quarantineKey) {
+    var existingQ = attParseTimetablePeriodList(attRawLocalGetPhysical(quarantineKey));
+    var byId = Object.create(null);
+    existingQ.concat(toQuarantine).forEach(function (p) {
+      if (!p || !p.id) return;
+      var prev = byId[p.id];
+      if (!prev || attPeriodRecoveryRecency(p) >= attPeriodRecoveryRecency(prev)) {
+        byId[p.id] = p;
+      }
+    });
+    var mergedQ = Object.keys(byId).map(function (id) { return byId[id]; });
+    try {
+      if (window._emsOriginalSetItem) {
+        window._emsOriginalSetItem.call(localStorage, quarantineKey, JSON.stringify(mergedQ));
+      } else {
+        localStorage.setItem(quarantineKey, JSON.stringify(mergedQ));
+      }
+      quarantined = toQuarantine.length;
+    } catch (eQ) { /* ignore */ }
+  }
+
+  var result = {
+    ok: true,
+    tenantId: tenantId,
+    action: action,
+    preferredSource: preferredSource,
+    quarantined: quarantined,
+    restored: restored,
+    audit: audit,
+    at: Date.now()
+  };
+
+  try {
+    var recKey = typeof window.emsScopedKey === 'function'
+      ? window.emsScopedKey(ATT_TIMETABLE_CONTAMINATION_RECOVERY_KEY, tenantId)
+      : (ATT_TIMETABLE_CONTAMINATION_RECOVERY_KEY + '__' + tenantId);
+    if (window._emsOriginalSetItem) {
+      window._emsOriginalSetItem.call(localStorage, recKey, JSON.stringify(result));
+    } else {
+      localStorage.setItem(recKey, JSON.stringify(result));
+    }
+  } catch (eRec) { /* ignore */ }
+
+  if (quarantined || restored || critical) {
+    console.info('[EMS attendance] timetable contamination recovery', {
+      action: action,
+      quarantined: quarantined,
+      restored: restored,
+      contaminated: audit.contaminated
+    });
+  }
+
+  return Promise.resolve(result);
+}
+
+/**
+ * Fetch cloud snapshots (when available) then run audit + safe recovery.
+ * Offline / no Firestore → local-only audit + recovery rules.
+ */
+function attRunTimetableContaminationPass(tenantId) {
+  tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
+  if (!tenantId) {
+    return Promise.resolve({ ok: false, reason: 'NO_TENANT' });
+  }
+
+  var fsDb = typeof db !== 'undefined' ? db : null;
+  var cloudCanonical = null;
+  var cloudLegacy = null;
+  var chain = Promise.resolve();
+
+  if (fsDb && !attIsOfflineMode()) {
+    var canonRef = attTimetableCanonicalCloudRef(fsDb, tenantId);
+    var legacyRef = attTimetableLegacyCloudRef(fsDb, tenantId);
+    chain = Promise.all([
+      canonRef ? canonRef.get({ source: 'server' }).catch(function () { return { exists: false }; }) : Promise.resolve({ exists: false }),
+      legacyRef ? legacyRef.get({ source: 'server' }).catch(function () { return { exists: false }; }) : Promise.resolve({ exists: false })
+    ]).then(function (docs) {
+      cloudCanonical = attTimetableListFromCloudSnapshot(docs[0]);
+      cloudLegacy = attTimetableListFromCloudSnapshot(docs[1]);
+    });
+  }
+
+  return chain.then(function () {
+    return attRecoverContaminatedTimetable(tenantId, {
+      cloudCanonicalList: cloudCanonical,
+      cloudLegacyList: cloudLegacy
+    });
+  }).catch(function () {
+    return attRecoverContaminatedTimetable(tenantId, {});
+  });
+}
+
+window.attAuditTimetableContamination = attAuditTimetableContamination;
+window.attRecoverContaminatedTimetable = attRecoverContaminatedTimetable;
+window.attRunTimetableContaminationPass = attRunTimetableContaminationPass;
+
 if (typeof window.addEventListener === 'function') {
   window.addEventListener('ems:tenant-storage-ready', function (ev) {
     var tid = ev && ev.detail && ev.detail.tenantId;
     if (!tid) return;
     attRecoverLegacyTimetablePeriods(tid).catch(function () { /* ignore */ });
+  });
+  window.addEventListener('ems:tenant-storage-ready', function (ev) {
+    var tid = ev && ev.detail && ev.detail.tenantId;
+    if (!tid) return;
+    attRunTimetableContaminationPass(tid).catch(function () { /* ignore */ });
   });
 }
 

@@ -334,7 +334,7 @@ describe('Phase 1 — timetable forensic audit (TASK 1.1)', function () {
         expect(syncBlock).toContain('_emsOriginalSetItem.call(localStorage, physicalKey');
         expect(syncBlock).toContain('emsIdbKvSet(physicalKey, str)');
 
-        var cloudPull = att.slice(att.indexOf('attConfigUnsub = attTenantSubCol'), att.indexOf('if (window.currentAttState && window.currentAttState.dbKey'));
+        var cloudPull = att.slice(att.indexOf('var canonCloudRef = attTimetableCanonicalCloudRef'), att.indexOf('if (window.currentAttState && window.currentAttState.dbKey'));
         expect(cloudPull).not.toContain('_emsOriginalSetItem.call(localStorage, \'ems_att_periods\'');
         expect(cloudPull).toContain('emsOfflineWriteLocalSync');
     });

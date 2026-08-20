@@ -101,11 +101,18 @@
 
     global.emsClearTenantContext = function (options) {
         options = options || {};
+        global.EMS_TENANT_TRANSITION_IN_PROGRESS = true;
+        global.EMS_TENANT_GENERATION = (Number(global.EMS_TENANT_GENERATION) || 0) + 1;
+        global.EMS_TENANT_STORAGE_READY = false;
+        if (typeof global.emsStopAttendanceSync === 'function') {
+            try { global.emsStopAttendanceSync(); } catch (eStop) { /* ignore */ }
+        }
         global.CURRENT_MADRASA_TENANT_ID = null;
         global.CURRENT_USER_TENANT_ROLE = null;
         global.CURRENT_STAFF_LINK = null;
         global.CURRENT_PARENT_LINK = null;
         global.EMS_ACTIVE_TENANT_ID = null;
+        global.EMS_TENANT_TRANSITION_IN_PROGRESS = false;
         if (options.preserveOfflineCache === true) return;
         if (typeof global.emsClearPersistedBootTenantId === 'function') {
             global.emsClearPersistedBootTenantId();
