@@ -206,8 +206,8 @@ describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
         env.setBoth(TENANT_A);
     });
 
-    it('live listener writes canonical ModuleData snapshot to tenant partition', function () {
-        env.emsStartAttendanceSync();
+    it('live listener writes canonical ModuleData snapshot to tenant partition', async function () {
+        await env.emsStartAttendanceSync();
         expect(env.deliverCanonicalSnapshot(TENANT_A, [{ id: 'P1', name: 'Period 1', days: [1] }])).toBe(1);
         expect(env.physical[scopedKey(TENANT_A)]).toBeTruthy();
         expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('P1');
@@ -229,14 +229,14 @@ describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
         expect(env.physical[scopedKey(TENANT_A)]).toBeTruthy();
     });
 
-    it('legacy migration skipped when canonical ModuleData is newer', async function () {
+    it('legacy migration keeps shared-id timetable when roster matches both cloud copies', async function () {
         env.setCloudGet(TENANT_A, 'ModuleData', CANONICAL_DOC, {
             exists: true,
             data: function () {
                 return {
                     key: PERIODS_KEY,
                     module: 'Attendance',
-                    data: JSON.stringify([{ id: 'CAN', name: 'Canonical', days: [1] }]),
+                    data: JSON.stringify([{ id: 'SAME', name: 'Canonical', className: 'Class-A', days: [1] }]),
                     updatedAt: { toMillis: function () { return Date.now(); } }
                 };
             }
@@ -245,16 +245,67 @@ describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
             exists: true,
             data: function () {
                 return {
-                    list: [{ id: 'OLD', name: 'Old', days: [1] }],
+                    list: [{ id: 'SAME', name: 'Legacy copy', className: 'Class-A', days: [1] }],
                     updatedAt: { toMillis: function () { return Date.now() - 60000; } }
                 };
             }
         });
+        env.localStorage.setItem('ems_classes', JSON.stringify([{ name: 'Class-A' }]));
 
         var res = await env.attMigrateLegacyCloudTimetablePeriods(TENANT_A, TENANT_A, env.emsGetTenantGeneration());
-        expect(res.skipped).toBe(true);
-        expect(res.reason).toBe('canonical_newer');
-        expect(env._enqueued.length).toBe(0);
+        expect(res.ok).toBe(true);
+        expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('SAME');
+    });
+
+    it('disjoint ModuleData vs Attendance_Config restores Attendance_Config even if migrated flag is set', async function () {
+        env.setCloudGet(TENANT_A, 'ModuleData', CANONICAL_DOC, {
+            exists: true,
+            data: function () {
+                return {
+                    key: PERIODS_KEY,
+                    module: 'Attendance',
+                    data: JSON.stringify([{ id: 'FOREIGN-1', name: 'Leaked other madrasa', days: [1] }])
+                };
+            }
+        });
+        env.setCloudGet(TENANT_A, 'Attendance_Config', 'periods', {
+            exists: true,
+            data: function () {
+                return { list: [{ id: 'OWN-1', name: 'This madrasa', days: [2] }] };
+            }
+        });
+        env._emsOriginalSetItem.call(env.localStorage,
+            'ems_t_' + TENANT_A + '__ems_timetable_cloud_legacy_migrated_v1', '1');
+
+        var res = await env.attMigrateLegacyCloudTimetablePeriods(TENANT_A, TENANT_A, env.emsGetTenantGeneration());
+        expect(res.ok).toBe(true);
+        expect(res.migrated).toBe(true);
+        expect(res.source).toBe('legacy_disjoint');
+        expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('OWN-1');
+    });
+
+    it('after disjoint restore, live ModuleData leak snapshot does not replace own timetable', async function () {
+        env.setCloudGet(TENANT_A, 'ModuleData', CANONICAL_DOC, {
+            exists: true,
+            data: function () {
+                return {
+                    key: PERIODS_KEY,
+                    module: 'Attendance',
+                    data: JSON.stringify([{ id: 'FOREIGN-1', name: 'Leaked other madrasa', days: [1] }])
+                };
+            }
+        });
+        env.setCloudGet(TENANT_A, 'Attendance_Config', 'periods', {
+            exists: true,
+            data: function () {
+                return { list: [{ id: 'OWN-1', name: 'This madrasa', days: [2] }] };
+            }
+        });
+
+        await env.emsStartAttendanceSync();
+        expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('OWN-1');
+        expect(env.deliverCanonicalSnapshot(TENANT_A, [{ id: 'FOREIGN-1', name: 'Leaked other madrasa', days: [1] }])).toBe(1);
+        expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('OWN-1');
     });
 
     it('attTimetableListFromCloudSnapshot parses ModuleData and legacy shapes', function () {

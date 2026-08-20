@@ -87,6 +87,9 @@ function loadEnv() {
         + '\nthis.attRecoverLegacyTimetablePeriods = attRecoverLegacyTimetablePeriods;'
         + '\nthis.attRecoverContaminatedTimetable = attRecoverContaminatedTimetable;'
         + '\nthis.attTimetableLooksLikeForeignCopy = attTimetableLooksLikeForeignCopy;'
+        + '\nthis.attChooseTimetableFromCloudLists = attChooseTimetableFromCloudLists;'
+        + '\nthis.attShouldAcceptRemoteTimetable = attShouldAcceptRemoteTimetable;'
+        + '\nthis.attRememberTrustedTimetable = attRememberTrustedTimetable;'
         + '\nthis.attReadAllTimetablePeriodsRaw = function(){ var r=this.localStorage.getItem("ems_att_periods"); try{return r?JSON.parse(r):[];}catch(e){return [];} };',
         sb
     );
@@ -146,20 +149,47 @@ describe('Foreign timetable replacing own — production fix', function () {
         expect(fn).not.toMatch(/_emsOriginalSetItem\.call\(localStorage,\s*key,/);
     });
 
-    it('live ModuleData snapshot rejects foreign period ids (source lock)', function () {
+    it('live ModuleData snapshot rejects a disjoint foreign list after Attendance_Config is trusted', function () {
         var att = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
         var block = att.slice(
             att.indexOf('window.emsStartAttendanceSync = function'),
             att.indexOf('window.emsStopAttendanceSync = stopAttendanceFirestoreSync')
         );
-        expect(block).toContain('attTimetableLooksLikeForeignCopy');
+        expect(block).toContain('attShouldAcceptRemoteTimetable');
         expect(block).toContain('attMigrateLegacyCloudTimetablePeriods');
         expect(block).toContain('localKeep');
     });
 
-    it('legacy cloud migration promotes Attendance_Config when ModuleData is contaminated', function () {
+    it('legacy cloud migration prefers Attendance_Config when period ids are disjoint', function () {
         var att = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
-        expect(att).toContain('canonContaminated');
+        expect(att).toContain('attChooseTimetableFromCloudLists');
+        expect(att).toContain('legacy_disjoint');
         expect(att).toContain('SCOPED_ALREADY_HAS_DATA');
+    });
+
+    it('device with only this madrasa still restores Attendance_Config over leaked ModuleData', async function () {
+        env.put(scopedKey(TENANT_B), [{ id: 'P-A', name: 'leaked into B', days: [1] }]);
+
+        var choice = env.attChooseTimetableFromCloudLists(
+            [{ id: 'P-A', name: 'leaked into B', days: [1] }],
+            [{ id: 'P-B', name: 'B-OWN', days: [3] }],
+            TENANT_B
+        );
+        expect(choice.source).toBe('legacy_disjoint');
+        expect(choice.persistCanonical).toBe(true);
+        expect(choice.list[0].id).toBe('P-B');
+
+        var res = await env.attRecoverContaminatedTimetable(TENANT_B, {
+            cloudCanonicalList: [{ id: 'P-A', name: 'leaked into B', days: [1] }],
+            cloudLegacyList: [{ id: 'P-B', name: 'B-OWN', days: [3] }]
+        });
+        expect(res.preferredSource).toBe('cloud_legacy');
+        expect(JSON.parse(env.physical[scopedKey(TENANT_B)])[0].id).toBe('P-B');
+    });
+
+    it('later ModuleData snapshot is rejected when it does not match the trusted Attendance_Config list', function () {
+        env.attRememberTrustedTimetable(TENANT_B, [{ id: 'P-B', name: 'own', days: [2] }], 'legacy_disjoint');
+        expect(env.attShouldAcceptRemoteTimetable([{ id: 'P-A', name: 'leak', days: [1] }], TENANT_B)).toBe(false);
+        expect(env.attShouldAcceptRemoteTimetable([{ id: 'P-B', name: 'own', days: [2] }], TENANT_B)).toBe(true);
     });
 });

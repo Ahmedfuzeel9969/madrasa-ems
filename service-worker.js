@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260820_timetable_foreign_replace_fix';
+var EMS_SW_BUILD_TAG = '20260820_timetable_roster_heal';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

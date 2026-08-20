@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260820_timetable_foreign_replace_fix';
+    var CACHE_BUST = '20260820_timetable_roster_heal';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 
