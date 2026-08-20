@@ -24,8 +24,10 @@
     }
 
     function rowBelongsToActiveTenant(row) {
-        var active = getTenantId();
-        if (!row || !row.tenantId || !active) return false;
+        if (!row || !row.tenantId) return false;
+        var isAtt = row.type === 'attendance' || row.type === 'attendance_patch';
+        var active = isAtt ? getVerifiedAttendanceTenantId() : getTenantId();
+        if (!active) return false;
         return String(row.tenantId) === String(active);
     }
 
@@ -175,6 +177,19 @@
         return null;
     }
 
+    /** Attendance only — never substitute auth.uid for linked teacher/staff Gmail accounts. */
+    function getVerifiedAttendanceTenantId() {
+        if (typeof global.emsGetTenantId === 'function') {
+            var t = global.emsGetTenantId();
+            if (t) return t;
+        }
+        if (global.CURRENT_MADRASA_TENANT_ID) return global.CURRENT_MADRASA_TENANT_ID;
+        if (global.EMS_ACTIVE_TENANT_ID) return global.EMS_ACTIVE_TENANT_ID;
+        return null;
+    }
+
+    global.emsGetVerifiedAttendanceTenantId = getVerifiedAttendanceTenantId;
+
     function getDb() {
         return typeof global.getDbOrNull === 'function' ? global.getDbOrNull() : null;
     }
@@ -276,14 +291,29 @@
     };
 
     global.emsAttCloudDocId = function (month, type, classId, period) {
-        return 'att_rec_' + month + '_' + type + '_' + classId + '_' + (period || 'all');
+        var s = attOfflineNormalizeScope(month, type, classId, period);
+        return 'att_rec_' + s.month + '_' + s.type + '_' + s.classId + '_' + (s.period || 'all');
     };
 
     global.emsAttLocalStorageKey = function (tenantId, month, type, classId, period) {
-        var tid = tenantId || getTenantId();
+        var tid = tenantId || getVerifiedAttendanceTenantId();
         if (!tid) return null;
-        return 'att_rec_' + tid + '_' + month + '_' + type + '_' + classId + '_' + (period || 'all');
+        var s = attOfflineNormalizeScope(month, type, classId, period);
+        return 'att_rec_' + tid + '_' + s.month + '_' + s.type + '_' + s.classId + '_' + (s.period || 'all');
     };
+
+    function attOfflineNormalizeScope(month, type, classId, period) {
+        if (typeof global.attNormalizeStorageScope === 'function') {
+            return global.attNormalizeStorageScope(month, type, classId, period);
+        }
+        type = type || 'students';
+        classId = classId != null ? String(classId) : '';
+        period = period || 'all';
+        if (type === 'teachers' || type === 'staff') {
+            return { month: month, type: type, classId: '', period: 'all' };
+        }
+        return { month: month, type: type, classId: classId, period: period };
+    }
 
     global.emsAttResolveLocalKey = function (tenantId, month, type, classId, period) {
         var scoped = global.emsAttLocalStorageKey(tenantId, month, type, classId, period);
@@ -292,7 +322,7 @@
     };
 
     global.emsIsActiveTenantAttendanceKey = function (key, tenantId) {
-        tenantId = tenantId || getTenantId();
+        tenantId = tenantId || getVerifiedAttendanceTenantId();
         return !!(key && tenantId && key.indexOf('att_rec_' + tenantId + '_') === 0);
     };
 
@@ -302,7 +332,7 @@
      * Unknown legacy sheets are retained but never read by any live screen.
      */
     global.emsMigrateLegacyAttendanceForTenant = function (tenantId) {
-        tenantId = tenantId || getTenantId();
+        tenantId = tenantId || getVerifiedAttendanceTenantId();
         if (!tenantId || global.EMS_TENANT_LEGACY_MIGRATION_ALLOWED !== true) {
             return Promise.resolve({ migrated: 0, deferred: true });
         }
@@ -371,7 +401,7 @@
         if (typeof global.emsResolveCacheKey === 'function') {
             return global.emsResolveCacheKey('ems_att_keys_index');
         }
-        var tid = getTenantId();
+        var tid = getVerifiedAttendanceTenantId();
         return tid ? ('ems_t_' + tid + '__ems_att_keys_index') : null;
     }
 
@@ -383,7 +413,7 @@
             if (!raw) return [];
             var parsed = JSON.parse(raw);
             var keys = Array.isArray(parsed) ? parsed : [];
-            var tid = getTenantId();
+            var tid = getVerifiedAttendanceTenantId();
             if (!tid) return [];
             return keys.filter(function (key) {
                 return key && key.indexOf('att_rec_' + tid + '_') === 0;
@@ -410,7 +440,7 @@
 
     function attIndexAddKey(key) {
         if (!key || key.indexOf('att_rec_') !== 0) return;
-        if (!getTenantId() || (typeof global.emsIsActiveTenantAttendanceKey === 'function'
+        if (!getVerifiedAttendanceTenantId() || (typeof global.emsIsActiveTenantAttendanceKey === 'function'
             && !global.emsIsActiveTenantAttendanceKey(key))) {
             return;
         }
@@ -424,7 +454,7 @@
     }
 
     function attIndexRebuildFromStorage() {
-        var tid = getTenantId();
+        var tid = getVerifiedAttendanceTenantId();
         var keys = [];
         if (!tid) return keys;
         var prefix = 'att_rec_' + tid + '_';
@@ -534,15 +564,32 @@
         });
     }
 
+    function mergeAttendancePatchPayload(existing, incoming) {
+        existing = existing || {};
+        incoming = incoming || {};
+        if (typeof global.attMergeCloudPatches === 'function') {
+            return global.attMergeCloudPatches(existing, incoming);
+        }
+        var merged = Object.assign({}, existing, incoming);
+        ['periodRecords', 'records', 'remarks', 'late'].forEach(function (field) {
+            if (!merged[field]) return;
+            var hasGranular = Object.keys(merged).some(function (k) {
+                return k.indexOf(field + '.') === 0;
+            });
+            if (hasGranular) delete merged[field];
+        });
+        return merged;
+    }
+
     function upsertQueueByDocId(type, docId, row) {
         return ensureQueueDocIdMap().then(function () {
             return findQueueRowByDocId(type, docId).then(function (existing) {
                 if (existing && existing.id != null) row.id = existing.id;
-                // Merge attendance field patches so clears are not dropped by later edits.
+                // Merge attendance field patches so unrelated period marks are not dropped.
                 if (existing && type === 'attendance_patch'
                     && existing.payload && typeof existing.payload === 'object'
                     && row.payload && typeof row.payload === 'object') {
-                    row.payload = Object.assign({}, existing.payload, row.payload);
+                    row.payload = mergeAttendancePatchPayload(existing.payload, row.payload);
                 }
                 return enqueue(row);
             });
@@ -552,7 +599,8 @@
     function flushAttendanceRow(row) {
         var db = getDb();
         var tid = row.tenantId;
-        if (!tid || (getTenantId() && String(tid) !== String(getTenantId()))) {
+        var activeTid = getVerifiedAttendanceTenantId();
+        if (!tid || !activeTid || String(tid) !== String(activeTid)) {
             return Promise.resolve({ ok: false, error: 'tenant_mismatch', code: 'TENANT_MISMATCH', skip: true });
         }
         if (!db || !tid || !row.docId) {
@@ -573,7 +621,8 @@
     function flushAttendancePatchRow(row) {
         var db = getDb();
         var tid = row.tenantId;
-        if (!tid || (getTenantId() && String(tid) !== String(getTenantId()))) {
+        var activeTid = getVerifiedAttendanceTenantId();
+        if (!tid || !activeTid || String(tid) !== String(activeTid)) {
             return Promise.resolve({ ok: false, error: 'tenant_mismatch', code: 'TENANT_MISMATCH', skip: true });
         }
         if (!db || !tid || !row.docId) {
@@ -590,6 +639,11 @@
                 if (k.indexOf(field + '.') === 0) delete patch[k];
             });
         });
+        // Firestore rejects parent + child paths in one update — prefer granular periodRecords paths.
+        var hasGranularPeriod = Object.keys(patch).some(function (k) {
+            return k.indexOf('periodRecords.') === 0;
+        });
+        if (hasGranularPeriod && patch.periodRecords) delete patch.periodRecords;
         // null sentinel → FieldValue.delete() so cleared cells are removed.
         try {
             if (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) {
@@ -968,12 +1022,22 @@
             else if (domain === 'fee') qType = 'fee';
             else qType = domain || 'mutation';
         }
+        var isAttQueue = qType === 'attendance' || qType === 'attendance_patch' || domain === 'attendance';
+        var tenantId = env.tenantId;
+        if (isAttQueue) {
+            tenantId = tenantId || getVerifiedAttendanceTenantId();
+            if (!tenantId) {
+                return Promise.resolve({ ok: false, reason: 'no_tenant', code: 'TENANT_PENDING', docId: env.docId });
+            }
+        } else {
+            tenantId = tenantId || getTenantId();
+        }
         var queueRow = {
             type: qType,
             docId: env.docId,
             payload: env.payload,
             localKey: env.localKey,
-            tenantId: env.tenantId || getTenantId(),
+            tenantId: tenantId,
             meta: env.meta
         };
         return upsertQueueByDocId(qType, env.docId, queueRow).then(function () {
@@ -1070,6 +1134,10 @@
     global.emsOfflinePersistAttendance = function (cloudDocId, data, opts) {
         opts = opts || {};
         if (!cloudDocId) return Promise.resolve({ ok: false, reason: 'no_key' });
+        var tenantId = getVerifiedAttendanceTenantId();
+        if (!tenantId) {
+            return Promise.resolve({ ok: false, reason: 'no_tenant', code: 'TENANT_PENDING' });
+        }
         var localKey = opts.localKey || cloudDocId;
 
         if (!opts.skipLocalSync && typeof global.emsOfflineWriteLocalSync === 'function') {
@@ -1080,7 +1148,7 @@
             if (opts.patch && typeof global.emsCloudEmitAttendancePatch === 'function') {
                 return global.emsCloudEmitAttendancePatch(cloudDocId, opts.patch, {
                     localKey: localKey,
-                    tenantId: getTenantId()
+                    tenantId: tenantId
                 }).then(function (syncRes) {
                     return {
                         ok: true,
@@ -1099,7 +1167,7 @@
                 docId: cloudDocId,
                 payload: data,
                 localKey: localKey,
-                tenantId: getTenantId()
+                tenantId: tenantId
             }).then(function (syncRes) {
                 return {
                     ok: true,

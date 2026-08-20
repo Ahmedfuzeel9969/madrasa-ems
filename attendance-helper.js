@@ -5,9 +5,13 @@
     'use strict';
 
     function getTenantId() {
+        if (typeof global.emsGetTenantId === 'function') {
+            var tid = global.emsGetTenantId();
+            if (tid) return tid;
+        }
         if (global.CURRENT_MADRASA_TENANT_ID) return global.CURRENT_MADRASA_TENANT_ID;
-        var user = firebase.auth().currentUser;
-        return user ? user.uid : null;
+        if (global.EMS_ACTIVE_TENANT_ID) return global.EMS_ACTIVE_TENANT_ID;
+        return null;
     }
 
     function getDb() {
@@ -89,6 +93,21 @@
             return null;
         }
     }
+
+    function attHelperHasMeaningfulSheet(sheet) {
+        if (typeof global.attHasMeaningfulAttendanceData === 'function') {
+            return global.attHasMeaningfulAttendanceData(sheet);
+        }
+        if (!sheet || typeof sheet !== 'object') return false;
+        if (sheet.timestamp || sheet.updatedAt) return true;
+        if (sheet.locked) return true;
+        if (Object.keys(sheet.records || {}).length) return true;
+        if (Object.keys(sheet.dailyLocks || {}).length) return true;
+        if (Object.keys(sheet.periodRecords || {}).length) return true;
+        return false;
+    }
+
+    global.attHelperHasMeaningfulSheet = attHelperHasMeaningfulSheet;
 
     function attMonthFromAttKey(key) {
         if (!key || key.indexOf('att_rec_') !== 0) return null;
@@ -182,14 +201,14 @@
                 : (typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null);
             sync = attParseSheet(raw);
         }
-        if (sync && sync.records) return Promise.resolve(sync);
+        if (sync && attHelperHasMeaningfulSheet(sync)) return Promise.resolve(sync);
         if (typeof global.emsIdbKvGet === 'function') {
             return global.emsIdbKvGet(key).then(function (raw) {
                 var sheet = attParseSheet(raw);
-                return sheet && sheet.records ? sheet : null;
+                return attHelperHasMeaningfulSheet(sheet) ? sheet : null;
             });
         }
-        return Promise.resolve(sync && sync.records ? sync : null);
+        return Promise.resolve(attHelperHasMeaningfulSheet(sync) ? sync : null);
     }
 
     global.emsOfflineLoadAttendanceSheetsForMonth = function (monthStr) {
@@ -482,7 +501,7 @@
                 if (!keys || !keys.length) return [];
                 return Promise.all(keys.map(function (key) {
                     return attReadSheetByKeyAsync(key).then(function (sheet) {
-                        if (!sheet || !sheet.records) return null;
+                        if (!attHelperHasMeaningfulSheet(sheet)) return null;
                         return {
                             month: monthStr,
                             records: sheet.records,
@@ -549,7 +568,7 @@
             if (!staffKeys.length) return [];
             return Promise.all(staffKeys.map(function (key) {
                 return attReadSheetByKeyAsync(key).then(function (sheet) {
-                    if (!sheet || !sheet.records) return null;
+                    if (!attHelperHasMeaningfulSheet(sheet)) return null;
                     return { month: monthStr, records: sheet.records, remarks: sheet.remarks || {} };
                 });
             })).then(function (rows) {
@@ -620,7 +639,8 @@
     function attLocalKeyFromCloudDocId(tenantId, cloudDocId) {
         if (!cloudDocId) return cloudDocId;
         if (cloudDocId.indexOf('att_rec_') !== 0) return cloudDocId;
-        var tid = tenantId || getTenantId() || 'local';
+        var tid = tenantId || getTenantId();
+        if (!tid) return null;
         var rest = cloudDocId.slice('att_rec_'.length);
         if (rest.indexOf(tid + '_') === 0) return cloudDocId;
         return 'att_rec_' + tid + '_' + rest;

@@ -18,12 +18,12 @@ describe('Attendance smart-register clear cell', function () {
     it('converts null clear patches to FieldValue.delete on flush', function () {
         var js = fs.readFileSync(path.join(ROOT, 'ems-offline-write.js'), 'utf8');
         expect(js).toMatch(/flushAttendancePatchRow[\s\S]*?FieldValue\.delete\(\)/);
-        expect(js).toMatch(/attendance_patch[\s\S]*?Object\.assign\(\{\}, existing\.payload/);
+        expect(js).toMatch(/attendance_patch[\s\S]*?mergeAttendancePatchPayload/);
     });
 
     it('cloud patch marks deleted days as null so Firestore can clear them', function () {
         var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
-        var start = src.indexOf('function attComputeSheetCloudPatch');
+        var start = src.indexOf('function attMergeCloudPatches');
         var end = src.indexOf('\nfunction attPauseDictObserver');
         expect(start).toBeGreaterThan(-1);
         expect(end).toBeGreaterThan(start);
@@ -64,13 +64,14 @@ describe('Attendance smart-register clear cell', function () {
         expect(js).toMatch(/fully cleared/);
     });
 
-    it('clear button forces Firebase map-replace like P/A/L sync', function () {
+    it('clear button forces granular Firebase delete paths like P/A/L sync', function () {
         var js = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
         var offline = fs.readFileSync(path.join(ROOT, 'ems-offline-write.js'), 'utf8');
         expect(js).toContain('attAppendForcedClearPatch');
         expect(js).toContain('clearCells: [{ uid: uid, day: day }]');
         expect(js).toContain('immediateCloud: true');
         expect(js).toContain('attRunPendingCloudPersist');
+        expect(js).toMatch(/attAppendForcedClearPatch[\s\S]{0,800}periodRecords\.' \+ uid \+ '\.' \+ day/);
         expect(offline).toMatch(/set\(payload,\s*\{\s*merge:\s*false\s*\}\)/);
         expect(offline).toContain('FieldValue.delete()');
     });

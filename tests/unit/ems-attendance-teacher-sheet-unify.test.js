@@ -8,13 +8,16 @@ var ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 function loadSheetKeyHelpers() {
     var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
+    var normStart = src.indexOf('function attNormalizeStorageScope');
+    var normEnd = src.indexOf('\nfunction attSheetKeys');
     var keysStart = src.indexOf('function attSheetKeys');
     var keysEnd = src.indexOf('\nfunction attLastSessionStorageKey');
     var canonStart = src.indexOf('function attCanonicalStudentKeys');
     var canonEnd = src.indexOf('\nfunction attOverlayCanonicalPeriodMarks');
     var legacyStart = src.indexOf('var ATT_LEGACY_PERIOD_MERGE_KEY');
     var legacyEnd = src.indexOf('\nfunction attAdoptLegacyPeriodSheets');
-    var fnSrc = src.slice(keysStart, keysEnd)
+    var fnSrc = src.slice(normStart, normEnd)
+        + '\n' + src.slice(keysStart, keysEnd)
         + '\n' + src.slice(canonStart, canonEnd)
         + '\n' + src.slice(legacyStart, legacyEnd);
     var sandbox = {
@@ -24,7 +27,13 @@ function loadSheetKeyHelpers() {
             getItem: function (k) { return this._data[k] || null; },
             setItem: function (k, v) { this._data[k] = String(v); }
         },
-        getAttendanceTenantId: function () { return 'tenant1'; }
+        getAttendanceTenantId: function () { return 'tenant1'; },
+        emsAttCloudDocId: function (month, type, classId, period) {
+            return 'att_rec_' + month + '_' + type + '_' + classId + '_' + (period || 'all');
+        },
+        emsAttLocalStorageKey: function (tenantId, month, type, classId, period) {
+            return 'att_rec_' + (tenantId || 'tenant1') + '_' + month + '_' + type + '_' + classId + '_' + (period || 'all');
+        }
     };
     sandbox.window = sandbox;
     vm.runInNewContext(

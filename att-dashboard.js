@@ -167,6 +167,9 @@
     }
 
     function attDashNormalizeStatusBucket(st) {
+        if (typeof global.attMetricsStrictBucket === 'function') {
+            return global.attMetricsStrictBucket(st);
+        }
         if (attDashStatusPresent(st)) return 'P';
         if (attDashStatusAbsent(st)) return 'A';
         if (attDashStatusLeave(st)) return 'L';
@@ -175,6 +178,9 @@
 
     /** Newer ts wins; on tie prefer period=all; clear/tombstone beats stale mark. */
     function attDashMarkCandidateBetter(cand, incumbent) {
+        if (typeof global.attMetricsMarkCandidateBetter === 'function') {
+            return global.attMetricsMarkCandidateBetter(cand, incumbent);
+        }
         if (!incumbent) return true;
         if (!cand) return false;
         if (cand.ts !== incumbent.ts) return cand.ts > incumbent.ts;
@@ -183,155 +189,11 @@
         return false;
     }
 
-    /**
-     * One final P/A/L (or unmarked) per studentId for a date.
-     * Dedupes period=all vs period sheets + local/cloud versions by timestamp.
-     * When periodFilter is set: analyze that hour via periodRecords (canonical)
-     * or legacy period-sheet records.
-     */
     function attDashBuildFinalMarksForDay(dateStr, sheets, rosterUsers, periodFilter) {
-        var dayNum = dayNumOf(dateStr);
-        var periodId = String(periodFilter || '').trim();
-        var roster = Object.create(null);
-        (rosterUsers || []).forEach(function (u) {
-            var id = attDashGetUserId(u);
-            if (!id) return;
-            roster[id] = {
-                classId: String(u.class || u.className || u.grade || '').trim() || 'نامعلوم',
-                role: attDashNormType(u) || 'student',
-                user: u
-            };
-        });
-
-        var best = Object.create(null);
-
-        (sheets || []).forEach(function (sh) {
-            if (!sh || !sh.data) return;
-            var sheetTs = attDashSheetTimestamp(sh.data);
-            var isAll = !sh.period || sh.period === 'all';
-
-            if (periodId) {
-                // —— گھنٹہ وار تجزیہ ——
-                if (isAll) {
-                    var periodRecs = sh.data.periodRecords || {};
-                    Object.keys(periodRecs).forEach(function (uid) {
-                        if (!roster[uid]) return;
-                        var role = roster[uid].role;
-                        if (role === 'student' && sh.type && sh.type !== 'students') return;
-                        if (role === 'teacher' && sh.type && sh.type !== 'teachers') return;
-                        if (role === 'staff' && sh.type && sh.type !== 'staff') return;
-                        if (role === 'student' && sh.classId && sh.classId !== roster[uid].classId) return;
-
-                        var dayMap = periodRecs[uid] && (periodRecs[uid][dayNum] || periodRecs[uid][String(dayNum)]);
-                        if (!dayMap || typeof dayMap !== 'object') return;
-                        if (!Object.prototype.hasOwnProperty.call(dayMap, periodId)) return;
-                        var raw = dayMap[periodId];
-                        var bucket = attDashNormalizeStatusBucket(raw == null ? '' : String(raw).trim());
-                        var cand = {
-                            uid: uid,
-                            ts: sheetTs,
-                            isAll: true,
-                            hasObservation: true,
-                            cleared: !bucket,
-                            status: bucket,
-                            sheetKey: sh.key || '',
-                            period: periodId
-                        };
-                        if (attDashMarkCandidateBetter(cand, best[uid])) best[uid] = cand;
-                    });
-                    return;
-                }
-
-                // Legacy period sheet: only this hour
-                if (String(sh.period) !== periodId) return;
-                var recLegacy = sh.data.records || {};
-                Object.keys(recLegacy).forEach(function (uid) {
-                    if (!roster[uid]) return;
-                    var role = roster[uid].role;
-                    if (role === 'student' && sh.type && sh.type !== 'students') return;
-                    if (role === 'teacher' && sh.type && sh.type !== 'teachers') return;
-                    if (role === 'staff' && sh.type && sh.type !== 'staff') return;
-                    if (role === 'student' && sh.classId && sh.classId !== roster[uid].classId) return;
-
-                    var obs = attDashReadDayObservation(recLegacy[uid], dayNum);
-                    if (!obs.hasKey) return;
-                    var bucketL = attDashNormalizeStatusBucket(obs.status);
-                    var candL = {
-                        uid: uid,
-                        ts: sheetTs,
-                        isAll: false,
-                        hasObservation: true,
-                        cleared: !bucketL,
-                        status: bucketL,
-                        sheetKey: sh.key || '',
-                        period: periodId
-                    };
-                    if (attDashMarkCandidateBetter(candL, best[uid])) best[uid] = candL;
-                });
-                return;
-            }
-
-            // —— یومیہ تجزیہ (پہلا رویہ) ——
-            var rec = sh.data.records || {};
-            Object.keys(rec).forEach(function (uid) {
-                if (!roster[uid]) return;
-                var role = roster[uid].role;
-                if (role === 'student' && sh.type && sh.type !== 'students') return;
-                if (role === 'teacher' && sh.type && sh.type !== 'teachers') return;
-                if (role === 'staff' && sh.type && sh.type !== 'staff') return;
-                if (role === 'student' && sh.classId && sh.classId !== roster[uid].classId) return;
-
-                var dayRec = rec[uid];
-                var obs = attDashReadDayObservation(dayRec, dayNum);
-                var cand;
-                if (isAll) {
-                    // Daily register sheet is authoritative: missing day key = clear tombstone.
-                    cand = {
-                        uid: uid,
-                        ts: sheetTs,
-                        isAll: true,
-                        hasObservation: true,
-                        cleared: !obs.hasKey || !attDashNormalizeStatusBucket(obs.status),
-                        status: obs.hasKey ? attDashNormalizeStatusBucket(obs.status) : '',
-                        sheetKey: sh.key || '',
-                        period: 'all'
-                    };
-                } else {
-                    if (!obs.hasKey) return;
-                    var bucket = attDashNormalizeStatusBucket(obs.status);
-                    cand = {
-                        uid: uid,
-                        ts: sheetTs,
-                        isAll: false,
-                        hasObservation: true,
-                        cleared: !bucket,
-                        status: bucket,
-                        sheetKey: sh.key || '',
-                        period: sh.period || ''
-                    };
-                }
-                if (attDashMarkCandidateBetter(cand, best[uid])) best[uid] = cand;
-            });
-        });
-
-        var marks = Object.create(null);
-        Object.keys(roster).forEach(function (uid) {
-            var b = best[uid];
-            marks[uid] = {
-                status: (b && !b.cleared && b.status) ? b.status : '',
-                classId: roster[uid].classId,
-                role: roster[uid].role,
-                ts: b ? b.ts : 0,
-                sourceKey: b ? b.sheetKey : ''
-            };
-        });
-        return {
-            roster: roster,
-            marks: marks,
-            dayNum: dayNum,
-            dateStr: dateStr,
-            periodFilter: periodId || ''
-        };
+        if (typeof global.attMetricsBuildFinalMarksForDay === 'function') {
+            return global.attMetricsBuildFinalMarksForDay(dateStr, sheets, rosterUsers, periodFilter);
+        }
+        return { roster: {}, marks: {}, dayNum: dayNumOf(dateStr), dateStr: dateStr, periodFilter: periodFilter || '' };
     }
 
     function attDashAssertStatsInvariant(stats, ctx) {
@@ -819,75 +681,19 @@
     function attDashMonthlySummary(monthStr, roleFilter, classFilter, sheets) {
         var users = attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter);
         sheets = sheets || [];
-        var rosterIds = Object.create(null);
-        users.forEach(function (u) {
-            var id = attDashGetUserId(u);
-            if (id) rosterIds[id] = true;
-        });
-
-        var daysWithData = Object.create(null);
-        var totalPresentMarks = 0;
-        var totalPossible = 0;
-
-        sheets.forEach(function (sh) {
-            if (roleFilter === 'student' && sh.type !== 'students') return;
-            if (roleFilter === 'teacher' && sh.type !== 'teachers') return;
-            if (roleFilter === 'staff' && sh.type !== 'staff') return;
-            if (classFilter && sh.classId && sh.classId !== classFilter) return;
-            var rec = (sh.data && sh.data.records) || {};
-            Object.keys(rec).forEach(function (uid) {
-                if (!rosterIds[uid]) return;
-                var dayRec = rec[uid] || {};
-                Object.keys(dayRec).forEach(function (d) {
-                    daysWithData[d] = true;
-                    totalPossible++;
-                    if (attDashStatusPresent(dayRec[d])) totalPresentMarks++;
-                });
-            });
-        });
-
-        var activeDays = Object.keys(daysWithData).length;
-        var monthRate = totalPossible > 0 ? Math.round((totalPresentMarks / totalPossible) * 100) : 0;
-        return { activeDays: activeDays, monthRate: monthRate, totalMarks: totalPresentMarks };
+        if (typeof global.attMetricsMonthlySummary === 'function') {
+            return global.attMetricsMonthlySummary(monthStr, sheets, users);
+        }
+        return { activeDays: 0, monthRate: 0, totalMarks: 0 };
     }
 
     function attDashLowAttendanceAlerts(monthStr, sheets) {
         var users = attDashFilterUsers(attDashGetUsers(), 'student', '');
         sheets = sheets || [];
-        var stats = Object.create(null);
-
-        users.forEach(function (u) {
-            var id = attDashGetUserId(u);
-            if (!id) return;
-            stats[id] = { user: u, present: 0, total: 0 };
-        });
-
-        sheets.forEach(function (sh) {
-            if (sh.type !== 'students') return;
-            var rec = (sh.data && sh.data.records) || {};
-            Object.keys(rec).forEach(function (uid) {
-                if (!stats[uid]) return;
-                var dayRec = rec[uid] || {};
-                Object.keys(dayRec).forEach(function (d) {
-                    stats[uid].total++;
-                    if (attDashStatusPresent(dayRec[d])) stats[uid].present++;
-                });
-            });
-        });
-
-        return Object.keys(stats).map(function (id) {
-            var s = stats[id];
-            if (s.total < 3) return null;
-            var rate = Math.round((s.present / s.total) * 100);
-            if (rate >= 75) return null;
-            return {
-                name: s.user.name || id,
-                className: s.user.class || s.user.className || '—',
-                rate: rate,
-                present: s.present,
-                total: s.total
-            };
-        }).filter(Boolean).sort(function (a, b) { return a.rate - b.rate; }).slice(0, 8);
+        if (typeof global.attMetricsLowAttendanceAlerts === 'function') {
+            return global.attMetricsLowAttendanceAlerts(monthStr, sheets, users);
+        }
+        return [];
     }
 
     function attDashPopulateClassFilter() {

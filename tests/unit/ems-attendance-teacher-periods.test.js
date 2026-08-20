@@ -15,7 +15,7 @@ describe('Teacher timetable period boxes in smart register', function () {
         expect(js).toContain('window.setTeacherAllPeriods');
         expect(js).toContain('window.cycleTeacherPeriodStatus');
         expect(js).toContain('attRollupPeriodDayStatus');
-        expect(js).toMatch(/diffDayMapField\('periodRecords'\)/);
+        expect(js).toMatch(/attDiffPeriodRecordsPatch|diffDayMapField\('periodRecords'\)/);
     });
 
     it('keeps legacy day controls for teachers', function () {
@@ -55,15 +55,24 @@ describe('Teacher timetable period boxes in smart register', function () {
         ];
         var sandbox = {
             localStorage: {
-                getItem: function () { return JSON.stringify(periods); }
-            }
+                getItem: function () { return JSON.stringify(periods); },
+                setItem: function () {}
+            },
+            currentAttState: null,
+            attGetUsers: function () { return []; },
+            attFilterEligibleUsers: function (list) { return list || []; },
+            attUserMatchesType: function () { return false; },
+            attPersistConfigBlob: function () { return Promise.resolve(); },
+            ATT_PERIODS_KEY: 'ems_att_periods',
+            console: { info: function () {} }
         };
+        sandbox.window = sandbox;
         vm.runInNewContext(
             fnSrc + '\nthis.attTeacherPeriodsForWeekday = attTeacherPeriodsForWeekday;',
             sandbox
         );
         var mon = sandbox.attTeacherPeriodsForWeekday('T1', 'علی', 1);
-        expect(mon.map(function (p) { return p.id; })).toEqual(['PRD-1', 'PRD-4']);
+        expect(mon.map(function (p) { return p.id; })).toEqual(['PRD-1']);
         var tue = sandbox.attTeacherPeriodsForWeekday('T1', '', 2);
         expect(tue.map(function (p) { return p.id; })).toEqual(['PRD-2']);
     });

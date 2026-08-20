@@ -166,8 +166,14 @@
     if (res.code === 'VERSION_CONFLICT') {
       return { cloud: 'conflict', error: res.error || '', code: res.code };
     }
+    if (res.code === 'TENANT_PENDING' || res.code === 'TENANT_MISMATCH' || res.code === 'TENANT_REQUIRED') {
+      return { cloud: 'queued', error: res.error || res.reason || '', code: res.code };
+    }
+    if (res.code === 'PERMISSION_DENIED' || res.code === 'permission-denied') {
+      return { cloud: 'failed', error: res.error || 'permission denied', code: res.code };
+    }
     if (res.offline || res.queued) return { cloud: res.offline ? 'offline' : 'queued' };
-    if (res.ok === false) return { cloud: 'failed', error: res.error || '', code: res.code || '' };
+    if (res.ok === false) return { cloud: 'failed', error: res.error || res.reason || '', code: res.code || '' };
     return { cloud: 'queued' };
   }
 

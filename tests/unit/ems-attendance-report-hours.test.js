@@ -7,13 +7,20 @@ import { fileURLToPath } from 'url';
 var ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 function loadReportBuilder() {
+    var metricsSrc = fs.readFileSync(path.join(ROOT, 'att-metrics.js'), 'utf8');
     var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
     var start = src.indexOf('function attReportStatusKind');
     var end = src.indexOf('\nvar _repSearchUsersCache', start);
     var sandbox = {
+        window: {},
+        localStorage: { getItem: function () { return null; } },
+        ATT_ROLLUP_PARTIAL: 'جزوی حاضری',
+        ATT_ROLLUP_INCOMPLETE: 'نامکمل',
         attGetUserId: function (u) { return u.id; },
         attGetUserClass: function (u) { return u.class || ''; }
     };
+    sandbox.window = sandbox;
+    vm.runInNewContext(metricsSrc, sandbox);
     vm.runInNewContext(
         src.slice(start, end) + '\nthis.build = attBuildReportRowHtml;',
         sandbox
@@ -61,5 +68,17 @@ describe('Attendance report hour calculations', function () {
         );
         expect(html).toContain('>1</td>');
         expect(html).toContain('>0%</td>');
+    });
+
+    it('does not count partial/incomplete rollup labels as absent or present hours', function () {
+        var build = loadReportBuilder();
+        var html = build(
+            { id: 'U1', name: 'طالب علم', class: 'اولیٰ' },
+            [{ month: '2026-08', timestamp: 1, records: { U1: { 2: 'نامکمل' } }, remarks: {} }],
+            '2026-08-01',
+            '2026-08-31',
+            symbols
+        );
+        expect(html).toBe(null);
     });
 });

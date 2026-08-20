@@ -48,12 +48,13 @@ describe('Attendance dashboard calculation fixes', function () {
 
     it('supports hourly period filter on dashboard analysis', function () {
         var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
+        var metrics = fs.readFileSync(path.join(ROOT, 'att-metrics.js'), 'utf8');
         var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
         expect(html).toContain('id="att-dash-period-filter"');
         expect(html).toContain('تجزیہ کی بنیاد');
         expect(js).toContain('function attDashPopulatePeriodFilter');
-        expect(js).toContain('periodRecords');
-        expect(js).toMatch(/attDashBuildFinalMarksForDay\([^)]*periodFilter/);
+        expect(metrics).toContain('periodRecords');
+        expect(js).toContain('attMetricsBuildFinalMarksForDay');
         expect(js).toMatch(/!f\.periodFilter/);
         expect(js).toContain('att-dash-period-filter');
     });

@@ -139,6 +139,10 @@ function attGetAttSymbols() {
 }
 
 function attReadTimetablePeriods() {
+  return attActiveTimetablePeriods();
+}
+
+function attReadAllTimetablePeriodsRaw() {
   try {
     var raw = localStorage.getItem('ems_att_periods');
     var list = raw ? JSON.parse(raw) : [];
@@ -148,23 +152,152 @@ function attReadTimetablePeriods() {
   }
 }
 
+function attSaveTimetablePeriodsSync(periods) {
+  var list = Array.isArray(periods) ? periods : [];
+  try {
+    var str = JSON.stringify(list);
+    if (window._emsOriginalSetItem) {
+      window._emsSuppressSync = true;
+      window._emsOriginalSetItem.call(localStorage, 'ems_att_periods', str);
+      window._emsSuppressSync = false;
+    } else {
+      localStorage.setItem('ems_att_periods', str);
+    }
+  } catch (eSave) { /* quota */ }
+  if (typeof attPersistConfigBlob === 'function') {
+    attPersistConfigBlob(ATT_PERIODS_KEY, list).catch(function () { /* offline */ });
+  }
+}
+
+function attNormalizeTeacherDisplayName(name) {
+  return String(name || '').replace(/\[.*?\]\s*/g, '').trim();
+}
+
+function attCollectRegisteredTeachers() {
+  return attFilterEligibleUsers(attGetUsers()).filter(function (u) {
+    return attUserMatchesType(u, 'teacher');
+  });
+}
+
+/** Runtime matching uses stable teacherId only — never display name. */
+function attPeriodTeacherIdMatches(period, teacherUid) {
+  var uid = String(teacherUid || '').trim();
+  if (!uid || !period) return false;
+  var pid = String(period.teacherId || '').trim();
+  return !!pid && pid === uid;
+}
+
+/** Legacy migration helper — returns id only when the name match is uniquely provable. */
+function attFindUniqueTeacherIdByName(name, roster) {
+  var target = attNormalizeTeacherDisplayName(name);
+  if (!target) return null;
+  var matches = (roster || []).filter(function (u) {
+    if (!u) return false;
+    var n = attNormalizeTeacherDisplayName(u.name || u.fullName || '');
+    return n && n === target;
+  });
+  if (matches.length !== 1) return null;
+  return attGetUserId(matches[0]) || null;
+}
+
+function attMigrateLegacyPeriodTeacherIds(periods) {
+  var roster = attCollectRegisteredTeachers();
+  var custom = [];
+  try {
+    custom = JSON.parse(localStorage.getItem('ems_att_custom_teachers') || '[]') || [];
+  } catch (eCustom) { custom = []; }
+  var customRoster = custom.map(function (c) {
+    return { id: c.id, name: c.name, type: 'teacher' };
+  });
+  var changed = false;
+  (periods || []).forEach(function (p) {
+    if (!p || String(p.teacherId || '').trim()) return;
+    var unique = attFindUniqueTeacherIdByName(p.teacherName, roster)
+      || attFindUniqueTeacherIdByName(p.teacherName, customRoster);
+    if (unique) {
+      p.teacherId = unique;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+function attHydrateTimetablePeriods() {
+  var periods = attReadAllTimetablePeriodsRaw();
+  if (attMigrateLegacyPeriodTeacherIds(periods)) {
+    attSaveTimetablePeriodsSync(periods);
+    if (typeof console !== 'undefined' && console.info) {
+      console.info('[EMS attendance] migrated legacy timetable teacherId fields', { count: periods.length });
+    }
+  }
+  return periods;
+}
+
+function attIsPeriodArchived(period) {
+  return !!(period && (period.archived === true || period.deleted === true));
+}
+
+function attActiveTimetablePeriods(allPeriods) {
+  return (allPeriods || attHydrateTimetablePeriods()).filter(function (p) {
+    return p && p.id && !attIsPeriodArchived(p);
+  });
+}
+
+function attResolvePeriodById(periodId) {
+  var id = String(periodId || '').trim();
+  if (!id) return null;
+  var all = attHydrateTimetablePeriods();
+  for (var i = 0; i < all.length; i++) {
+    if (all[i] && all[i].id === id) return all[i];
+  }
+  return null;
+}
+
 /** Timetable periods for one teacher on a JS weekday (0=Sun … 6=Sat). */
 function attTeacherPeriodsForWeekday(teacherUid, teacherName, weekday) {
   var uid = String(teacherUid || '').trim();
-  var name = String(teacherName || '').trim();
   var wd = Number(weekday);
+  if (!uid) return [];
   return attReadTimetablePeriods().filter(function (p) {
     if (!p || !p.id) return false;
     var days = Array.isArray(p.days) ? p.days : [];
     var onDay = days.some(function (d) { return Number(d) === wd; });
     if (!onDay) return false;
-    var pid = String(p.teacherId || '').trim();
-    var pname = String(p.teacherName || '').trim();
-    if (uid && pid && pid === uid) return true;
-    if (name && pname && pname === name) return true;
-    return false;
+    return attPeriodTeacherIdMatches(p, uid);
   }).slice().sort(function (a, b) {
     return String(a.start || '').localeCompare(String(b.start || ''));
+  });
+}
+
+/** Active timetable periods plus archived/orphan periods that still have saved marks. */
+function attTeacherPeriodsForRegisterDay(teacherUid, teacherName, day, weekday) {
+  var uid = String(teacherUid || '').trim();
+  var periods = attTeacherPeriodsForWeekday(uid, teacherName, weekday);
+  var seen = Object.create(null);
+  periods.forEach(function (p) { if (p && p.id) seen[p.id] = true; });
+  var pmap = (window.currentAttState
+    && window.currentAttState.periodRecords
+    && window.currentAttState.periodRecords[uid]
+    && window.currentAttState.periodRecords[uid][day]) || {};
+  Object.keys(pmap).forEach(function (pid) {
+    if (seen[pid] || pmap[pid] == null || pmap[pid] === '') return;
+    var meta = attResolvePeriodById(pid);
+    if (meta) {
+      periods.push(meta);
+    } else {
+      periods.push({
+        id: pid,
+        name: 'محفوظ گھنٹہ',
+        className: '-',
+        bookName: '',
+        start: '',
+        archived: true
+      });
+    }
+    seen[pid] = true;
+  });
+  return periods.slice().sort(function (a, b) {
+    return String(a.start || a.id || '').localeCompare(String(b.start || b.id || ''));
   });
 }
 
@@ -315,7 +448,7 @@ function attEscJsStr(s) {
 }
 
 function attBuildTeacherPeriodBoxesHtml(uid, teacherName, day, weekday, symbols, locked) {
-  var periods = attTeacherPeriodsForWeekday(uid, teacherName, weekday);
+  var periods = attTeacherPeriodsForRegisterDay(uid, teacherName, day, weekday);
   if (!periods.length) return '';
   var pmap = (window.currentAttState.periodRecords[uid] && window.currentAttState.periodRecords[uid][day]) || {};
   var boxes = periods.map(function (p, idx) {
@@ -437,6 +570,7 @@ var _attDropdownCacheGen = -1;
 var _attDropdownRepoCount = -1;
 var _attPeriodSelectBound = false;
 var _attClassSelectBound = false;
+var _attTypeSelectBound = false;
 var _attRegisterQuickSearchBound = false;
 var _buildSmartRegisterScheduled = false;
 var _buildSmartRegisterPending = null;
@@ -523,7 +657,32 @@ function getAttendanceTenantId() {
   return null;
 }
 
+/**
+ * Canonical storage scope before any attendance key/doc id is built.
+ * Students stay class-scoped; teachers/staff always use classId="" and period="all".
+ */
+function attNormalizeStorageScope(month, type, classId, period) {
+  month = month || '';
+  type = type || 'students';
+  classId = classId != null ? String(classId) : '';
+  period = period || 'all';
+  if (attIsCanonicalUnified()) {
+    if (type === 'students' && classId) {
+      return { month: month, type: type, classId: classId, period: 'all' };
+    }
+    if (type === 'teachers' || type === 'staff') {
+      return { month: month, type: type, classId: '', period: 'all' };
+    }
+  }
+  return { month: month, type: type, classId: classId, period: period };
+}
+
 function attSheetKeys(month, type, classId, period) {
+  var scope = attNormalizeStorageScope(month, type, classId, period);
+  month = scope.month;
+  type = scope.type;
+  classId = scope.classId;
+  period = scope.period;
   var uid = getAttendanceTenantId();
   if (!uid) return { cloudDocId: null, localKey: null, tenantId: null };
   var p = period || 'all';
@@ -547,15 +706,11 @@ function attIsCanonicalUnified() {
 
 /** Every register shares one canonical sheet (period=all); period picker is view-only. */
 function attResolveSheetKeys(month, type, classId, period) {
-  if (attIsCanonicalUnified()) {
-    if (type === 'students' && classId) return attCanonicalStudentKeys(month, classId);
-    // Teachers/staff used to save one sheet per hour, so the dashboard could aggregate
-    // sheets the register never reopened. Hours now live in periodRecords of one sheet.
-    if (type === 'teachers' || type === 'staff') {
-      return attSheetKeys(month, type, classId || '', 'all');
-    }
+  var scope = attNormalizeStorageScope(month, type, classId, period);
+  if (attIsCanonicalUnified() && scope.type === 'students' && scope.classId) {
+    return attCanonicalStudentKeys(scope.month, scope.classId);
   }
-  return attSheetKeys(month, type, classId, period);
+  return attSheetKeys(scope.month, scope.type, scope.classId, scope.period);
 }
 
 function attNotifyCanonicalUpdated(classId, month, data) {
@@ -575,12 +730,13 @@ function attLastSessionStorageKey() {
 }
 
 function attSaveLastSession(month, type, classId, period) {
+  var scope = attNormalizeStorageScope(month, type, classId, period);
   try {
     localStorage.setItem(attLastSessionStorageKey(), JSON.stringify({
-      month: month,
-      type: type,
-      classId: classId || '',
-      period: period || 'all',
+      month: scope.month,
+      type: scope.type,
+      classId: scope.classId,
+      period: scope.period,
       ts: Date.now()
     }));
   } catch (e) { /* quota */ }
@@ -692,8 +848,7 @@ function attRunPendingCloudPersist() {
     }
     // Clears must hit Firebase like P/A/L — prefer patch with deletes / map replace.
     if (typeof window.attSaveStatusMarkCloud === 'function') {
-      // The visible chip remains "مقامی طور پر محفوظ" until Firebase confirms.
-      window.attSaveStatusMarkCloud(p.cloudDocId, 'queued');
+      window.attSaveStatusMarkCloud(p.cloudDocId, 'syncing');
     }
     window.emsOfflinePersistAttendance(p.cloudDocId, p.dataToSave, persistOpts).then(function (res) {
       if (typeof window.attSaveStatusOnCloudResult === 'function') {
@@ -742,11 +897,63 @@ function attReadSheetLocal(localKey) {
   }
 }
 
-/** Merge field-path patches so rapid edits (incl. clears) are not dropped by debounce. */
+/** Merge field-path patches; prefer granular periodRecords paths over whole-map replace. */
 function attMergeCloudPatches(prevPatch, nextPatch) {
   if (!prevPatch || !Object.keys(prevPatch).length) return nextPatch || {};
   if (!nextPatch || !Object.keys(nextPatch).length) return prevPatch || {};
-  return Object.assign({}, prevPatch, nextPatch);
+  var merged = Object.assign({}, prevPatch, nextPatch);
+  ['periodRecords', 'records', 'remarks', 'late'].forEach(function (field) {
+    if (!merged[field]) return;
+    var hasGranular = Object.keys(merged).some(function (k) {
+      return k.indexOf(field + '.') === 0;
+    });
+    if (hasGranular) delete merged[field];
+  });
+  return merged;
+}
+
+function attStripPatchFieldPrefix(patch, field) {
+  if (!patch) return;
+  if (patch[field]) delete patch[field];
+  Object.keys(patch).forEach(function (k) {
+    if (k.indexOf(field + '.') === 0) delete patch[k];
+  });
+}
+
+/** Granular periodRecords paths — one teacher/day/period per patch key. */
+function attDiffPeriodRecordsPatch(prevMap, newMap, patch) {
+  prevMap = prevMap || {};
+  newMap = newMap || {};
+  Object.keys(newMap).forEach(function (uid) {
+    var prevDay = prevMap[uid] || {};
+    var newDay = newMap[uid] || {};
+    Object.keys(newDay).forEach(function (day) {
+      var prevPeriods = prevDay[day] || {};
+      var newPeriods = newDay[day] || {};
+      Object.keys(newPeriods).forEach(function (pid) {
+        if (prevPeriods[pid] !== newPeriods[pid]) {
+          patch['periodRecords.' + uid + '.' + day + '.' + pid] = newPeriods[pid];
+        }
+      });
+      Object.keys(prevPeriods).forEach(function (pid) {
+        if (!(pid in newPeriods) && prevPeriods[pid] != null && prevPeriods[pid] !== '') {
+          patch['periodRecords.' + uid + '.' + day + '.' + pid] = null;
+        }
+      });
+    });
+    Object.keys(prevDay).forEach(function (day) {
+      if (!(day in newDay)) {
+        patch['periodRecords.' + uid + '.' + day] = null;
+      }
+    });
+  });
+  Object.keys(prevMap).forEach(function (uid) {
+    if (!newMap[uid]) {
+      Object.keys(prevMap[uid] || {}).forEach(function (day) {
+        patch['periodRecords.' + uid + '.' + day] = null;
+      });
+    }
+  });
 }
 
 /** Remove a day key whether stored as number or string (JSON/Firestore). */
@@ -816,7 +1023,7 @@ function attComputeSheetCloudPatch(prevData, newData) {
   }
   diffDayMapField('remarks');
   diffDayMapField('late');
-  diffDayMapField('periodRecords');
+  attDiffPeriodRecordsPatch(prevData.periodRecords || {}, newData.periodRecords || {}, patch);
 
   function diffNested(field) {
     var a = prevData[field];
@@ -834,22 +1041,34 @@ function attComputeSheetCloudPatch(prevData, newData) {
   return patch;
 }
 
-/** Ensure × / clear always reaches Firebase (same channel as P/A/L). */
+/** Ensure × / clear reaches Firebase without replacing unrelated period marks. */
 function attAppendForcedClearPatch(patch, clearCells, newData) {
   patch = patch || {};
   clearCells = clearCells || [];
   if (!clearCells.length && !attPatchHasClears(patch)) return patch;
 
-  // Firestore forbids updating parent + nested path together — replace whole maps.
-  ['records', 'remarks', 'late', 'periodRecords'].forEach(function (field) {
-    Object.keys(patch).forEach(function (k) {
-      if (k === field || k.indexOf(field + '.') === 0) delete patch[k];
+  if (clearCells.length) {
+    clearCells.forEach(function (c) {
+      var uid = c && c.uid;
+      var day = c && c.day;
+      if (!uid || day == null) return;
+      ['records', 'remarks', 'late'].forEach(function (field) {
+        attStripPatchFieldPrefix(patch, field);
+        patch[field + '.' + uid + '.' + day] = null;
+      });
+      attStripPatchFieldPrefix(patch, 'periodRecords');
+      patch['periodRecords.' + uid + '.' + day] = null;
     });
-    patch[field] = (newData && newData[field]) || {};
-  });
+  } else {
+    ['records', 'remarks', 'late', 'periodRecords'].forEach(function (field) {
+      if (Object.keys(patch).some(function (k) { return k.indexOf(field + '.') === 0; })) {
+        delete patch[field];
+      }
+    });
+  }
   if (newData && newData.timestamp != null) patch.timestamp = newData.timestamp;
   if (newData && newData.dailyLocks) patch.dailyLocks = newData.dailyLocks;
-  if (typeof newData.locked === 'boolean') patch.locked = newData.locked;
+  if (newData && typeof newData.locked === 'boolean') patch.locked = newData.locked;
   return patch;
 }
 
@@ -1034,6 +1253,17 @@ function attNormalizeRecord(data) {
   };
 }
 
+/** True when a sheet has durable marks, locks, or a write timestamp — incl. periodRecords-only. */
+function attHasMeaningfulAttendanceData(sheet) {
+  if (!sheet || typeof sheet !== 'object') return false;
+  if (attRecordTimestamp(sheet) > 0) return true;
+  if (sheet.locked) return true;
+  if (Object.keys(sheet.records || {}).length) return true;
+  if (Object.keys(sheet.dailyLocks || {}).length) return true;
+  if (Object.keys(sheet.periodRecords || {}).length) return true;
+  return false;
+}
+
 function attReconcileAttendanceRecord(localRec, remoteRec) {
   if (!remoteRec) return attNormalizeRecord(localRec);
   if (!localRec) return attNormalizeRecord(remoteRec);
@@ -1120,7 +1350,7 @@ function attBackgroundReconcile(uid, keys, localRec) {
       if (!window.currentAttState || window.currentAttState.dbKey !== cloudDocId) return;
       if (!doc.exists) return;
       var remote = doc.data();
-      if (!remote || !remote.records || !Object.keys(remote.records).length) return;
+      if (!attHasMeaningfulAttendanceData(remote)) return;
       var localTs = attRecordTimestamp(localRec);
       var remoteTs = attRecordTimestamp(remote);
       if (remoteTs <= localTs) return;
@@ -1179,6 +1409,50 @@ function attLegacyPeriodSheetKeys(allKeys, month, type, classId) {
   });
 }
 
+/** Teacher/staff legacy keys with any classId or per-period sheet except the canonical __all sheet. */
+function attLegacyTeacherStaffSheetKeys(allKeys, month, type, canonicalLocalKey) {
+  var merged = attReadLegacyPeriodMergeLog();
+  var typeMarker = '_' + month + '_' + type + '_';
+  return (allKeys || []).filter(function (key) {
+    if (!key || key.indexOf('att_rec_') !== 0) return false;
+    if (merged[key]) return false;
+    if (canonicalLocalKey && key === canonicalLocalKey) return false;
+    var idx = key.indexOf(typeMarker);
+    if (idx < 0) return false;
+    var tail = key.slice(idx + typeMarker.length);
+    return tail !== '_all';
+  });
+}
+
+function attMergeLegacyFieldMaps(canon, legacy, field, adoptedCounter) {
+  Object.keys(legacy[field] || {}).forEach(function (rowUid) {
+    Object.keys(legacy[field][rowUid] || {}).forEach(function (day) {
+      var val = legacy[field][rowUid][day];
+      if (val == null || val === '') return;
+      if (!canon[field][rowUid]) canon[field][rowUid] = {};
+      if (Object.prototype.hasOwnProperty.call(canon[field][rowUid], day)) return;
+      canon[field][rowUid][day] = val;
+      adoptedCounter.count += 1;
+    });
+  });
+}
+
+function attMergeLegacyPeriodRecords(canon, legacy, adoptedCounter) {
+  Object.keys(legacy.periodRecords || {}).forEach(function (rowUid) {
+    Object.keys(legacy.periodRecords[rowUid] || {}).forEach(function (day) {
+      var pmap = legacy.periodRecords[rowUid][day] || {};
+      Object.keys(pmap).forEach(function (pid) {
+        if (pmap[pid] == null || pmap[pid] === '') return;
+        if (!canon.periodRecords[rowUid]) canon.periodRecords[rowUid] = {};
+        if (!canon.periodRecords[rowUid][day]) canon.periodRecords[rowUid][day] = {};
+        if (canon.periodRecords[rowUid][day][pid] != null) return;
+        canon.periodRecords[rowUid][day][pid] = pmap[pid];
+        adoptedCounter.count += 1;
+      });
+    });
+  });
+}
+
 /**
  * Fold legacy per-hour sheets into the canonical sheet so a reopened register shows
  * the same marks the dashboard aggregates from every sheet of that month.
@@ -1187,12 +1461,19 @@ function attAdoptLegacyPeriodSheets(keys, month, type, classId) {
   if (!attIsCanonicalUnified()) return Promise.resolve(null);
   if (typeof window.emsOfflineListAttendanceKeysAsync !== 'function') return Promise.resolve(null);
 
+  var scope = attNormalizeStorageScope(month, type, classId, 'all');
+  month = scope.month;
+  type = scope.type;
+  classId = scope.classId;
+
   var readSheet = typeof window.emsAttReadSheetByKeyAsync === 'function'
     ? window.emsAttReadSheetByKeyAsync
     : function (key) { return Promise.resolve(attReadSheetLocal(key)); };
 
   return window.emsOfflineListAttendanceKeysAsync(month).then(function (allKeys) {
-    var legacyKeys = attLegacyPeriodSheetKeys(allKeys, month, type, classId);
+    var legacyKeys = (type === 'teachers' || type === 'staff')
+      ? attLegacyTeacherStaffSheetKeys(allKeys, month, type, keys.localKey || keys.cloudDocId)
+      : attLegacyPeriodSheetKeys(allKeys, month, type, classId);
     if (!legacyKeys.length) return null;
     return Promise.all(legacyKeys.map(function (key) {
       return readSheet(key).then(function (sheet) {
@@ -1206,13 +1487,22 @@ function attAdoptLegacyPeriodSheets(keys, month, type, classId) {
       attReadSheetLocal(keys.localKey || keys.cloudDocId) || attEmptyAttendanceRecord()
     );
     var symbols = attGetAttSymbols();
-    var adopted = 0;
+    var adoptedCounter = { count: 0 };
 
     legacySheets.forEach(function (entry) {
       var key = entry.key;
       var legacy = attNormalizeRecord(entry.sheet);
       var periodId = key.slice(key.lastIndexOf('_') + 1);
-      if (!periodId || periodId === 'all') return;
+      if (!periodId) return;
+
+      if (periodId === 'all') {
+        attMergeLegacyFieldMaps(canon, legacy, 'records', adoptedCounter);
+        attMergeLegacyPeriodRecords(canon, legacy, adoptedCounter);
+        ['remarks', 'late'].forEach(function (field) {
+          attMergeLegacyFieldMaps(canon, legacy, field, adoptedCounter);
+        });
+        return;
+      }
 
       Object.keys(legacy.records || {}).forEach(function (rowUid) {
         Object.keys(legacy.records[rowUid] || {}).forEach(function (day) {
@@ -1222,23 +1512,11 @@ function attAdoptLegacyPeriodSheets(keys, month, type, classId) {
           if (!canon.periodRecords[rowUid][day]) canon.periodRecords[rowUid][day] = {};
           if (canon.periodRecords[rowUid][day][periodId] != null) return;
           canon.periodRecords[rowUid][day][periodId] = status;
-          adopted++;
+          adoptedCounter.count += 1;
         });
       });
 
-      Object.keys(legacy.periodRecords || {}).forEach(function (rowUid) {
-        Object.keys(legacy.periodRecords[rowUid] || {}).forEach(function (day) {
-          var pmap = legacy.periodRecords[rowUid][day] || {};
-          Object.keys(pmap).forEach(function (pid) {
-            if (pmap[pid] == null || pmap[pid] === '') return;
-            if (!canon.periodRecords[rowUid]) canon.periodRecords[rowUid] = {};
-            if (!canon.periodRecords[rowUid][day]) canon.periodRecords[rowUid][day] = {};
-            if (canon.periodRecords[rowUid][day][pid] != null) return;
-            canon.periodRecords[rowUid][day][pid] = pmap[pid];
-            adopted++;
-          });
-        });
-      });
+      attMergeLegacyPeriodRecords(canon, legacy, adoptedCounter);
 
       ['remarks', 'late'].forEach(function (field) {
         Object.keys(legacy[field] || {}).forEach(function (rowUid) {
@@ -1248,12 +1526,13 @@ function attAdoptLegacyPeriodSheets(keys, month, type, classId) {
             if (!canon[field][rowUid]) canon[field][rowUid] = {};
             if (canon[field][rowUid][day]) return;
             canon[field][rowUid][day] = val;
+            adoptedCounter.count += 1;
           });
         });
       });
     });
 
-    if (!adopted) {
+    if (!adoptedCounter.count) {
       attMarkLegacyPeriodSheetsMerged(legacySheets.map(function (e) { return e.key; }));
       return null;
     }
@@ -1280,14 +1559,24 @@ function attAdoptLegacyPeriodSheets(keys, month, type, classId) {
       timestamp: attMarkLocalWrite()
     };
     attPersistSheetPayload(keys, payload, { quiet: true, immediateCloud: true });
+    if (typeof console !== 'undefined' && console.info) {
+      console.info('[EMS attendance] adopted legacy sheets into canonical register', {
+        month: month,
+        type: type,
+        canonicalKey: keys.localKey || keys.cloudDocId,
+        legacyKeys: legacySheets.map(function (e) { return e.key; }),
+        adoptedCells: adoptedCounter.count
+      });
+    }
     attMarkLegacyPeriodSheetsMerged(legacySheets.map(function (e) { return e.key; }));
     return payload;
   }).catch(function () { return null; });
 }
 
 function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period) {
-  var keys = attResolveSheetKeys(month, type, classId, period);
-  attSaveLastSession(month, type, classId, period);
+  var scope = attNormalizeStorageScope(month, type, classId, period);
+  var keys = attResolveSheetKeys(scope.month, scope.type, scope.classId, scope.period);
+  attSaveLastSession(scope.month, scope.type, scope.classId, scope.period);
 
   function openRegister(savedRecord, toastMsg, toastType) {
     var rec = attNormalizeRecord(savedRecord);
@@ -1338,7 +1627,7 @@ function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period) {
       });
   }
 
-  var cachePromise = attAdoptLegacyPeriodSheets(keys, month, type, classId).then(function (adopted) {
+  var cachePromise = attAdoptLegacyPeriodSheets(keys, scope.month, scope.type, scope.classId).then(function (adopted) {
     if (adopted) return adopted;
     return typeof window.emsOfflineGetCachedAttendance === 'function'
       ? window.emsOfflineGetCachedAttendance(keys.cloudDocId, { localKey: keys.localKey })
@@ -1347,10 +1636,8 @@ function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period) {
 
   cachePromise.then(function (localData) {
     var localRec = localData ? attNormalizeRecord(localData) : null;
-    // Any local sheet (incl. fully cleared) is SSOT — do not treat empty records as "missing".
-    if (localRec && (localRec.timestamp || localRec.locked
-        || Object.keys(localRec.records || {}).length
-        || Object.keys(localRec.dailyLocks || {}).length)) {
+    // Local sheet with meaningful data (incl. fully cleared w/ timestamp) is SSOT.
+    if (localRec && attHasMeaningfulAttendanceData(localRec)) {
       openRegister(localRec, 'حاضری کا رجسٹر لوکل کیش سے لوڈ ہو گیا', 'success');
       attBackgroundReconcile(uid, keys, localRec);
       return;
@@ -1647,6 +1934,18 @@ function loadAttDropdowns(force) {
 
   attPopulateRegisterPeriodSelect();
   attBindSmartRegisterSearch();
+  var typeSelect = document.getElementById('att-reg-type');
+  if (typeSelect && !_attTypeSelectBound) {
+    _attTypeSelectBound = true;
+    typeSelect.addEventListener('change', function () {
+      var t = typeSelect.value;
+      if (t === 'teachers' || t === 'staff') {
+        var perSel = document.getElementById('att-reg-period');
+        if (perSel) perSel.value = 'all';
+        attPopulateRegisterPeriodSelect();
+      }
+    });
+  }
   if (classSelect && !_attClassSelectBound) {
     _attClassSelectBound = true;
     classSelect.addEventListener('change', function () {
@@ -1664,12 +1963,7 @@ function loadAttDropdowns(force) {
 }
 
 function attReadRegisterPeriods() {
-  try {
-    var periods = JSON.parse(localStorage.getItem('ems_att_periods') || '[]');
-    return Array.isArray(periods) ? periods : [];
-  } catch (e) {
-    return [];
-  }
+  return attReadTimetablePeriods();
 }
 
 /** Keep the smart-register period picker linked to its selected class. */
@@ -1862,7 +2156,7 @@ function attDaysLabel(days) {
 }
 
 function loadPeriods() {
-  const periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  const periods = attReadTimetablePeriods();
   const tbody = document.getElementById('settings-period-tbody');
   if (!tbody) return;
   if (!periods.length) {
@@ -2294,10 +2588,12 @@ function attSavePeriodFromModal(opts) {
     customTeachers.push({ id: teacherId, name: teacherName });
     localStorage.setItem('ems_att_custom_teachers', JSON.stringify(customTeachers));
   } else if (teacherId && teacherId !== '') {
+    var regUser = attFindRegisterUser(teacherId);
+    if (regUser) teacherId = attGetUserId(regUser) || teacherId;
     teacherName = teacherName.replace(/\[.*?\]\s*/, '');
   }
 
-  var periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  var periods = attReadAllTimetablePeriodsRaw();
   var periodObj = {
     name: name,
     className: className,
@@ -2319,17 +2615,14 @@ function attSavePeriodFromModal(opts) {
       return false;
     }
     periodObj.id = editedId;
-    periods[idx] = periodObj;
+    periods[idx] = Object.assign({}, periods[idx], periodObj);
   } else {
     periodObj.id = window.generateID ? window.generateID('PRD') : 'PRD-' + Math.floor(Math.random() * 90000);
     periods.push(periodObj);
   }
 
-  attPersistConfigBlob(ATT_PERIODS_KEY, periods).then(function () {
-    attRefreshPeriodUiAfterSave(isEdit ? editedId : null);
-  }).catch(function () {
-    attRefreshPeriodUiAfterSave(isEdit ? editedId : null);
-  });
+  attSaveTimetablePeriodsSync(periods);
+  attRefreshPeriodUiAfterSave(isEdit ? editedId : null);
 
   if (typeof window.showToast === 'function') {
     window.showToast(
@@ -2363,21 +2656,25 @@ function attSavePeriodFromModal(opts) {
 }
 
 function attRemovePeriodById(periodId) {
-  var periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
-  var toDelete = periods.find(function (p) { return p.id === periodId; });
-  if (!toDelete) {
+  var periods = attReadAllTimetablePeriodsRaw();
+  var idx = periods.findIndex(function (p) { return p.id === periodId; });
+  if (idx < 0) {
     if (typeof window.showToast === 'function') window.showToast('گھنٹہ نہیں ملا', 'error');
+    return false;
+  }
+  var toDelete = periods[idx];
+  if (attIsPeriodArchived(toDelete)) {
+    if (typeof window.showToast === 'function') window.showToast('گھنٹہ پہلے ہی حذف شدہ ہے', 'info');
     return false;
   }
   var label = toDelete.name || periodId;
   if (!confirm('کیا آپ واقعی "' + label + '" حذف کرنا چاہتے ہیں؟')) return false;
   moveToRecycleBin('Period', toDelete);
-  var nextPeriods = periods.filter(function (p) { return p.id !== periodId; });
-  attPersistConfigBlob(ATT_PERIODS_KEY, nextPeriods).then(function () {
-    attRefreshPeriodUiAfterSave(null);
-  }).catch(function () {
-    attRefreshPeriodUiAfterSave(null);
+  periods[idx] = Object.assign({}, toDelete, {
+    archived: true,
+    archivedAt: Date.now()
   });
+  attSaveTimetablePeriodsSync(periods);
   var perSel = document.getElementById('att-reg-period');
   if (perSel && perSel.value === periodId) perSel.value = 'all';
   attRefreshPeriodUiAfterSave(null);
@@ -2422,7 +2719,7 @@ window.ttClearFilters = function () {
 };
 
 function ttPopulateFilters() {
-  const periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  const periods = attReadTimetablePeriods();
   const fill = (id, values, label) => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -2439,7 +2736,7 @@ function ttPopulateFilters() {
 }
 
 function ttFilteredPeriods() {
-  let periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
+  let periods = attReadTimetablePeriods();
   const fT = document.getElementById('tt-filter-teacher')?.value || '';
   const fC = document.getElementById('tt-filter-class')?.value || '';
   const fB = document.getElementById('tt-filter-book')?.value || '';
@@ -2479,9 +2776,8 @@ function ttPeriodCard(p) {
 }
 
 window.editTimetablePeriod = function (periodId) {
-  var periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
-  var p = periods.find(function (x) { return x.id === periodId; });
-  if (!p) {
+  var p = attResolvePeriodById(periodId);
+  if (!p || attIsPeriodArchived(p)) {
     if (typeof window.showToast === 'function') window.showToast('گھنٹہ نہیں ملا', 'error');
     return;
   }
@@ -2531,9 +2827,8 @@ window.renderTimetable = function () {
 
 // نظام الاوقات سے براہِ راست حاضری لینا — اسمارٹ رجسٹر پر منتقلی
 window.ttTakeAttendance = function (periodId) {
-  const periods = JSON.parse(localStorage.getItem('ems_att_periods')) || [];
-  const p = periods.find((x) => x.id === periodId);
-  if (!p) return;
+  const p = attResolvePeriodById(periodId);
+  if (!p || attIsPeriodArchived(p)) return;
 
   const stuBtn = document.querySelector('#att-ribbon-menu [onclick*="att-smart-register"]');
   window.switchAttTab('att-smart-register', stuBtn);
@@ -2894,7 +3189,7 @@ function attTeacherPeriodsForDayNum(uid, day) {
   var month = parts[1];
   var full = year + '-' + month + '-' + (day < 10 ? '0' + day : day);
   var wd = new Date(full).getDay();
-  return attTeacherPeriodsForWeekday(uid, attFindTeacherNameByUid(uid), wd);
+  return attTeacherPeriodsForRegisterDay(uid, attFindTeacherNameByUid(uid), day, wd);
 }
 
 function attStudentPeriodsForDayNum(uid, day) {
@@ -3245,9 +3540,7 @@ function attLoadCanonicalClassSheet(month, classId) {
   var keys = attCanonicalStudentKeys(month, classId);
   var tenant = getAttendanceTenantId() || 'local';
   var local = attReadSheetLocal(keys.localKey || keys.cloudDocId);
-  if (local && (local.timestamp || local.locked
-      || Object.keys(local.records || {}).length
-      || Object.keys(local.periodRecords || {}).length)) {
+  if (local && attHasMeaningfulAttendanceData(local)) {
     return Promise.resolve({ keys: keys, classId: classId, data: attNormalizeRecord(local) });
   }
   return attFetchAttendanceSheet(tenant, keys).then(function (data) {
@@ -3329,10 +3622,23 @@ function attWritePeriodOnSheetData(data, uid, day, periodId, status, expectedIds
 
 window.attStudentPeriodsForWeekday = attStudentPeriodsForWeekday;
 window.attTeacherPeriodsForWeekday = attTeacherPeriodsForWeekday;
+window.attTeacherPeriodsForRegisterDay = attTeacherPeriodsForRegisterDay;
+window.attPeriodTeacherIdMatches = attPeriodTeacherIdMatches;
+window.attFindUniqueTeacherIdByName = attFindUniqueTeacherIdByName;
+window.attMigrateLegacyPeriodTeacherIds = attMigrateLegacyPeriodTeacherIds;
+window.attResolvePeriodById = attResolvePeriodById;
+window.attIsPeriodArchived = attIsPeriodArchived;
+window.attActiveTimetablePeriods = attActiveTimetablePeriods;
+window.attReadAllTimetablePeriodsRaw = attReadAllTimetablePeriodsRaw;
+window.attRemovePeriodById = attRemovePeriodById;
 window.attRollupPeriodDayStatus = attRollupPeriodDayStatus;
 window.attDisplayDayMark = attDisplayDayMark;
 window.attSheetKeys = attSheetKeys;
 window.attResolveSheetKeys = attResolveSheetKeys;
+window.getAttendanceTenantId = getAttendanceTenantId;
+window.attNormalizeStorageScope = attNormalizeStorageScope;
+window.attLegacyTeacherStaffSheetKeys = attLegacyTeacherStaffSheetKeys;
+window.attHasMeaningfulAttendanceData = attHasMeaningfulAttendanceData;
 window.attIsCanonicalUnified = attIsCanonicalUnified;
 window.attNotifyCanonicalUpdated = attNotifyCanonicalUpdated;
 window.attCanonicalStudentKeys = attCanonicalStudentKeys;
@@ -3348,7 +3654,10 @@ window.attCollectTargetsFromRepo = attCollectTargetsFromRepo;
 window.attResolveTargetUsers = attResolveTargetUsers;
 window.attEscJsStr = attEscJsStr;
 window.attPruneDayStatusMap = attPruneDayStatusMap;
-window.attPrunePeriodRecordsMap = attPrunePeriodRecordsMap;
+window.attMergeCloudPatches = attMergeCloudPatches;
+window.attComputeSheetCloudPatch = attComputeSheetCloudPatch;
+window.attAppendForcedClearPatch = attAppendForcedClearPatch;
+window.attDiffPeriodRecordsPatch = attDiffPeriodRecordsPatch;
 window.ATT_ROLLUP_PARTIAL = ATT_ROLLUP_PARTIAL;
 window.ATT_ROLLUP_INCOMPLETE = ATT_ROLLUP_INCOMPLETE;
 
@@ -4729,6 +5038,13 @@ function attEnsureEvtStatusDelegation() {
 }
 
 function attReportStatusKind(status, symbols) {
+  if (typeof window.attMetricsClassifyStatus === 'function') {
+    var bucket = window.attMetricsClassifyStatus(status, symbols);
+    if (bucket === 'P') return 'present';
+    if (bucket === 'A') return 'absent';
+    if (bucket === 'L') return 'leave';
+    return 'other';
+  }
   var st = String(status == null ? '' : status).trim();
   if (!st) return '';
   if (st === symbols.P || st === 'P' || st === 'حاضر' || st === 'ح') return 'present';
@@ -4751,72 +5067,75 @@ function attReportFindUserRecord(records, user) {
 }
 
 function attBuildReportRowHtml(user, allRecords, fromDate, toDate, symbols) {
-  var periodMarks = Object.create(null);
-  var dailyMarks = Object.create(null);
-  var reasons = Object.create(null);
+  var collected = (typeof window.attMetricsReportCollectMarks === 'function')
+    ? window.attMetricsReportCollectMarks(user, allRecords, fromDate, toDate, symbols)
+    : null;
+  var finalMarks = collected ? collected.finalMarks : Object.create(null);
+  var reasons = collected ? collected.reasons : Object.create(null);
 
-  function inRange(sheet, dayKey) {
-    var dayNum = parseInt(dayKey, 10);
-    if (!dayNum || dayNum < 1 || dayNum > 31) return '';
-    var fullDate = sheet.month + '-' + (dayNum < 10 ? '0' + dayNum : String(dayNum));
-    return fullDate >= fromDate && fullDate <= toDate ? fullDate : '';
-  }
-  function shouldReplace(candidate, current) {
-    if (!current) return true;
-    if (candidate.timestamp !== current.timestamp) return candidate.timestamp > current.timestamp;
-    return candidate.kind !== 'other' && current.kind === 'other';
-  }
-  function addReason(date, remark, timestamp) {
-    if (!remark) return;
-    if (!reasons[date] || timestamp >= reasons[date].timestamp) {
-      reasons[date] = { text: date + ': ' + remark, timestamp: timestamp };
+  if (!collected) {
+    var periodMarks = Object.create(null);
+    var dailyMarks = Object.create(null);
+    reasons = Object.create(null);
+
+    function inRange(sheet, dayKey) {
+      var dayNum = parseInt(dayKey, 10);
+      if (!dayNum || dayNum < 1 || dayNum > 31) return '';
+      var fullDate = sheet.month + '-' + (dayNum < 10 ? '0' + dayNum : String(dayNum));
+      return fullDate >= fromDate && fullDate <= toDate ? fullDate : '';
     }
-  }
+    function shouldReplace(candidate, current) {
+      if (!current) return true;
+      if (candidate.timestamp !== current.timestamp) return candidate.timestamp > current.timestamp;
+      return candidate.kind !== 'other' && current.kind === 'other';
+    }
+    function addReason(date, remark, timestamp) {
+      if (!remark) return;
+      if (!reasons[date] || timestamp >= reasons[date].timestamp) {
+        reasons[date] = { text: date + ': ' + remark, timestamp: timestamp };
+      }
+    }
 
-  allRecords.forEach(function (sheet) {
-    var userRecord = attReportFindUserRecord(sheet.records, user) || {};
-    var userPeriods = attReportFindUserRecord(sheet.periodRecords, user) || {};
-    var userRemarks = attReportFindUserRecord(sheet.remarks, user) || {};
-    var timestamp = Number(sheet.timestamp) || 0;
+    allRecords.forEach(function (sheet) {
+      var userRecord = attReportFindUserRecord(sheet.records, user) || {};
+      var userPeriods = attReportFindUserRecord(sheet.periodRecords, user) || {};
+      var userRemarks = attReportFindUserRecord(sheet.remarks, user) || {};
+      var timestamp = Number(sheet.timestamp) || 0;
 
-    // Period records are authoritative.  One student/date/period is counted once,
-    // even when a legacy sheet and the canonical sheet both exist.
-    Object.keys(userPeriods).forEach(function (dayKey) {
-      var fullDate = inRange(sheet, dayKey);
-      if (!fullDate || !userPeriods[dayKey] || typeof userPeriods[dayKey] !== 'object') return;
-      Object.keys(userPeriods[dayKey]).forEach(function (periodId) {
-        var kind = attReportStatusKind(userPeriods[dayKey][periodId], symbols);
-        if (!kind || kind === 'other') return;
-        var key = fullDate + '|' + String(periodId);
-        var candidate = { kind: kind, timestamp: timestamp };
-        if (shouldReplace(candidate, periodMarks[key])) periodMarks[key] = candidate;
+      Object.keys(userPeriods).forEach(function (dayKey) {
+        var fullDate = inRange(sheet, dayKey);
+        if (!fullDate || !userPeriods[dayKey] || typeof userPeriods[dayKey] !== 'object') return;
+        Object.keys(userPeriods[dayKey]).forEach(function (periodId) {
+          var kind = attReportStatusKind(userPeriods[dayKey][periodId], symbols);
+          if (!kind || kind === 'other') return;
+          var key = fullDate + '|' + String(periodId);
+          var candidate = { kind: kind, timestamp: timestamp };
+          if (shouldReplace(candidate, periodMarks[key])) periodMarks[key] = candidate;
+        });
+        addReason(fullDate, userRemarks[dayKey], timestamp);
       });
-      addReason(fullDate, userRemarks[dayKey], timestamp);
+
+      Object.keys(userRecord).forEach(function (dayKey) {
+        var fullDate = inRange(sheet, dayKey);
+        if (!fullDate) return;
+        var kind = attReportStatusKind(userRecord[dayKey], symbols);
+        if (!kind || kind === 'other') return;
+        var candidate = { kind: kind, timestamp: timestamp };
+        if (shouldReplace(candidate, dailyMarks[fullDate])) dailyMarks[fullDate] = candidate;
+        addReason(fullDate, userRemarks[dayKey], timestamp);
+      });
     });
 
-    // Older daily-only entries have no hour detail. Keep one verified mark as a
-    // one-hour fallback, but never stack it on top of real period marks for that date.
-    Object.keys(userRecord).forEach(function (dayKey) {
-      var fullDate = inRange(sheet, dayKey);
-      if (!fullDate) return;
-      var kind = attReportStatusKind(userRecord[dayKey], symbols);
-      if (!kind || kind === 'other') return;
-      var candidate = { kind: kind, timestamp: timestamp };
-      if (shouldReplace(candidate, dailyMarks[fullDate])) dailyMarks[fullDate] = candidate;
-      addReason(fullDate, userRemarks[dayKey], timestamp);
+    Object.keys(periodMarks).forEach(function (key) {
+      finalMarks[key] = periodMarks[key];
     });
-  });
-
-  var finalMarks = Object.create(null);
-  Object.keys(periodMarks).forEach(function (key) {
-    finalMarks[key] = periodMarks[key];
-  });
-  Object.keys(dailyMarks).forEach(function (date) {
-    var hasPeriodForDate = Object.keys(periodMarks).some(function (key) {
-      return key.indexOf(date + '|') === 0;
+    Object.keys(dailyMarks).forEach(function (date) {
+      var hasPeriodForDate = Object.keys(periodMarks).some(function (key) {
+        return key.indexOf(date + '|') === 0;
+      });
+      if (!hasPeriodForDate) finalMarks[date + '|daily'] = dailyMarks[date];
     });
-    if (!hasPeriodForDate) finalMarks[date + '|daily'] = dailyMarks[date];
-  });
+  }
 
   var totalHours = 0, present = 0, absent = 0, leave = 0;
   Object.keys(finalMarks).forEach(function (key) {
@@ -5115,7 +5434,7 @@ document.getElementById('btn-generate-att-report')?.addEventListener('click', fu
 // ============================================================================
 window.loadPeriodTeachers = function () {
   const users = attGetUsers();
-  const registeredTeachers = users.filter((u) => u.type === 'teacher');
+  const registeredTeachers = users.filter(function (u) { return attUserMatchesType(u, 'teacher'); });
   const customTeachers = JSON.parse(localStorage.getItem('ems_att_custom_teachers')) || [];
 
   const tSelect = document.getElementById('new-period-teacher');
@@ -5124,8 +5443,12 @@ window.loadPeriodTeachers = function () {
   let html = '<option value="">استاد منتخب کریں...</option>';
   html += '<option value="ADD_NEW" style="color: blue; font-weight: bold;">+ نیا استاد شامل کریں...</option>';
 
-  registeredTeachers.forEach((t) => { html += `<option value="${t.id}" class="registered-teacher-option" data-type="registered">[رجسٹرڈ] ${t.name}</option>`; });
-  customTeachers.forEach((t) => { html += `<option value="${t.id}" class="custom-teacher-option" data-type="custom">[عارضی/کسٹم] ${t.name}</option>`; });
+  registeredTeachers.forEach(function (t) {
+    var tid = attGetUserId(t);
+    if (!tid) return;
+    html += '<option value="' + tid + '" class="registered-teacher-option" data-type="registered">[رجسٹرڈ] ' + (t.name || '') + '</option>';
+  });
+  customTeachers.forEach(function (t) { html += '<option value="' + t.id + '" class="custom-teacher-option" data-type="custom">[عارضی/کسٹم] ' + t.name + '</option>'; });
 
   tSelect.innerHTML = html;
 };

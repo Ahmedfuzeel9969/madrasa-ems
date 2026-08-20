@@ -24,7 +24,7 @@
             'ems-import-queue.js',
             'registration-ui.js'
         ],
-        attendance: ['att-dashboard.js', 'att-save-status.js', 'attendance.js', 'att-collective.js'],
+        attendance: ['att-metrics.js', 'att-dashboard.js', 'att-save-status.js', 'attendance.js', 'att-collective.js'],
         exams: ['exams.js', 'exams-import-export.js'],
         curriculum: ['curriculum.js'],
         training: ['training.js'],

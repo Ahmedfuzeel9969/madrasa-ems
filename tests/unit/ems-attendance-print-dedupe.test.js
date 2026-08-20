@@ -7,6 +7,7 @@ import vm from 'vm';
 var ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 function loadDashNormalizeApi() {
+    var metricsSrc = fs.readFileSync(path.join(ROOT, 'att-metrics.js'), 'utf8');
     var src = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
     var start = src.indexOf('function attDashReadDayObservation');
     var end = src.indexOf('function attDashApplyStatsKpis');
@@ -18,7 +19,8 @@ function loadDashNormalizeApi() {
     var prelude = [
         'var localStorage = { getItem: function () { return null; } };',
         'function dayNumOf(dateStr) { return parseInt(String(dateStr || "").substring(8, 10), 10); }',
-        'function attDashGetUserId(u) { return u && u.id ? String(u.id) : ""; }',
+        'global.attGetUserId = function(u) { return u && u.id ? String(u.id) : ""; };',
+        'function attDashGetUserId(u) { return global.attGetUserId(u); }',
         'function attDashNormType(u) { return String(u && u.type || "student").toLowerCase(); }',
         'function attDashGetSymbols() { return { P: "P", A: "A", L: "L" }; }',
         'function attDashStatusPresent(st) { return st === "P" || st === "حاضر"; }',
@@ -35,6 +37,9 @@ function loadDashNormalizeApi() {
 
     var sandbox = { console: console, globalThis: {} };
     sandbox.globalThis = sandbox;
+    sandbox.global = sandbox;
+    sandbox.window = sandbox;
+    vm.runInNewContext(metricsSrc, sandbox);
     vm.runInNewContext(
         prelude + '\n' + body + '\n'
         + 'this.attDashBuildFinalMarksForDay = attDashBuildFinalMarksForDay;'

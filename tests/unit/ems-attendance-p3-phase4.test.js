@@ -24,8 +24,9 @@ describe('Attendance P3 Phase 4 — final cleanup', function () {
         expect(js).toContain("var ATT_SETTINGS_KEY = 'ems_att_settings'");
         expect(js).toContain("var ATT_PERIODS_KEY = 'ems_att_periods'");
         expect(js).toMatch(/btn-save-basic-settings[\s\S]{0,2000}attPersistConfigBlob\(ATT_SETTINGS_KEY/);
-        expect(js).toMatch(/attPersistConfigBlob\(ATT_PERIODS_KEY, periods\)/);
-        expect(js).toMatch(/attRemovePeriodById[\s\S]{0,1200}attPersistConfigBlob\(ATT_PERIODS_KEY/);
+        expect(js).toMatch(/function attSaveTimetablePeriodsSync[\s\S]{0,600}attPersistConfigBlob\(ATT_PERIODS_KEY/);
+        expect(js).toContain('attSaveTimetablePeriodsSync(periods)');
+        expect(js).toMatch(/attRemovePeriodById[\s\S]{0,1200}attSaveTimetablePeriodsSync\(periods\)/);
     });
 
     it('ATT-P3-D: saved events list uses chunked rendering', function () {
