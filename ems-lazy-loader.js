@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260820_timetable_roster_heal';
+    var CACHE_BUST = '20260820_timetable_roster_teacher_bind';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 

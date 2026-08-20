@@ -4315,24 +4315,78 @@ function attTimetableRosterTeacherIdSet() {
   return set;
 }
 
+function attTimetableRosterTeacherNameSet() {
+  var set = Object.create(null);
+  function add(name) {
+    name = String(name || '').trim();
+    if (name && name !== 'نامعلوم' && name !== '-') set[name] = true;
+  }
+  try {
+    (typeof attGetUsers === 'function' ? attGetUsers() : []).forEach(function (u) {
+      if (!u) return;
+      if (typeof attUserMatchesType === 'function' && !attUserMatchesType(u, 'teacher')) return;
+      add(u.name || u.fullName || u.teacherName);
+    });
+  } catch (eTeachers) { /* ignore */ }
+  try {
+    var custom = JSON.parse(localStorage.getItem('ems_att_custom_teachers') || '[]') || [];
+    custom.forEach(function (c) {
+      add(c && c.name);
+    });
+  } catch (eCustom) { /* ignore */ }
+  return set;
+}
+
+function attTimetableRosterHasTeachers() {
+  var ids = attTimetableRosterTeacherIdSet();
+  var names = attTimetableRosterTeacherNameSet();
+  return Object.keys(ids).length > 0 || Object.keys(names).length > 0;
+}
+
+function attTimetableListHasTeacherFields(list) {
+  return (list || []).some(function (p) {
+    if (!p) return false;
+    return !!(String(p.teacherId || '').trim() || String(p.teacherName || '').trim());
+  });
+}
+
+function attTimetableTeacherRosterScore(list) {
+  var teacherIds = attTimetableRosterTeacherIdSet();
+  var teacherNames = attTimetableRosterTeacherNameSet();
+  var score = 0;
+  (list || []).forEach(function (p) {
+    if (!p) return;
+    var tid = String(p.teacherId || '').trim();
+    if (tid && teacherIds[tid]) score += 3;
+    var tn = String(p.teacherName || '').trim();
+    if (tn && teacherNames[tn]) score += 3;
+  });
+  return score;
+}
+
+function attTimetableFailsRosterTeacherBinding(list) {
+  list = Array.isArray(list) ? list : [];
+  if (!list.length || !attTimetableListHasTeacherFields(list)) return false;
+  if (!attTimetableRosterHasTeachers()) return false;
+  return attTimetableTeacherRosterScore(list) === 0;
+}
+
 function attTimetableRosterHasMembers() {
   var classes = attTimetableRosterClassSet();
-  var teachers = attTimetableRosterTeacherIdSet();
-  return Object.keys(classes).length > 0 || Object.keys(teachers).length > 0;
+  return Object.keys(classes).length > 0 || attTimetableRosterHasTeachers();
 }
 
 function attTimetableRosterScore(list) {
   var classes = attTimetableRosterClassSet();
-  var teachers = attTimetableRosterTeacherIdSet();
-  var score = 0;
+  var classScore = 0;
   (list || []).forEach(function (p) {
     if (!p) return;
     var cn = String(p.className || '').trim();
-    if (cn && cn !== '-' && classes[cn]) score += 2;
-    var tid = String(p.teacherId || '').trim();
-    if (tid && teachers[tid]) score += 3;
+    if (cn && cn !== '-' && classes[cn]) classScore += 2;
   });
-  return score;
+  var teacherScore = attTimetableTeacherRosterScore(list);
+  if (attTimetableFailsRosterTeacherBinding(list)) return 0;
+  return classScore + teacherScore;
 }
 
 function attTimetableListsEqual(a, b) {
@@ -4352,6 +4406,10 @@ function attChooseBestTimetableCandidate(candidates, tenantId) {
   var viable = [];
   (candidates || []).forEach(function (c) {
     if (!c || !Array.isArray(c.list) || !c.list.length || !c.source) return;
+    if (typeof attTimetableFailsRosterTeacherBinding === 'function'
+      && attTimetableFailsRosterTeacherBinding(c.list)) {
+      return;
+    }
     if (typeof attTimetableLooksLikeForeignCopy === 'function'
       && attTimetableLooksLikeForeignCopy(c.list, tenantId)) {
       return;
@@ -4411,6 +4469,10 @@ function attRememberTrustedTimetable(tenantId, list, source) {
 
 function attShouldAcceptRemoteTimetable(incoming, tenantId) {
   incoming = Array.isArray(incoming) ? incoming : [];
+  if (typeof attTimetableFailsRosterTeacherBinding === 'function'
+    && attTimetableFailsRosterTeacherBinding(incoming)) {
+    return false;
+  }
   if (typeof attTimetableLooksLikeForeignCopy === 'function'
     && attTimetableLooksLikeForeignCopy(incoming, tenantId)) {
     return false;
@@ -4522,6 +4584,8 @@ window.attTimetableRosterScore = attTimetableRosterScore;
 window.attChooseTimetableFromCloudLists = attChooseTimetableFromCloudLists;
 window.attShouldAcceptRemoteTimetable = attShouldAcceptRemoteTimetable;
 window.attTimetableListsAreDifferentTimetables = attTimetableListsAreDifferentTimetables;
+window.attTimetableFailsRosterTeacherBinding = attTimetableFailsRosterTeacherBinding;
+window.attTimetableTeacherRosterScore = attTimetableTeacherRosterScore;
 
 function attHealTimetableLocally(tenantId, generation) {
   tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
@@ -4605,13 +4669,28 @@ function attMigrateLegacyCloudTimetablePeriods(tenantId, sourceTenantId, generat
       quarantineList: quarantineList
     });
 
+    if ((!choice.list || !choice.list.length)
+      && canonList.length
+      && typeof attTimetableFailsRosterTeacherBinding === 'function'
+      && attTimetableFailsRosterTeacherBinding(canonList)
+      && (!localList.length || attTimetableFailsRosterTeacherBinding(localList))
+      && !quarantineList.length
+      && !legacyList.length) {
+      choice = {
+        list: [],
+        source: 'purge_foreign_canonical',
+        persistCanonical: true,
+        score: 0
+      };
+    }
+
     if (!attSnapshotMayMutateTenantState(sourceTenantId, generation)) {
       return { ok: false, reason: 'tenant_guard' };
     }
 
     return attApplyTimetableHealChoice(choice, sourceTenantId, generation);
-  }).catch(function () {
-    return { ok: false, reason: 'migration_error' };
+  }).catch(function (err) {
+    return { ok: false, reason: 'migration_error', detail: err && err.message ? String(err.message) : '' };
   });
 }
 

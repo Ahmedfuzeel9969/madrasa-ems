@@ -90,6 +90,12 @@ function loadEnv() {
         + '\nthis.attChooseTimetableFromCloudLists = attChooseTimetableFromCloudLists;'
         + '\nthis.attShouldAcceptRemoteTimetable = attShouldAcceptRemoteTimetable;'
         + '\nthis.attRememberTrustedTimetable = attRememberTrustedTimetable;'
+        + '\nthis.attTimetableFailsRosterTeacherBinding = attTimetableFailsRosterTeacherBinding;'
+        + '\nthis.attTimetableRosterScore = attTimetableRosterScore;'
+        + '\nthis.attChooseBestTimetableCandidate = attChooseBestTimetableCandidate;'
+        + '\nthis.attGetUsers = function(){ return [{ id: "CTCH-68140", name: "عبد اللہ", role: "teacher" }]; };'
+        + '\nthis.attUserMatchesType = function(u,t){ return t==="teacher"; };'
+        + '\nthis.attGetUserId = function(u){ return u.id; };'
         + '\nthis.attReadAllTimetablePeriodsRaw = function(){ var r=this.localStorage.getItem("ems_att_periods"); try{return r?JSON.parse(r):[];}catch(e){return [];} };',
         sb
     );
@@ -191,5 +197,24 @@ describe('Foreign timetable replacing own — production fix', function () {
         env.attRememberTrustedTimetable(TENANT_B, [{ id: 'P-B', name: 'own', days: [2] }], 'legacy_disjoint');
         expect(env.attShouldAcceptRemoteTimetable([{ id: 'P-A', name: 'leak', days: [1] }], TENANT_B)).toBe(false);
         expect(env.attShouldAcceptRemoteTimetable([{ id: 'P-B', name: 'own', days: [2] }], TENANT_B)).toBe(true);
+    });
+
+    it('rejects foreign canonical when classes match but teacher ids/names do not belong to this madrasa', function () {
+        var foreign = [{
+            id: 'PRD-35564',
+            className: 'اولی',
+            teacherId: 'TCH-01',
+            teacherName: 'جمال',
+            days: [1]
+        }];
+        expect(env.attTimetableFailsRosterTeacherBinding(foreign)).toBe(true);
+        expect(env.attTimetableRosterScore(foreign)).toBe(0);
+        expect(env.attShouldAcceptRemoteTimetable(foreign, TENANT_B)).toBe(false);
+
+        var choice = env.attChooseBestTimetableCandidate([
+            { list: foreign, source: 'cloud_canonical' }
+        ], TENANT_B);
+        expect(choice.source).toBe('empty');
+        expect(choice.list).toEqual([]);
     });
 });

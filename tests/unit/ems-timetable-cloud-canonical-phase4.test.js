@@ -93,7 +93,11 @@ function loadEnv() {
     );
 
     var att = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
-    var attBlocks = att.slice(
+    var readRawBlock = att.slice(
+        att.indexOf('function attReadAllTimetablePeriodsRaw'),
+        att.indexOf('\nfunction attSaveTimetablePeriodsSync')
+    );
+    var attBlocks = readRawBlock + att.slice(
         att.indexOf('function getAttendanceTenantId'),
         att.indexOf('\nfunction attNormalizeStorageScope')
     ) + att.slice(
@@ -130,6 +134,10 @@ function loadEnv() {
     sb.attIsOfflineMode = function () { return false; };
     sb.setupLiveAttendanceListener = function () {};
     sb.loadPeriods = function () {};
+    sb.attGetUsers = function () { return []; };
+    sb.attUserMatchesType = function () { return false; };
+    sb.attGetUserId = function (u) { return u && u.id; };
+    sb.attGetUserClass = function (u) { return u && (u.class || u.className); };
 
     vm.runInNewContext(
         attBlocks
@@ -142,9 +150,13 @@ function loadEnv() {
     );
 
     sb.setBoth = function (tid) {
-        sb.CURRENT_MADRASA_TENANT_ID = tid;
-        sb.EMS_ACTIVE_TENANT_ID = tid;
-        sb.EMS_TENANT_STORAGE_READY = true;
+        if (typeof sb.emsActivateTenantStorage === 'function') {
+            sb.emsActivateTenantStorage(tid);
+        } else {
+            sb.CURRENT_MADRASA_TENANT_ID = tid;
+            sb.EMS_ACTIVE_TENANT_ID = tid;
+            sb.EMS_TENANT_STORAGE_READY = true;
+        }
         sb.EMS_TENANT_TRANSITION_IN_PROGRESS = false;
     };
 
@@ -220,7 +232,7 @@ describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
             data: function () { return { list: [{ id: 'LEG', name: 'Legacy', days: [2] }] }; }
         });
 
-        var res = await env.attMigrateLegacyCloudTimetablePeriods(TENANT_A, TENANT_A, env.emsGetTenantGeneration());
+        var res = await env.attMigrateLegacyCloudTimetablePeriods(TENANT_A, TENANT_A, null);
         expect(res.ok).toBe(true);
         expect(res.migrated).toBe(true);
         expect(res.count).toBe(1);
@@ -252,7 +264,7 @@ describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
         });
         env.localStorage.setItem('ems_classes', JSON.stringify([{ name: 'Class-A' }]));
 
-        var res = await env.attMigrateLegacyCloudTimetablePeriods(TENANT_A, TENANT_A, env.emsGetTenantGeneration());
+        var res = await env.attMigrateLegacyCloudTimetablePeriods(TENANT_A, TENANT_A, null);
         expect(res.ok).toBe(true);
         expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('SAME');
     });
@@ -277,7 +289,7 @@ describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
         env._emsOriginalSetItem.call(env.localStorage,
             'ems_t_' + TENANT_A + '__ems_timetable_cloud_legacy_migrated_v1', '1');
 
-        var res = await env.attMigrateLegacyCloudTimetablePeriods(TENANT_A, TENANT_A, env.emsGetTenantGeneration());
+        var res = await env.attMigrateLegacyCloudTimetablePeriods(TENANT_A, TENANT_A, null);
         expect(res.ok).toBe(true);
         expect(res.migrated).toBe(true);
         expect(res.source).toBe('legacy_disjoint');
