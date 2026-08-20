@@ -308,6 +308,76 @@
         return localStorage.getItem(key);
     }
 
+    function attIndexStorageKey() {
+        if (typeof global.emsResolveCacheKey === 'function') {
+            return global.emsResolveCacheKey('ems_att_keys_index');
+        }
+        var tid = getVerifiedAttendanceTenantId();
+        return tid ? ('ems_t_' + tid + '__ems_att_keys_index') : null;
+    }
+
+    function attIndexRead() {
+        try {
+            var storageKey = attIndexStorageKey();
+            if (!storageKey) return [];
+            var raw = readRaw(storageKey);
+            if (!raw) return [];
+            var parsed = JSON.parse(raw);
+            var keys = Array.isArray(parsed) ? parsed : [];
+            var tid = getVerifiedAttendanceTenantId();
+            if (!tid) return [];
+            return keys.filter(function (key) {
+                return key && key.indexOf('att_rec_' + tid + '_') === 0;
+            });
+        } catch (e) { return []; }
+    }
+
+    function attIndexWrite(keys) {
+        var storageKey = attIndexStorageKey();
+        if (!storageKey) return;
+        try {
+            var str = JSON.stringify(keys || []);
+            if (typeof global.emsDurableWriteRaw === 'function') {
+                global.emsDurableWriteRaw(storageKey, str);
+            } else if (global._emsOriginalSetItem) {
+                global._emsSuppressSync = true;
+                global._emsOriginalSetItem.call(localStorage, storageKey, str);
+                global._emsSuppressSync = false;
+            } else {
+                localStorage.setItem(storageKey, str);
+            }
+        } catch (e) { /* quota */ }
+    }
+
+    /** Local att_rec index — invalidate helper SSOT cache when a new key is tracked. */
+    function attIndexAddKey(key) {
+        var invalidateHelper = global.emsAttOfflineKeyIndexInvalidate;
+        if (!key || key.indexOf('att_rec_') !== 0) return;
+        if (!getVerifiedAttendanceTenantId()) return;
+        if (typeof global.emsIsActiveTenantAttendanceKey === 'function'
+            && !global.emsIsActiveTenantAttendanceKey(key)) return;
+        var idx = attIndexRead();
+        if (idx.indexOf(key) >= 0) return;
+        idx.push(key);
+        attIndexWrite(idx);
+        if (typeof invalidateHelper === 'function') invalidateHelper();
+    }
+
+    function attIndexRebuildFromStorage() {
+        var tid = getVerifiedAttendanceTenantId();
+        var keys = [];
+        if (!tid) return keys;
+        var prefix = 'att_rec_' + tid + '_';
+        try {
+            for (var i = 0; i < localStorage.length; i++) {
+                var k = localStorage.key(i);
+                if (k && k.indexOf(prefix) === 0) keys.push(k);
+            }
+        } catch (e) { /* ignore */ }
+        if (keys.length) attIndexWrite(keys);
+        return keys;
+    }
+
     function writeLocal(key, data) {
         var str = typeof data === 'string' ? data : JSON.stringify(data);
         if (typeof global.emsIsLargeBlobKey === 'function' && global.emsIsLargeBlobKey(key)) {
@@ -479,77 +549,6 @@
             req.onsuccess = function (e) { resolve(e.target.result); };
             req.onerror = function () { reject(req.error); };
         });
-    }
-
-    function attIndexStorageKey() {
-        if (typeof global.emsResolveCacheKey === 'function') {
-            return global.emsResolveCacheKey('ems_att_keys_index');
-        }
-        var tid = getVerifiedAttendanceTenantId();
-        return tid ? ('ems_t_' + tid + '__ems_att_keys_index') : null;
-    }
-
-    function attIndexRead() {
-        try {
-            var storageKey = attIndexStorageKey();
-            if (!storageKey) return [];
-            var raw = readRaw(storageKey);
-            if (!raw) return [];
-            var parsed = JSON.parse(raw);
-            var keys = Array.isArray(parsed) ? parsed : [];
-            var tid = getVerifiedAttendanceTenantId();
-            if (!tid) return [];
-            return keys.filter(function (key) {
-                return key && key.indexOf('att_rec_' + tid + '_') === 0;
-            });
-        } catch (e) { return []; }
-    }
-
-    function attIndexWrite(keys) {
-        var storageKey = attIndexStorageKey();
-        if (!storageKey) return;
-        try {
-            var str = JSON.stringify(keys || []);
-            if (typeof global.emsDurableWriteRaw === 'function') {
-                global.emsDurableWriteRaw(storageKey, str);
-            } else if (global._emsOriginalSetItem) {
-                global._emsSuppressSync = true;
-                global._emsOriginalSetItem.call(localStorage, storageKey, str);
-                global._emsSuppressSync = false;
-            } else {
-                localStorage.setItem(storageKey, str);
-            }
-        } catch (e) { /* quota */ }
-    }
-
-    function attIndexAddKey(key) {
-        if (!key || key.indexOf('att_rec_') !== 0) return;
-        if (!getVerifiedAttendanceTenantId() || (typeof global.emsIsActiveTenantAttendanceKey === 'function'
-            && !global.emsIsActiveTenantAttendanceKey(key))) {
-            return;
-        }
-        var idx = attIndexRead();
-        if (idx.indexOf(key) >= 0) return;
-        idx.push(key);
-        attIndexWrite(idx);
-        if (typeof global.emsAttOfflineKeyIndexInvalidate === 'function') {
-            global.emsAttOfflineKeyIndexInvalidate();
-        }
-    }
-
-    function attIndexRebuildFromStorage() {
-        var tid = getVerifiedAttendanceTenantId();
-        var keys = [];
-        if (!tid) return keys;
-        var prefix = 'att_rec_' + tid + '_';
-        try {
-            for (var i = 0; i < localStorage.length; i++) {
-                var k = localStorage.key(i);
-                if (k && k.indexOf(prefix) === 0) keys.push(k);
-            }
-        } catch (e) { /* ignore */ }
-        if (keys.length) attIndexWrite(keys);
-        return keys;
     }
 
     function ensureQueueDocIdMap() {
