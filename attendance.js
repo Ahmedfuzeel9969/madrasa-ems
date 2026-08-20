@@ -154,19 +154,13 @@ function attReadAllTimetablePeriodsRaw() {
 
 function attSaveTimetablePeriodsSync(periods) {
   var list = Array.isArray(periods) ? periods : [];
-  try {
-    var str = JSON.stringify(list);
-    if (window._emsOriginalSetItem) {
-      window._emsSuppressSync = true;
-      window._emsOriginalSetItem.call(localStorage, 'ems_att_periods', str);
-      window._emsSuppressSync = false;
-    } else {
-      localStorage.setItem('ems_att_periods', str);
-    }
-  } catch (eSave) { /* quota */ }
   if (typeof attPersistConfigBlob === 'function') {
     attPersistConfigBlob(ATT_PERIODS_KEY, list).catch(function () { /* offline */ });
+    return;
   }
+  try {
+    localStorage.setItem('ems_att_periods', JSON.stringify(list));
+  } catch (eSave) { /* quota */ }
 }
 
 function attNormalizeTeacherDisplayName(name) {
@@ -1176,13 +1170,11 @@ window.emsStartAttendanceSync = function () {
   attConfigUnsub = attTenantSubCol(db, tenantId, 'Attendance_Config')
     .doc('periods').onSnapshot(function (doc) {
       if (doc.exists) {
-        var listStr = JSON.stringify(doc.data().list || []);
-        if (window._emsOriginalSetItem) {
-          window._emsSuppressSync = true;
-          window._emsOriginalSetItem.call(localStorage, 'ems_att_periods', listStr);
-          window._emsSuppressSync = false;
+        var list = doc.data().list || [];
+        if (typeof window.emsOfflineWriteLocalSync === 'function') {
+          window.emsOfflineWriteLocalSync('ems_att_periods', list);
         } else {
-          localStorage.setItem('ems_att_periods', listStr);
+          localStorage.setItem('ems_att_periods', JSON.stringify(list));
         }
         if (document.getElementById('settings-period-tbody')) window.loadPeriods();
       }
@@ -4118,7 +4110,11 @@ function attEnqueueSyncModuleBlob(key, value) {
     return Promise.resolve({ ok: true, synced: false, offline: true });
   }
   var jsonStr = typeof value === 'string' ? value : JSON.stringify(value);
-  return window.emsOfflineEnqueueSyncModule(key, jsonStr, { module: 'Attendance' }).then(function () {
+  var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
+  return window.emsOfflineEnqueueSyncModule(key, jsonStr, {
+    module: 'Attendance',
+    tenantId: tenantId
+  }).then(function () {
     return { ok: true, synced: false, offline: true };
   });
 }
@@ -4127,7 +4123,9 @@ function attEnqueueSyncModuleBlob(key, value) {
 function attPersistConfigBlob(key, value) {
   if (!key) return Promise.resolve({ ok: false, reason: 'no_key' });
   if (typeof window.emsOfflineWriteLocalSync === 'function') {
-    window.emsOfflineWriteLocalSync(key, value);
+    if (!window.emsOfflineWriteLocalSync(key, value)) {
+      return Promise.resolve({ ok: false, reason: 'tenant_partition_write_blocked' });
+    }
   } else {
     try {
       localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
@@ -4136,6 +4134,144 @@ function attPersistConfigBlob(key, value) {
     }
   }
   return attEnqueueSyncModuleBlob(key, value);
+}
+
+function attParseTimetablePeriodList(raw) {
+  if (raw == null) return [];
+  try {
+    var parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (eParse) { return []; }
+}
+
+function attPeriodRecoveryRecency(period) {
+  if (!period) return 0;
+  return Number(period.updatedAt || period.savedAt || period.archivedAt || period.createdAt || 0);
+}
+
+function attRawLocalGetPhysical(key) {
+  try {
+    if (window._emsOriginalGetItem) {
+      return window._emsOriginalGetItem.call(localStorage, key);
+    }
+    return localStorage.getItem(key);
+  } catch (eRaw) { return null; }
+}
+
+/**
+ * Non-destructive legacy timetable recovery — merges provably-owned global copies
+ * into the tenant-scoped canonical partition. Never deletes the legacy source.
+ */
+function attRecoverLegacyTimetablePeriods(tenantId) {
+  tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
+  if (!tenantId) {
+    return Promise.resolve({ ok: false, reason: 'NO_TENANT', copied: 0, merged: 0, conflictCount: 0 });
+  }
+  var destination = typeof window.emsScopedKey === 'function'
+    ? window.emsScopedKey(ATT_PERIODS_KEY, tenantId)
+    : null;
+  if (!destination) {
+    return Promise.resolve({ ok: false, reason: 'NO_SCOPED_KEY', copied: 0, merged: 0, conflictCount: 0 });
+  }
+  if (window.EMS_TENANT_LEGACY_MIGRATION_ALLOWED === false) {
+    return Promise.resolve({
+      ok: false,
+      reason: 'LEGACY_NOT_ATTRIBUTABLE',
+      copied: 0,
+      merged: 0,
+      conflictCount: 0
+    });
+  }
+
+  var legacyLocal = attParseTimetablePeriodList(attRawLocalGetPhysical(ATT_PERIODS_KEY));
+  var legacyIdbRead = typeof window.emsIdbKvGet === 'function'
+    ? window.emsIdbKvGet(ATT_PERIODS_KEY)
+    : Promise.resolve(null);
+
+  return legacyIdbRead.then(function (legacyIdbRaw) {
+    var legacyById = Object.create(null);
+    legacyLocal.concat(attParseTimetablePeriodList(legacyIdbRaw)).forEach(function (p) {
+      if (!p || !p.id) return;
+      var prev = legacyById[p.id];
+      if (!prev || attPeriodRecoveryRecency(p) >= attPeriodRecoveryRecency(prev)) {
+        legacyById[p.id] = p;
+      }
+    });
+    var legacyIds = Object.keys(legacyById);
+    if (!legacyIds.length) {
+      return { ok: true, source: ATT_PERIODS_KEY, destination: destination, copied: 0, merged: 0, conflictCount: 0 };
+    }
+
+    var canonical = attReadAllTimetablePeriodsRaw();
+    var canonById = Object.create(null);
+    canonical.forEach(function (p) {
+      if (p && p.id) canonById[p.id] = p;
+    });
+
+    var out = canonical.slice();
+    var copied = 0;
+    var merged = 0;
+    var conflicts = [];
+
+    legacyIds.forEach(function (id) {
+      var legacy = legacyById[id];
+      var existing = canonById[id];
+      if (!existing) {
+        out.push(legacy);
+        canonById[id] = legacy;
+        copied++;
+        return;
+      }
+      if (JSON.stringify(existing) === JSON.stringify(legacy)) return;
+      var legacyScore = attPeriodRecoveryRecency(legacy);
+      var canonScore = attPeriodRecoveryRecency(existing);
+      if (legacyScore > canonScore) {
+        var idx = out.findIndex(function (p) { return p && p.id === id; });
+        if (idx >= 0) out[idx] = legacy;
+        canonById[id] = legacy;
+        merged++;
+      } else if (canonScore > legacyScore) {
+        return;
+      } else {
+        conflicts.push({ id: id, legacy: legacy, canonical: existing });
+      }
+    });
+
+    if (copied > 0 || merged > 0) {
+      attSaveTimetablePeriodsSync(out);
+    }
+
+    var report = {
+      ok: true,
+      tenantId: tenantId,
+      source: ATT_PERIODS_KEY,
+      destination: destination,
+      copied: copied,
+      merged: merged,
+      conflictCount: conflicts.length,
+      conflicts: conflicts
+    };
+    try {
+      localStorage.setItem('ems_timetable_recovery_v1__' + tenantId, JSON.stringify({
+        at: Date.now(),
+        report: report
+      }));
+    } catch (eAudit) { /* ignore */ }
+    if (copied > 0 || merged > 0 || conflicts.length > 0) {
+      console.info('[EMS attendance] timetable legacy recovery', report);
+    }
+    return report;
+  });
+}
+
+window.attRecoverLegacyTimetablePeriods = attRecoverLegacyTimetablePeriods;
+
+if (typeof window.addEventListener === 'function') {
+  window.addEventListener('ems:tenant-storage-ready', function (ev) {
+    var tid = ev && ev.detail && ev.detail.tenantId;
+    if (!tid) return;
+    attRecoverLegacyTimetablePeriods(tid).catch(function () { /* ignore */ });
+  });
 }
 
 function attReadHolidaysDb() {

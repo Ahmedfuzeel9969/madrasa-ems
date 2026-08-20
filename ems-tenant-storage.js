@@ -143,6 +143,23 @@
         return global.emsScopedKey(baseKey);
     };
 
+    /**
+     * Resolve logical business key → physical localStorage/IDB partition.
+     * Tenant-data keys fail closed (null) when no verified tenant is active.
+     * Already-physical keys (ems_t_*, att_rec_*, ems_repo_*, …) pass through.
+     */
+    global.emsResolvePhysicalWriteKey = function (key, tenantId) {
+        if (!key || typeof key !== 'string') return null;
+        if (key.indexOf(TENANT_KEY_PREFIX) === 0) return key;
+        if (key.indexOf('att_rec_') === 0) return key;
+        if (key.indexOf('ems_repo_') === 0 || key.indexOf('ems_cache_') === 0) return key;
+        if (key.indexOf('ems_dashboard_') === 0) return key;
+        if (global.emsIsTenantDataKey(key)) {
+            return global.emsScopedKey(key, tenantId);
+        }
+        return key;
+    };
+
     global.emsIsRegistrationCacheKey = function (key) {
         if (!key) return false;
         if (REGISTRATION_BASE_KEYS.indexOf(key) >= 0) return true;

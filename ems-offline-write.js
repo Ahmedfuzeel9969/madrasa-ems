@@ -378,54 +378,76 @@
         return keys;
     }
 
+    function resolveOfflinePhysicalKey(key) {
+        if (!key) return null;
+        if (typeof global.emsResolvePhysicalWriteKey === 'function') {
+            return global.emsResolvePhysicalWriteKey(key);
+        }
+        if (typeof global.emsIsTenantDataKey === 'function'
+            && global.emsIsTenantDataKey(key)
+            && typeof global.emsResolveCacheKey === 'function') {
+            return global.emsResolveCacheKey(key) || null;
+        }
+        return key;
+    }
+
     function writeLocal(key, data) {
+        var physicalKey = resolveOfflinePhysicalKey(key);
+        if (!physicalKey) {
+            return Promise.resolve({ ok: false, reason: 'NO_TENANT_PARTITION', key: key });
+        }
         var str = typeof data === 'string' ? data : JSON.stringify(data);
         if (typeof global.emsIsLargeBlobKey === 'function' && global.emsIsLargeBlobKey(key)) {
             if (typeof global.emsDurableWriteRaw === 'function') {
-                global.emsDurableWriteRaw(key, str);
+                global.emsDurableWriteRaw(physicalKey, str);
                 if (typeof global.emsCacheInvalidate === 'function') global.emsCacheInvalidate(key);
-                return Promise.resolve({ ok: true, key: key });
+                return Promise.resolve({ ok: true, key: key, physicalKey: physicalKey });
             }
         }
         if (global._emsOriginalSetItem) {
             global._emsSuppressSync = true;
-            global._emsOriginalSetItem.call(localStorage, key, str);
+            global._emsOriginalSetItem.call(localStorage, physicalKey, str);
             global._emsSuppressSync = false;
         } else {
-            try { localStorage.setItem(key, str); } catch (e) { /* quota */ }
+            try { localStorage.setItem(physicalKey, str); } catch (e) { /* quota */ }
         }
         if (typeof global.emsCacheInvalidate === 'function') global.emsCacheInvalidate(key);
         var idb = (typeof global.emsIdbKvSet === 'function')
-            ? global.emsIdbKvSet(key, str)
+            ? global.emsIdbKvSet(physicalKey, str)
             : Promise.resolve(false);
-        return idb.then(function () { return { ok: true, key: key }; });
+        return idb.then(function () { return { ok: true, key: key, physicalKey: physicalKey }; });
     }
 
     /** Synchronous local write — survives immediate tab/app close. */
     global.emsOfflineWriteLocalSync = function (key, data) {
         if (!key) return false;
+        var physicalKey = resolveOfflinePhysicalKey(key);
+        if (!physicalKey) {
+            console.warn('[EMS] offline local sync write blocked — no tenant partition for', key);
+            return false;
+        }
         var str = typeof data === 'string' ? data : JSON.stringify(data);
         try {
             if (typeof global.emsIsLargeBlobKey === 'function' && global.emsIsLargeBlobKey(key)) {
                 if (typeof global.emsDurableWriteRaw === 'function') {
-                    global.emsDurableWriteRaw(key, str);
+                    global.emsDurableWriteRaw(physicalKey, str);
                 }
             } else if (global._emsOriginalSetItem) {
                 global._emsSuppressSync = true;
-                global._emsOriginalSetItem.call(localStorage, key, str);
+                global._emsOriginalSetItem.call(localStorage, physicalKey, str);
                 global._emsSuppressSync = false;
             } else {
-                localStorage.setItem(key, str);
+                localStorage.setItem(physicalKey, str);
             }
             if (typeof global.emsCacheInvalidate === 'function') global.emsCacheInvalidate(key);
             if (typeof global.emsInvalidateAttDashboardCache === 'function') {
                 global.emsInvalidateAttDashboardCache();
             }
-            if (key.indexOf('att_rec_') === 0) {
-                attIndexAddKey(key);
+            if (physicalKey.indexOf('att_rec_') === 0) {
+                attIndexAddKey(physicalKey);
             }
             if (typeof global.emsIdbKvSet === 'function' && !(typeof global.emsIsLargeBlobKey === 'function' && global.emsIsLargeBlobKey(key))) {
-                global.emsIdbKvSet(key, str);
+                global.emsIdbKvSet(physicalKey, str);
             }
             return true;
         } catch (e) {

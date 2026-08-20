@@ -31,14 +31,18 @@ function loadPeriodIdentityHelpers(overrides) {
         attUserMatchesType: function (u, t) {
             return !!(u && String(u.type || '').toLowerCase() === String(t || '').toLowerCase());
         },
-        attPersistConfigBlob: function () { return Promise.resolve(); },
+        attPersistConfigBlob: function (key, value) {
+            sandbox.localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+            return Promise.resolve();
+        },
         ATT_PERIODS_KEY: 'ems_att_periods',
         console: { info: function () {} }
     };
     sandbox.window = sandbox;
 
     vm.runInNewContext(
-        fnSrc
+        'var ATT_PERIODS_KEY = \'ems_att_periods\';'
+        + fnSrc
         + '\nthis.attPeriodTeacherIdMatches = attPeriodTeacherIdMatches;'
         + '\nthis.attFindUniqueTeacherIdByName = attFindUniqueTeacherIdByName;'
         + '\nthis.attMigrateLegacyPeriodTeacherIds = attMigrateLegacyPeriodTeacherIds;'
