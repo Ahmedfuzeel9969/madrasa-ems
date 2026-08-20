@@ -1203,6 +1203,16 @@ window.emsStartAttendanceSync = function () {
       if (!attSnapshotMayMutateTenantState(listenerTenantId, listenerGeneration)) return;
       var list = attTimetableListFromCloudSnapshot(doc);
       if (list == null) return;
+      if (typeof attTimetableLooksLikeForeignCopy === 'function'
+        && attTimetableLooksLikeForeignCopy(list, listenerTenantId)) {
+        console.warn('[EMS attendance] rejecting ModuleData timetable snapshot — period ids belong to another madrasa');
+        attMigrateLegacyCloudTimetablePeriods(listenerTenantId, listenerTenantId, listenerGeneration);
+        return;
+      }
+      if (!list.length) {
+        var localKeep = attReadAllTimetablePeriodsRaw();
+        if (localKeep.length) return;
+      }
       if (typeof window.emsOfflineWriteLocalSync === 'function') {
         window.emsOfflineWriteLocalSync('ems_att_periods', list, {
           tenantId: listenerTenantId,
@@ -4246,8 +4256,11 @@ function attMigrateLegacyCloudTimetablePeriods(tenantId, sourceTenantId, generat
       return { ok: true, skipped: true, reason: 'no_legacy_cloud' };
     }
 
-    var promoteLegacy = !canonList.length;
-    if (!promoteLegacy && legacyDoc.exists && canonDoc.exists) {
+    var canonContaminated = typeof attTimetableLooksLikeForeignCopy === 'function'
+      && attTimetableLooksLikeForeignCopy(canonList, tenantId);
+
+    var promoteLegacy = !canonList.length || canonContaminated;
+    if (!promoteLegacy && legacyDoc.exists && canonDoc.exists && !canonContaminated) {
       promoteLegacy = attCloudDocTimestamp(legacyDoc.data()) > attCloudDocTimestamp(canonDoc.data());
     }
 
@@ -4384,7 +4397,38 @@ function attRecoverLegacyTimetablePeriods(tenantId) {
       return { ok: true, source: ATT_PERIODS_KEY, destination: destination, copied: 0, merged: 0, conflictCount: 0 };
     }
 
+    var foreignIds = {};
+    if (typeof attTimetableIdsOverlapOtherTenant === 'function') {
+      attTimetableIdsOverlapOtherTenant(
+        legacyIds.map(function (id) { return legacyById[id]; }),
+        tenantId
+      ).forEach(function (hit) {
+        (hit.periodIds || []).forEach(function (id) { foreignIds[id] = true; });
+      });
+    }
+    legacyIds = legacyIds.filter(function (id) { return !foreignIds[id]; });
+    if (!legacyIds.length) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'LEGACY_BELONGS_TO_OTHER_TENANT',
+        copied: 0,
+        merged: 0,
+        conflictCount: 0
+      };
+    }
+
     var canonical = attReadAllTimetablePeriodsRaw();
+    if (canonical.length) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'SCOPED_ALREADY_HAS_DATA',
+        copied: 0,
+        merged: 0,
+        conflictCount: 0
+      };
+    }
     var canonById = Object.create(null);
     canonical.forEach(function (p) {
       if (p && p.id) canonById[p.id] = p;
@@ -4510,6 +4554,33 @@ function attIntersectPeriodIds(a, b) {
     if (b && b[id]) out.push(id);
   });
   return out;
+}
+
+/** Period ids in `list` that already live in another madrasa's scoped partition. */
+function attTimetableIdsOverlapOtherTenant(list, tenantId) {
+  var ids = attPeriodIdSet(list);
+  var prefix = 'ems_t_';
+  var suffix = '__' + ATT_PERIODS_KEY;
+  var hits = [];
+  attEnumeratePhysicalLocalKeys().forEach(function (key) {
+    if (!key || key.indexOf(prefix) !== 0) return;
+    if (key.indexOf(ATT_PERIODS_QUARANTINE_SUFFIX) >= 0) return;
+    if (key.length < suffix.length || key.slice(-suffix.length) !== suffix) return;
+    var otherTid = key.slice(prefix.length, key.length - suffix.length);
+    if (!otherTid || otherTid.indexOf('__') >= 0) return;
+    if (tenantId && String(otherTid) === String(tenantId)) return;
+    var otherList = attParseTimetablePeriodList(attRawLocalGetPhysical(key));
+    var overlap = attIntersectPeriodIds(ids, attPeriodIdSet(otherList));
+    if (overlap.length) {
+      hits.push({ otherTenantId: otherTid, periodIds: overlap, key: key });
+    }
+  });
+  return hits;
+}
+
+function attTimetableLooksLikeForeignCopy(list, tenantId) {
+  if (!list || !list.length) return false;
+  return attTimetableIdsOverlapOtherTenant(list, tenantId).length > 0;
 }
 
 /**
@@ -4685,45 +4756,57 @@ function attRecoverContaminatedTimetable(tenantId, opts) {
   var preferred = null;
   var preferredSource = null;
 
-  if (Array.isArray(opts.cloudCanonicalList) && opts.cloudCanonicalList.length) {
+  function listIsSafe(list) {
+    return Array.isArray(list) && list.length > 0 && !attTimetableLooksLikeForeignCopy(list, tenantId);
+  }
+
+  if (listIsSafe(opts.cloudLegacyList)
+    && (!listIsSafe(opts.cloudCanonicalList)
+      || attTimetableLooksLikeForeignCopy(opts.cloudCanonicalList, tenantId))) {
+    preferred = opts.cloudLegacyList.slice();
+    preferredSource = 'cloud_legacy';
+  } else if (listIsSafe(opts.cloudCanonicalList)) {
     preferred = opts.cloudCanonicalList.slice();
     preferredSource = 'cloud_canonical';
-  } else if (Array.isArray(opts.cloudLegacyList) && opts.cloudLegacyList.length && !scopedList.length) {
+  } else if (listIsSafe(opts.cloudLegacyList)) {
     preferred = opts.cloudLegacyList.slice();
     preferredSource = 'cloud_legacy';
   }
 
+  var scopedContaminated = attTimetableLooksLikeForeignCopy(scopedList, tenantId);
   var critical = (audit.findings || []).some(function (f) {
     return f.code === 'CROSS_TENANT_PERIOD_ID_COLLISION';
-  });
+  }) || scopedContaminated;
 
   var toQuarantine = [];
   var restored = 0;
   var action = 'none';
 
-  if (critical && preferred) {
-    // Contaminated local + trusted cloud: quarantine local, restore cloud.
-    toQuarantine = scopedList.slice();
+  function writeTrustedList(list) {
+    if (typeof attPersistConfigBlob === 'function') {
+      attPersistConfigBlob(ATT_PERIODS_KEY, list);
+      return;
+    }
     if (typeof window.emsOfflineWriteLocalSync === 'function') {
-      window.emsOfflineWriteLocalSync(ATT_PERIODS_KEY, preferred, { tenantId: tenantId });
-    } else {
+      window.emsOfflineWriteLocalSync(ATT_PERIODS_KEY, list, { tenantId: tenantId });
+    } else if (window._emsOriginalSetItem && scopedKey) {
       try {
-        if (window._emsOriginalSetItem && scopedKey) {
-          window._emsOriginalSetItem.call(localStorage, scopedKey, JSON.stringify(preferred));
-        }
+        window._emsOriginalSetItem.call(localStorage, scopedKey, JSON.stringify(list));
       } catch (eWrite) { /* ignore */ }
     }
+  }
+
+  if (critical && preferred) {
+    toQuarantine = scopedList.slice();
+    writeTrustedList(preferred);
     restored = preferred.length;
     action = 'restore_cloud_quarantine_local';
   } else if (critical && !preferred) {
-    // Contaminated but no cloud truth — quarantine only; leave scoped untouched
-    // so we do not destroy working UI data without a verified replacement.
     toQuarantine = scopedList.slice();
-    action = 'quarantine_only_no_cloud';
+    writeTrustedList([]);
+    action = 'quarantine_and_clear_foreign';
   } else if (!scopedList.length && preferred) {
-    if (typeof window.emsOfflineWriteLocalSync === 'function') {
-      window.emsOfflineWriteLocalSync(ATT_PERIODS_KEY, preferred, { tenantId: tenantId });
-    }
+    writeTrustedList(preferred);
     restored = preferred.length;
     action = 'seed_from_' + preferredSource;
   } else if (
@@ -4833,6 +4916,7 @@ function attRunTimetableContaminationPass(tenantId) {
 window.attAuditTimetableContamination = attAuditTimetableContamination;
 window.attRecoverContaminatedTimetable = attRecoverContaminatedTimetable;
 window.attRunTimetableContaminationPass = attRunTimetableContaminationPass;
+window.attTimetableLooksLikeForeignCopy = attTimetableLooksLikeForeignCopy;
 
 if (typeof window.addEventListener === 'function') {
   window.addEventListener('ems:tenant-storage-ready', function (ev) {

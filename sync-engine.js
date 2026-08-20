@@ -124,7 +124,8 @@
         Ledger: ['ems_full_ledger', 'ems_ledger_master_categories', 'ems_ledger_blackouts', 'ems_payroll_history', 'ems_full_salary', 'ems_ledger_funds', 'ems_ledger_budgets', 'ems_ledger_audit_log', 'ems_ledger_settings', 'ems_ledger_liabilities', 'ems_ledger_employee_dues', 'ems_payroll_special', 'ems_ledger_archive'],
         Announcements: ['ems_announcements', 'ems_full_announcements', 'ems_ann_categories', 'ems_ann_programs', 'ems_ann_poster_templates', 'ems_ann_audit_log', 'ems_ann_settings', 'ems_ann_groups'],
         SystemSettings: ['ems_sys_config_v2', 'ems_sys_profiles', 'ems_sys_settings_audit', 'ems_sys_dict', 'ems_custom_buttons', 'ems_btn_action_toggles', 'ems_custom_fields', 'ems_field_visibility', 'ems_layout_config', 'ems_sys_permissions', 'ems_sys_auto_rules', 'ems_custom_reports', 'ems_custom_dashboard', 'ems_custom_form_templates'],
-        Admin: ['ems_staff_permissions', 'ems_parent_permissions', 'ems_parent_messages']
+        Admin: ['ems_staff_permissions', 'ems_parent_permissions', 'ems_parent_messages'],
+        Attendance: ['ems_att_settings', 'ems_att_symbols', 'ems_att_periods', 'ems_att_holidays', 'ems_att_audit', 'ems_att_recycle', 'ems_att_custom_teachers', 'ems_att_events_db']
     };
 
     var state = {
@@ -541,22 +542,36 @@
             if (!decision.apply) return false;
 
             if (decision.conflict) notifySyncConflict(key, decision.reason);
-            applyLocalFromRemote(key, remoteStr);
+            applyLocalFromRemote(key, remoteStr, uid);
             if (global.EmsCachePolicy) global.EmsCachePolicy.markSynced(key, remoteAt);
             return true;
         }).catch(function () { return false; });
     }
 
-    function applyLocalFromRemote(key, remoteStr) {
+    function applyLocalFromRemote(key, remoteStr, tenantId) {
+        tenantId = tenantId || state.uid;
         global._emsSuppressSync = true;
-        if (global._emsOriginalSetItem) {
-            global._emsOriginalSetItem.call(localStorage, key, remoteStr);
-        } else {
-            localStorage.setItem(key, remoteStr);
+        var physical = typeof global.emsResolvePhysicalWriteKey === 'function'
+            ? global.emsResolvePhysicalWriteKey(key, tenantId)
+            : key;
+        if (!physical) {
+            global._emsSuppressSync = false;
+            return;
         }
-        global._emsSuppressSync = false;
+        if (typeof global.emsOfflineWriteLocalSync === 'function') {
+            var payload = remoteStr;
+            try { payload = JSON.parse(remoteStr); } catch (eParse) { /* keep string */ }
+            global.emsOfflineWriteLocalSync(key, payload, { tenantId: tenantId });
+            global._emsSuppressSync = false;
+        } else if (global._emsOriginalSetItem) {
+            global._emsOriginalSetItem.call(localStorage, physical, remoteStr);
+            global._emsSuppressSync = false;
+        } else {
+            localStorage.setItem(physical, remoteStr);
+            global._emsSuppressSync = false;
+        }
         if (global.EmsCachePolicy) global.EmsCachePolicy.touchKey(key);
-        emitSyncEvent('pull_ok', { key: key });
+        emitSyncEvent('pull_ok', { key: key, tenantId: tenantId });
     }
 
     function pullCoreModules(uid) {
@@ -621,7 +636,7 @@
                     var row = cursor.value;
                     if (row && row.key && row.value != null && (!filter || filter[row.key])) {
                         var remoteStr = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
-                        applyLocalFromRemote(row.key, remoteStr);
+                        applyLocalFromRemote(row.key, remoteStr, state.uid);
                         hydrated++;
                     }
                     cursor.continue();

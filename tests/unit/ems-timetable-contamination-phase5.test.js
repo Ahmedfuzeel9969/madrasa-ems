@@ -201,15 +201,29 @@ describe('Phase 5 — TASK 5.2 safe recovery prefers cloud + quarantines', funct
         expect(JSON.parse(env.physical[scopedKey(TENANT_B)])[0].id).toBe('LEAK-1');
     });
 
-    it('critical contamination without cloud: quarantine only, keep scoped', async function () {
+    it('critical contamination without trusted cloud: quarantine and clear foreign UI', async function () {
         env.putPhysical(scopedKey(TENANT_A), [{ id: 'LEAK-1', name: 'Keep UI', days: [1] }]);
         env.putPhysical(scopedKey(TENANT_B), [{ id: 'LEAK-1', name: 'B', days: [2] }]);
 
         var res = await env.attRecoverContaminatedTimetable(TENANT_A, {});
-        expect(res.action).toBe('quarantine_only_no_cloud');
+        expect(res.action).toBe('quarantine_and_clear_foreign');
         expect(res.quarantined).toBe(1);
-        expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('LEAK-1');
+        expect(JSON.parse(env.physical[scopedKey(TENANT_A)])).toEqual([]);
         expect(env.physical[quarantineKey(TENANT_A)]).toBeTruthy();
+    });
+
+    it('contaminated ModuleData + Attendance_Config: restore THIS madrasa legacy, not foreign canonical', async function () {
+        env.putPhysical(scopedKey(TENANT_A), [{ id: 'P-A', name: 'A-ONLY-TEST', days: [1] }]);
+        env.putPhysical(scopedKey(TENANT_B), [{ id: 'P-A', name: 'A-ONLY-TEST leaked', days: [1] }]);
+        env.setBoth(TENANT_B);
+
+        var res = await env.attRecoverContaminatedTimetable(TENANT_B, {
+            cloudCanonicalList: [{ id: 'P-A', name: 'A-ONLY-TEST leaked', days: [1] }],
+            cloudLegacyList: [{ id: 'P-B', name: 'B-OWN-TIMETABLE', days: [2] }]
+        });
+        expect(res.preferredSource).toBe('cloud_legacy');
+        expect(JSON.parse(env.physical[scopedKey(TENANT_B)])[0].id).toBe('P-B');
+        expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('P-A');
     });
 
     it('unprovable legacy quarantined when migration not allowed', async function () {
