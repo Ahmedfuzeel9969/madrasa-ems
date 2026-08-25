@@ -1548,13 +1548,21 @@
             <div id="att-collective-register" class="att-panel">
                 <div class="premium-card att-col-card">
                     <h3 style="margin-top:0; color:var(--primary);"><i class="fas fa-users"></i> اجتماعی حاضری</h3>
-                    <p class="att-col-lead">ایک دن کا گھنٹہ وار رجسٹر — پورا مدرسہ، ایک درجہ، یا متعدد درجات۔ حاضری مرکزی محفوظ جگہ پر اسمارٹ رجسٹر کے ساتھ مشترک ہے۔</p>
+                    <p class="att-col-lead">ایک دن کا رجسٹر — طلباء، اساتذہ، اور عملہ۔ طلباء و اساتذہ کے لیے گھنٹہ وار (نظام الاوقات)؛ عملہ کے لیے روزانہ حاضری۔</p>
 
+                    <div class="att-col-type-bar">
+                        <span class="att-col-scope-label">رجسٹر:</span>
+                        <label class="checkbox-label"><input type="radio" name="att_col_register_type" value="students" checked> طلباء</label>
+                        <label class="checkbox-label"><input type="radio" name="att_col_register_type" value="teachers"> اساتذہ</label>
+                        <label class="checkbox-label"><input type="radio" name="att_col_register_type" value="staff"> عملہ</label>
+                    </div>
+
+                    <div id="att-col-scope-panel">
                     <div class="att-col-scope-bar">
                         <span class="att-col-scope-label">انتخاب:</span>
-                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="all" checked> پورا مدرسہ</label>
-                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="one"> ایک درجہ</label>
-                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="multi"> ایک سے زیادہ درجات</label>
+                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="all" checked> <span id="att-col-scope-all-label">پورا مدرسہ</span></label>
+                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="one"> <span id="att-col-scope-one-label">ایک درجہ</span></label>
+                        <label class="checkbox-label"><input type="radio" name="att_col_scope" value="multi"> <span id="att-col-scope-multi-label">ایک سے زیادہ درجات</span></label>
                     </div>
 
                     <div id="att-col-one-wrap" class="att-col-hidden">
@@ -1566,6 +1574,9 @@
                     <div id="att-col-multi-wrap" class="att-col-hidden">
                         <div class="att-col-class-list" id="att-col-class-list"></div>
                     </div>
+                    </div>
+
+                    <p id="att-col-staff-note" class="att-col-staff-note att-col-hidden">عملہ: تمام عملے کی ایک دن کی حاضری۔</p>
 
                     <div class="form-grid att-col-filters">
                         <div class="input-group">
@@ -1577,8 +1588,8 @@
                                 <input type="checkbox" id="att-col-auto-date" checked> تاریخ خودکار رکھیں (آج)
                             </label>
                         </div>
-                        <div class="input-group">
-                            <label>دکھانے کا طریقہ</label>
+                        <div class="input-group" id="att-col-label-mode-wrap">
+                            <label id="att-col-label-mode-label">دکھانے کا طریقہ</label>
                             <select id="att-col-label-mode" class="input-control">
                                 <option value="book">کتاب یا مضمون کا نام</option>
                                 <option value="teacher">استاد کا نام</option>

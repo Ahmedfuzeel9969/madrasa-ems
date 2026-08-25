@@ -1347,7 +1347,11 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 #smart-register-table td.att-cell-incomplete { background: #f8fafc !important; color: #64748b; }
 
 .att-col-hidden { display: none !important; }
-.att-col-lead { color: #64748b; font-size: 13px; margin: 0 0 14px; }
+.att-col-type-bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px;
+  margin-bottom: 10px; padding: 10px 12px; background: #eef6ff; border-radius: 6px; border: 1px solid #bfdbfe;
+}
+.att-col-staff-note { color: #64748b; font-size: 13px; margin: 0 0 12px; font-style: italic; }
 .att-col-scope-bar {
   display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
   background: #eef2f6; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px;

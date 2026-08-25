@@ -20,7 +20,7 @@ function loadAttColExports() {
 }
 
 describe('Collective student attendance register', function () {
-    it('adds اجتماعی حاضری tab without removing existing registers', function () {
+    it('adds اجتماعی حاضری tab with student, teacher, and staff register types', function () {
         var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
         expect(html).toContain('att-smart-register');
         expect(html).toContain('att-collective-register');
@@ -29,6 +29,11 @@ describe('Collective student attendance register', function () {
         expect(html).toContain('att-col-register-strip');
         expect(html).toContain('att-col-register-controls');
         expect(html).toContain('btn-att-col-open');
+        expect(html).toContain('name="att_col_register_type"');
+        expect(html).toContain('value="teachers"');
+        expect(html).toContain('value="staff"');
+        expect(html).toContain('att-col-type-bar');
+        expect(html).toContain('att-col-staff-note');
         expect(html.indexOf('att-smart-register')).toBeLessThan(html.indexOf('att-collective-register'));
     });
 
@@ -64,6 +69,10 @@ describe('Collective student attendance register', function () {
         expect(col).toContain('resultMessage');
         expect(col).toContain('آخری اجتماعی کارروائی واپس');
         expect(col).toContain('attWritePeriodOnSheetData');
+        expect(col).toContain('attWriteDayMarkOnSheetData');
+        expect(col).toContain('attTeacherPeriodsForWeekday');
+        expect(col).toContain('registerTypeValue');
+        expect(col).toContain('syncRegisterTypeUi');
     });
 
     it('maps custom symbols to canonical P/A/L for styling', function () {
@@ -84,19 +93,27 @@ describe('Collective student attendance register', function () {
         expect(sb.statusKind('ر')).toBe('L');
     });
 
-    it('builds scope-specific result toasts', function () {
+    it('builds scope-specific result toasts for students, teachers, and staff', function () {
         var sb = loadAttColExports();
         expect(sb.attColResultMessage('all', 'P', 184, 920)).toBe('184 طلبہ کے تمام گھنٹے حاضر کردیے گئے۔');
         expect(sb.attColResultMessage('student', 'A', 1, 8)).toBe('اس طالب علم کے 8 گھنٹے غیر حاضر کردیے گئے۔');
         expect(sb.attColResultMessage('period', 'L', 1, 1)).toBe('صرف یہ گھنٹہ رخصت کردیا گیا۔');
         expect(sb.attColResultMessage('period', '', 1, 1)).toBe('صرف یہ گھنٹہ صاف کردیا گیا۔');
+        expect(sb.attColResultMessage('all', 'P', 12, 48, 'teachers')).toBe('12 اساتذہ کے تمام گھنٹے حاضر کردیے گئے۔');
+        expect(sb.attColResultMessage('student', 'P', 1, 6, 'teachers')).toBe('اس استاد کے 6 گھنٹے حاضر کردیے گئے۔');
+        expect(sb.attColResultMessage('student', 'A', 1, 1, 'staff')).toBe('اس عملے کے رکن کو غیر حاضر کردیا گیا۔');
+        expect(sb.attColResultMessage('all', '', 5, 5, 'staff')).toBe('5 عملہ کے تمام گھنٹے صاف کردیے گئے۔');
     });
 
     it('wires student periods + canonical sheet helpers in attendance.js', function () {
         var js = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
         expect(js).toContain('function attStudentPeriodsForWeekday');
         expect(js).toContain('function attWritePeriodOnSheetData');
+        expect(js).toContain('function attWriteDayMarkOnSheetData');
         expect(js).toContain('function attLoadCanonicalClassSheet');
+        expect(js).toContain('function attLoadStaffTypeSheet');
+        expect(js).toContain('function attFilterTeachersByClassScopes');
+        expect(js).toContain('function attTeacherPeriodsForWeekday');
         expect(js).toContain('attMirrorCurrentToCanonical');
         expect(js).toMatch(/attApplyRosterPeriodStatus/);
     });
@@ -121,6 +138,8 @@ describe('Collective student attendance register', function () {
         expect(att).toMatch(/att-collective-register[\s\S]*loadAttDropdowns\(true\)/);
         expect(css).toMatch(/\.att-col-scope-bar[\s\S]*z-index:\s*32/);
         expect(css).toMatch(/\.att-col-filters[\s\S]*z-index:\s*32/);
+        expect(css).toContain('.att-col-type-bar');
+        expect(css).toContain('.att-col-staff-note');
     });
 
     it('writes period marks onto a class sheet and rolls up day status', function () {
@@ -146,5 +165,21 @@ describe('Collective student attendance register', function () {
         expect(data.records.S1[13]).toBe('P');
         sandbox.attWritePeriodOnSheetData(data, 'S1', 13, 'p2', 'A', ids);
         expect(data.records.S1[13]).toBe('جزوی حاضری');
+    });
+
+    it('writes day marks for staff collective register', function () {
+        var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
+        var writeStart = src.indexOf('function attWriteDayMarkOnSheetData');
+        var writeEnd = src.indexOf('\nwindow.attWritePeriodOnSheetData');
+        var sandbox = {};
+        vm.runInNewContext(
+            src.slice(writeStart, writeEnd) + '\nthis.attWriteDayMarkOnSheetData = attWriteDayMarkOnSheetData;',
+            sandbox
+        );
+        var data = { records: {} };
+        sandbox.attWriteDayMarkOnSheetData(data, 'U1', 5, 'P');
+        expect(data.records.U1[5]).toBe('P');
+        sandbox.attWriteDayMarkOnSheetData(data, 'U1', 5, '');
+        expect(data.records.U1[5]).toBeUndefined();
     });
 });

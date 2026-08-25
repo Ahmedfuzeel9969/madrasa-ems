@@ -3622,6 +3622,45 @@ function attLoadCanonicalClassSheet(month, classId) {
   });
 }
 
+/** Canonical month sheet for teachers or staff (classId="" period=all). */
+function attLoadStaffTypeSheet(month, type) {
+  var keys = attSheetKeys(month, type, '', 'all');
+  var tenant = getAttendanceTenantId() || 'local';
+  var local = attReadSheetLocal(keys.localKey || keys.cloudDocId);
+  if (local && attHasMeaningfulAttendanceData(local)) {
+    return Promise.resolve({ keys: keys, sheetType: type, data: attNormalizeRecord(local) });
+  }
+  return attFetchAttendanceSheet(tenant, keys).then(function (data) {
+    return { keys: keys, sheetType: type, data: attNormalizeRecord(data || attEmptyAttendanceRecord()) };
+  });
+}
+
+/** True when a teacher has an active timetable period for the given class name. */
+function attTeacherServesClass(teacherUid, teacherName, className) {
+  var uid = String(teacherUid || '').trim();
+  var cls = String(className || '').trim();
+  if (!uid || !cls) return false;
+  return attReadTimetablePeriods().some(function (p) {
+    if (!p || !p.id || attIsPeriodArchived(p)) return false;
+    if (String(p.className || '').trim() !== cls) return false;
+    return attPeriodTeacherIdMatches(p, uid);
+  });
+}
+
+/** Filter teachers to those teaching any of the given class names (timetable-based). */
+function attFilterTeachersByClassScopes(teachers, classIds) {
+  var ids = Array.isArray(classIds) ? classIds.filter(Boolean) : [];
+  if (!ids.length) return teachers || [];
+  return (teachers || []).filter(function (u) {
+    var uid = attGetUserId(u);
+    if (!uid) return false;
+    for (var i = 0; i < ids.length; i++) {
+      if (attTeacherServesClass(uid, u.name || '', ids[i])) return true;
+    }
+    return false;
+  });
+}
+
 function attAdoptCanonicalIntoOpenRegister(classId, month, data) {
   var st = window.currentAttState;
   if (!st || st.type !== 'students' || st.month !== month || String(st.classId) !== String(classId)) return;
@@ -3718,9 +3757,21 @@ window.attNotifyCanonicalUpdated = attNotifyCanonicalUpdated;
 window.attCanonicalStudentKeys = attCanonicalStudentKeys;
 window.attPersistSheetPayload = attPersistSheetPayload;
 window.attLoadCanonicalClassSheet = attLoadCanonicalClassSheet;
+window.attLoadStaffTypeSheet = attLoadStaffTypeSheet;
+window.attTeacherServesClass = attTeacherServesClass;
+window.attFilterTeachersByClassScopes = attFilterTeachersByClassScopes;
 window.attAdoptCanonicalIntoOpenRegister = attAdoptCanonicalIntoOpenRegister;
 window.attListAttendanceClasses = attListAttendanceClasses;
+function attWriteDayMarkOnSheetData(data, uid, day, status) {
+  if (!data) return;
+  data.records = data.records || {};
+  if (!data.records[uid]) data.records[uid] = {};
+  if (status) data.records[uid][day] = status;
+  else delete data.records[uid][day];
+}
+
 window.attWritePeriodOnSheetData = attWritePeriodOnSheetData;
+window.attWriteDayMarkOnSheetData = attWriteDayMarkOnSheetData;
 window.attGetAttSymbols = attGetAttSymbols;
 window.attGetUserId = attGetUserId;
 window.attGetUserClass = attGetUserClass;
