@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260820_timetable_roster_teacher_bind';
+    var CACHE_BUST = '20260825_collective_teacher_staff';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;
