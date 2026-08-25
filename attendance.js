@@ -1918,6 +1918,7 @@ function attRegisterTabBootHandlers() {
         .catch(function () { /* ignore */ })
         .then(function () {
           if (typeof window.renderTimetable === 'function') window.renderTimetable();
+          if (typeof attUpdateTimetablePushBtnState === 'function') attUpdateTimetablePushBtnState();
         });
     }
     if (typeof window.curEnsureLibraryReady === 'function') {
@@ -2874,6 +2875,7 @@ window.renderTimetable = function () {
 
   if (!periods.length) {
     box.innerHTML = '<div class="tt-empty"><i class="fas fa-table"></i><p>کوئی سبق موجود نہیں۔ "نیا سبق" سے اساتذہ کے اوقات درج کریں۔</p></div>';
+    if (typeof attUpdateTimetablePushBtnState === 'function') attUpdateTimetablePushBtnState();
     return;
   }
 
@@ -2897,6 +2899,7 @@ window.renderTimetable = function () {
         <div class="tt-group-body">${items.map(ttPeriodCard).join('')}</div>
       </div>`;
   }).join('');
+  if (typeof attUpdateTimetablePushBtnState === 'function') attUpdateTimetablePushBtnState();
 };
 
 // نظام الاوقات سے براہِ راست حاضری لینا — اسمارٹ رجسٹر پر منتقلی
@@ -5385,6 +5388,112 @@ window.attRecoverContaminatedTimetable = attRecoverContaminatedTimetable;
 window.attRunTimetableContaminationPass = attRunTimetableContaminationPass;
 window.attTimetableLooksLikeForeignCopy = attTimetableLooksLikeForeignCopy;
 window.attHealTimetableLocally = attHealTimetableLocally;
+
+function attCountActiveTimetablePeriods(list) {
+  return (list || []).filter(function (p) { return p && !p.archived; }).length;
+}
+
+function attUpdateTimetablePushBtnState() {
+  var btn = typeof document !== 'undefined' ? document.getElementById('btn-att-tt-push-browser') : null;
+  if (!btn) return;
+  var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
+  var active = attCountActiveTimetablePeriods(attReadAllTimetablePeriodsRaw());
+  btn.disabled = !tenantId || !active;
+  btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> براؤزر سے Firebase';
+  btn.title = active
+    ? ('اس براؤزر میں ' + active + ' فعال سبق — Firebase میں محفوظ کریں')
+    : 'اس براؤزر میں کوئی فعال سبق نہیں';
+}
+
+/**
+ * Push this browser's timetable (localStorage/IDB) to Firebase canonical ModuleData doc.
+ * Use on the device that still has the old timetable after a cloud-side loss.
+ */
+function attPushBrowserTimetableToFirebase() {
+  var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
+  if (!tenantId) {
+    if (typeof showToast === 'function') showToast('پہلے لاگ اِن کریں / ادارہ منتخب کریں', 'error');
+    return Promise.resolve({ ok: false, reason: 'no_tenant' });
+  }
+  if (typeof attIsOfflineMode === 'function' && attIsOfflineMode()) {
+    if (typeof showToast === 'function') showToast('پہلے آن لائن موڈ آن کریں', 'error');
+    return Promise.resolve({ ok: false, reason: 'offline_mode' });
+  }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (typeof showToast === 'function') showToast('انٹرنیٹ دستیاب نہیں', 'error');
+    return Promise.resolve({ ok: false, reason: 'no_network' });
+  }
+
+  var btn = typeof document !== 'undefined' ? document.getElementById('btn-att-tt-push-browser') : null;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> تیاری…';
+  }
+
+  var recoverChain = typeof attRecoverLegacyTimetablePeriods === 'function'
+    ? attRecoverLegacyTimetablePeriods(tenantId)
+    : Promise.resolve({ ok: true });
+
+  return recoverChain.then(function () {
+    var list = attReadAllTimetablePeriodsRaw();
+    var active = attCountActiveTimetablePeriods(list);
+    if (!active) {
+      if (typeof showToast === 'function') showToast('اس براؤزر میں کوئی فعال نظام الاوقات نہیں ملا', 'warning');
+      return { ok: false, reason: 'empty_local' };
+    }
+
+    var path = 'All_Madrasas/' + tenantId + '/ModuleData/' + ATT_PERIODS_CANONICAL_CLOUD_DOC;
+    if (typeof window !== 'undefined' && window.EmsSyncEngine
+      && typeof window.EmsSyncEngine.getFirestorePath === 'function') {
+      try { path = window.EmsSyncEngine.getFirestorePath(ATT_PERIODS_KEY); } catch (ePath) { /* keep default */ }
+    }
+
+    var msg = 'اس براؤزر میں ' + active + ' فعال سبق ہیں (کل ' + list.length + ')۔\n\n'
+      + 'یہ Firebase میں محفوظ ہو جائیں گے:\n' + path
+      + '\n\nدوسرے آلات پر بھی یہی نظام الاوقات آ جائے گا۔'
+      + '\nموجودہ Firebase کا خالی/غلط ڈیٹا اس سے بدل دیا جائے گا۔'
+      + '\n\nجاری رکھیں؟';
+
+    if (!confirm(msg)) return { ok: false, reason: 'cancelled' };
+
+    if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> اپ لوڈ…';
+    if (typeof showToast === 'function') showToast('براؤزر کا نظام الاوقات Firebase میں بھیجا جا رہا ہے…', 'info');
+
+    attRememberTrustedTimetable(tenantId, list, 'browser_push');
+    return attPersistConfigBlob(ATT_PERIODS_KEY, list).then(function (persistRes) {
+      if (persistRes && persistRes.ok === false) {
+        if (typeof showToast === 'function') showToast('محفوظ ناکام: ' + (persistRes.reason || ''), 'error');
+        return { ok: false, reason: persistRes.reason || 'persist_failed' };
+      }
+      attMarkTimetableCloudLegacyMigrated(tenantId);
+      var pushFn = typeof window !== 'undefined' && typeof window.emsCloudPushNow === 'function'
+        ? window.emsCloudPushNow()
+        : Promise.resolve({ ok: false, reason: 'no_push' });
+      return pushFn.then(function (pushRes) {
+        if (pushRes && pushRes.ok) {
+          attRefreshTimetableUi();
+          if (typeof showToast === 'function') {
+            showToast(active + ' سبق Firebase میں محفوظ — دوسرے آلات پر ڈاؤن لوڈ کریں', 'success');
+          }
+          return { ok: true, count: active, total: list.length, path: path };
+        }
+        if (typeof showToast === 'function') {
+          showToast('محلی محفوظ ہو گیا — کلاؤڈ اپ لوڈ ناکام، دوبارہ کوشش کریں', 'warning');
+        }
+        return { ok: false, reason: (pushRes && pushRes.reason) || 'push_failed', localSaved: true };
+      });
+    });
+  }).catch(function (err) {
+    console.error('[EMS] attPushBrowserTimetableToFirebase', err);
+    if (typeof showToast === 'function') showToast('اپ لوڈ میں مسئلہ — دوبارہ کوشش کریں', 'error');
+    return { ok: false, reason: 'error', error: err && err.message };
+  }).finally(function () {
+    attUpdateTimetablePushBtnState();
+  });
+}
+
+window.attPushBrowserTimetableToFirebase = attPushBrowserTimetableToFirebase;
+window.attUpdateTimetablePushBtnState = attUpdateTimetablePushBtnState;
 
 window.attDebugTimetableHeal = function (tenantId) {
   tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);

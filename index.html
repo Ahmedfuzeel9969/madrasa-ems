@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260825_collective_teacher_staff">
+    <link rel="stylesheet" href="style.css?v=20260826_timetable_browser_push">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -1741,6 +1741,9 @@
                             <button class="tt-view-btn active" id="tt-view-teacher" onclick="ttSetView('teacher')"><i class="fas fa-chalkboard-teacher"></i> استاد وار</button>
                             <button class="tt-view-btn" id="tt-view-class" onclick="ttSetView('class')"><i class="fas fa-layer-group"></i> درجہ وار</button>
                         </div>
+                        <button class="btn btn-outline btn-sm" id="btn-att-tt-push-browser" type="button" onclick="attPushBrowserTimetableToFirebase()" title="اس براؤزر کا نظام الاوقات Firebase میں محفوظ کریں">
+                            <i class="fas fa-cloud-upload-alt"></i> براؤزر سے Firebase
+                        </button>
                         <button class="btn btn-primary btn-sm" onclick="attOpenNewPeriodModal()"><i class="fas fa-plus"></i> نیا سبق</button>
                     </div>
 
@@ -6634,8 +6637,8 @@
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
     <script defer src="auth.js?v=20260809_tenant_loop"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260825_collective_teacher_staff"></script>
-    <script defer src="ems-lazy-loader.js?v=20260825_collective_teacher_staff"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260826_timetable_browser_push"></script>
+    <script defer src="ems-lazy-loader.js?v=20260826_timetable_browser_push"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>
