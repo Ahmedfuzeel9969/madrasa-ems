@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260826_timetable_browser_push';
+    var CACHE_BUST = '20260826_exams_import_mapping';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;

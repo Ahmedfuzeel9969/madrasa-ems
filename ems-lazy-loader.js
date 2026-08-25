@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260826_timetable_browser_push';
+    var CACHE_BUST = '20260826_exams_import_mapping';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 
@@ -25,7 +25,7 @@
             'registration-ui.js'
         ],
         attendance: ['att-metrics.js', 'att-dashboard.js', 'att-save-status.js', 'attendance.js', 'att-collective.js'],
-        exams: ['exams.js', 'exams-import-export.js'],
+        exams: ['ems-import-export.js', 'ems-import-templates.js', 'exams.js', 'exams-import-export.js'],
         curriculum: ['curriculum.js'],
         training: ['training.js'],
         finance: ['ems-smart-slip.js', 'finance.js'],

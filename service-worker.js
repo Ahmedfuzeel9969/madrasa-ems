@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260826_timetable_browser_push';
+var EMS_SW_BUILD_TAG = '20260826_exams_import_mapping';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

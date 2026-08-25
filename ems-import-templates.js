@@ -26,6 +26,16 @@
             name: 'عملہ — Urdu standard',
             type: 'staff',
             map: { 'نام': 'name', 'ولدیت': 'fname', 'شناختی': 'cnic', 'موبائل': 'phone', 'آسامی': 'position' }
+        },
+        exam_result_urdu_standard: {
+            name: 'امتحانات — نتائج (Urdu)',
+            type: 'exam_result',
+            map: { 'رول': 'studentId', 'رول نمبر': 'studentId', 'نام': 'studentName', 'درجہ': 'className', 'امتحان': 'examName', 'تاریخ': 'resultDate' }
+        },
+        exam_result_en_standard: {
+            name: 'Exams — results (English)',
+            type: 'exam_result',
+            map: { 'id': 'studentId', 'roll': 'studentId', 'name': 'studentName', 'class': 'className', 'exam': 'examName', 'date': 'resultDate' }
         }
     };
 

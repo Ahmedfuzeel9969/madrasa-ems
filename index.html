@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260826_timetable_browser_push">
+    <link rel="stylesheet" href="style.css?v=20260826_exams_import_mapping">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -2281,7 +2281,7 @@
             <div class="modal-overlay" id="exam-import-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="exam-import-title" onclick="if(event.target===this)window.examCloseResultImport()">
                 <div class="modal-content exam-import-modal-content">
                     <div class="modal-header">
-                        <h3 id="exam-import-title"><i class="fas fa-file-import"></i> Excel / CSV نتائج درآمد</h3>
+                        <h3 id="exam-import-title"><i class="fas fa-file-import"></i> نتائج درآمد — کالم میپنگ</h3>
                         <button type="button" class="modal-close" onclick="window.examCloseResultImport()" aria-label="بند کریں">×</button>
                     </div>
                     <div id="exam-import-body"></div>
@@ -2637,7 +2637,8 @@
                                 <button class="btn btn-primary" id="btn-generate-mark-sheet"><i class="fas fa-table"></i> ایکسل گرڈ تیار کریں</button>
                             </div>
                             <div class="input-group" style="justify-content: flex-end;">
-                                <button class="btn btn-success" id="btn-import-exam-results" onclick="window.examOpenResultImport()"><i class="fas fa-file-excel"></i> Excel / CSV نتائج درآمد</button>
+                                <button class="btn btn-success" id="btn-import-exam-results" onclick="window.examOpenResultImport()"><i class="fas fa-file-import"></i> نتائج درآمد (کالم میپنگ)</button>
+                                <button class="btn btn-outline" id="btn-export-exam-results" onclick="window.examOpenResultExport()"><i class="fas fa-file-export"></i> نتائج برآمد (Excel)</button>
                             </div>
                             <div style="grid-column:1/-1;font-size:12px;color:#64748b;">
                                 نیا نتیجہ = نئی تاریخ منتخب کر کے محفوظ کریں۔ پرانا نتیجہ تبدیل کیے بغیر لامحدود تواریخ محفوظ ہو سکتی ہیں۔
@@ -2697,7 +2698,8 @@
                         <div class="btn-action-group" style="margin-top: 20px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn btn-success" id="btn-save-all-marks" style="display:none; flex:1; min-width:240px; font-size:16px; padding:15px;"><i class="fas fa-save"></i> تمام نمبرات ڈیٹا بیس میں محفوظ کریں</button>
                             <button class="btn btn-outline" id="btn-export-marks" style="display:none;" onclick="window.examExportMarksGrid()"><i class="fas fa-file-excel"></i> گرڈ برآمد (CSV)</button>
-                            <button class="btn btn-outline" id="btn-import-marks" style="display:none;" onclick="document.getElementById('mrk-import-file').click()"><i class="fas fa-file-import"></i> فوری CSV درآمد</button>
+                            <button class="btn btn-outline" id="btn-import-marks" style="display:none;" onclick="window.examOpenResultImport()"><i class="fas fa-file-import"></i> فائل درآمد (میپنگ)</button>
+                            <button class="btn btn-outline btn-sm" id="btn-import-marks-quick" style="display:none;" onclick="document.getElementById('mrk-import-file').click()" title="صرف CSV — فوری گرڈ اپڈیٹ"><i class="fas fa-bolt"></i> فوری CSV</button>
                             <input type="file" id="mrk-import-file" accept=".csv,text/csv" style="display:none;" onchange="window.examImportMarksCSV(this)">
                         </div>
                     </div>
@@ -6637,8 +6639,8 @@
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
     <script defer src="auth.js?v=20260809_tenant_loop"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260826_timetable_browser_push"></script>
-    <script defer src="ems-lazy-loader.js?v=20260826_timetable_browser_push"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260826_exams_import_mapping"></script>
+    <script defer src="ems-lazy-loader.js?v=20260826_exams_import_mapping"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>

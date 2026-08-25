@@ -283,6 +283,7 @@
     var locked = exmIsMarksContextLocked();
     var saveBtn = document.getElementById('btn-save-all-marks');
     var importBtn = document.getElementById('btn-import-marks');
+    var quickImportBtn = document.getElementById('btn-import-marks-quick');
     var resultImportBtn = document.getElementById('btn-import-exam-results');
     var frBtn = document.getElementById('btn-find-replace');
     var frMarks = document.getElementById('fr-marks');
@@ -292,6 +293,7 @@
       saveBtn.title = locked ? 'یہ نتیجہ لاک ہو چکا ہے' : '';
     }
     if (importBtn) importBtn.disabled = locked;
+    if (quickImportBtn) quickImportBtn.disabled = locked;
     if (resultImportBtn) resultImportBtn.disabled = locked;
     if (frBtn) frBtn.disabled = locked;
     if (frMarks) frMarks.disabled = locked;
@@ -2156,7 +2158,9 @@
       document.getElementById('btn-save-all-marks').style.display = 'inline-flex';
       if (document.getElementById('btn-export-marks')) document.getElementById('btn-export-marks').style.display = 'inline-flex';
       if (document.getElementById('btn-import-marks')) document.getElementById('btn-import-marks').style.display = 'inline-flex';
+      if (document.getElementById('btn-import-marks-quick')) document.getElementById('btn-import-marks-quick').style.display = 'inline-flex';
       if (document.getElementById('btn-import-exam-results')) document.getElementById('btn-import-exam-results').style.display = 'inline-flex';
+      if (document.getElementById('btn-export-exam-results')) document.getElementById('btn-export-exam-results').style.display = 'inline-flex';
 
       
 

@@ -173,6 +173,8 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
 .exam-import-hint { color:#64748b; font-size:13px; line-height:1.7; }
 .exam-import-errors { margin-top:14px; padding:10px 14px; border:1px solid #fecaca; border-radius:8px; color:#991b1b; background:#fef2f2; font-size:13px; }
 .exam-import-errors ul { margin:7px 0 0; padding-right:20px; }
+.exam-import-modal-content .data-table select.input-control { min-width: 220px; }
+.exam-import-modal-content .data-table small { display:block; margin-top:4px; }
 
 #att-dashboard-panel .att-dash-period-sequence-panel {
   margin-bottom: 16px;
