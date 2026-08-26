@@ -447,7 +447,19 @@
         if (scope === 'attendance') unit = 'حاضری شیٹ';
         else if (scope === 'exams') unit = 'امتحانی آئٹم';
         if (n > 0 && res && res.ok !== false) {
-            if (scope === 'exams') {
+            if (scope === 'attendance' && res.timetablePulled) {
+                global.showToast(
+                    '✅ کلاؤڈ بحالی مکمل: ' + n + ' حاضری شیٹ · ' +
+                    (res.timetableCount || 0) + ' اسباق · ' +
+                    (res.timetableTeacherCount || 0) + ' اساتذہ',
+                    'success'
+                );
+            } else if (scope === 'attendance' && res.timetableReason) {
+                global.showToast(
+                    'حاضری بحال ہوئی، مگر نظام الاوقات نہیں آیا: ' + res.timetableReason,
+                    'warning'
+                );
+            } else if (scope === 'exams') {
                 var keysN = (res.keysPulled && res.keysPulled.length)
                     || (res.pulled)
                     || 0;

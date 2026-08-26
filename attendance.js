@@ -4643,6 +4643,53 @@ window.attTimetableListsAreDifferentTimetables = attTimetableListsAreDifferentTi
 window.attTimetableFailsRosterTeacherBinding = attTimetableFailsRosterTeacherBinding;
 window.attTimetableTeacherRosterScore = attTimetableTeacherRosterScore;
 
+/**
+ * Manual, read-from-cloud timetable recovery used by Attendance cloud pull.
+ * It never uploads the browser copy and never replaces local data with an empty
+ * or provably foreign cloud list.
+ */
+window.emsPullAttendanceTimetableFromCloud = function (tenantId) {
+  tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
+  if (!tenantId) return Promise.resolve({ ok: false, reason: 'no_tenant', count: 0 });
+  var fsDb = typeof db !== 'undefined' ? db : null;
+  if (!fsDb && typeof window.emsFirestoreGetDb === 'function') fsDb = window.emsFirestoreGetDb();
+  var ref = attTimetableCanonicalCloudRef(fsDb, tenantId);
+  if (!ref) return Promise.resolve({ ok: false, reason: 'firestore_unavailable', count: 0 });
+  var generation = typeof window.emsGetTenantGeneration === 'function'
+    ? window.emsGetTenantGeneration() : 0;
+  return ref.get({ source: 'server' }).then(function (snap) {
+    if (!snap.exists) return { ok: false, reason: 'timetable_not_found', count: 0 };
+    var list = attTimetableListFromCloudSnapshot(snap) || [];
+    if (!list.length) return { ok: false, reason: 'empty_cloud_timetable', count: 0 };
+    if (!attSnapshotMayMutateTenantState(tenantId, generation)) {
+      return { ok: false, reason: 'tenant_guard', count: 0 };
+    }
+    if (attTimetableRosterHasMembers() && attTimetableLooksLikeForeignCopy(list, tenantId)) {
+      return { ok: false, reason: 'foreign_cloud_timetable', count: list.length };
+    }
+    return attApplyTimetableHealChoice({
+      list: list,
+      source: 'manual_cloud_canonical',
+      persistCanonical: false,
+      score: attTimetableRosterScore(list)
+    }, tenantId, generation).then(function (result) {
+      var teachers = Object.create(null);
+      list.forEach(function (period) {
+        if (period && period.teacherId) teachers[String(period.teacherId)] = true;
+      });
+      attRefreshTimetableUi();
+      return Object.assign({}, result || {}, {
+        ok: true,
+        count: list.length,
+        teacherCount: Object.keys(teachers).length,
+        source: 'manual_cloud_canonical'
+      });
+    });
+  }).catch(function (err) {
+    return { ok: false, reason: 'timetable_pull_failed', count: 0, error: err && err.message };
+  });
+};
+
 function attHealTimetableLocally(tenantId, generation) {
   tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
   if (!tenantId) return Promise.resolve({ ok: false, reason: 'no_tenant' });

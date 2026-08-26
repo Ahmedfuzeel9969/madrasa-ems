@@ -13,6 +13,8 @@ describe('Attendance cloud pull (central ems-cloud-pull)', function () {
         expect(pull).toContain('emsPullAttendanceFromCloud');
         expect(pull).toContain('isDeptPullScope');
         expect(pull).toContain('refreshUIAfterPull(lastResult, pullScope)');
+        expect(pull).toContain("res.timetablePulled");
+        expect(pull).toContain("' اساتذہ'");
     });
 
     it('exposes emsPullAttendanceFromCloud in attendance-helper', function () {
@@ -22,6 +24,8 @@ describe('Attendance cloud pull (central ems-cloud-pull)', function () {
         expect(helper).toContain('emsOfflineCacheAttendanceFromRemote');
         expect(helper).toContain('attLocalKeyFromCloudDocId');
         expect(helper).toContain('attReconcileLocalRemote');
+        expect(helper).toContain('emsPullAttendanceTimetableFromCloud');
+        expect(helper).toContain('timetableTeacherCount');
     });
 
     it('attendance module has cloud pull button with central data attribute', function () {
@@ -29,5 +33,20 @@ describe('Attendance cloud pull (central ems-cloud-pull)', function () {
         expect(html).toContain('id="btn-att-cloud-pull"');
         expect(html).toContain('data-ems-cloud-pull="attendance"');
         expect(html).toMatch(/module-attendance[\s\S]*?data-ems-cloud-pull="attendance"/);
+        expect(html).toContain('Firebase سے حاضری اور نظام الاوقات بحال کریں');
+    });
+
+    it('pulls a non-empty canonical timetable safely and refreshes timetable UI', function () {
+        var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
+        var start = src.indexOf('window.emsPullAttendanceTimetableFromCloud');
+        var end = src.indexOf('\nfunction attHealTimetableLocally', start);
+        var block = src.slice(start, end);
+        expect(block.indexOf("doc('Attendance__ems_att_periods')") >= 0
+            || block.indexOf('attTimetableCanonicalCloudRef') >= 0).toBe(true);
+        expect(block).toContain('empty_cloud_timetable');
+        expect(block).toContain('foreign_cloud_timetable');
+        expect(block).toContain('attApplyTimetableHealChoice');
+        expect(block).toContain('teacherCount');
+        expect(block).toContain('attRefreshTimetableUi');
     });
 });

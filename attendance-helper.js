@@ -819,6 +819,10 @@
         }
 
         return settingsP.then(function (settingsRes) {
+            var timetableP = typeof global.emsPullAttendanceTimetableFromCloud === 'function'
+                ? global.emsPullAttendanceTimetableFromCloud(tenantId)
+                : Promise.resolve({ ok: false, reason: 'timetable_helper_unavailable', count: 0 });
+            return timetableP.then(function (timetableRes) {
             return col.get().then(function (snap) {
                 var docs = [];
                 snap.forEach(function (doc) {
@@ -873,10 +877,15 @@
                         updated: updated,
                         keptLocal: keptLocal,
                         settingsPulled: (settingsRes && settingsRes.pulled) || 0,
+                        timetablePulled: !!(timetableRes && timetableRes.ok),
+                        timetableCount: (timetableRes && timetableRes.count) || 0,
+                        timetableTeacherCount: (timetableRes && timetableRes.teacherCount) || 0,
+                        timetableReason: timetableRes && timetableRes.reason,
                         source: 'attendance_cloud_pull',
                         tenantId: tenantId
                     };
                 });
+            });
             });
         }).catch(function (err) {
             return {
