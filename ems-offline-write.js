@@ -126,12 +126,15 @@
     }
 
     function queueMapKey(type, docId, tenantId) {
-        return String(tenantId || '') + '|' + String(type) + '|' + String(docId);
+        var identityType = isAttendanceQueueType(type) ? 'attendance_doc' : String(type);
+        return String(tenantId || '') + '|' + identityType + '|' + String(docId);
     }
 
     function queueRowsSameIdentity(a, b) {
         if (!a || !b) return false;
-        return String(a.type) === String(b.type)
+        var typeA = isAttendanceQueueType(a.type) ? 'attendance_doc' : String(a.type);
+        var typeB = isAttendanceQueueType(b.type) ? 'attendance_doc' : String(b.type);
+        return typeA === typeB
             && String(a.docId) === String(b.docId)
             && String(a.tenantId || '') === String(b.tenantId || '');
     }
@@ -174,7 +177,9 @@
         }
         if (!payload || typeof payload !== 'object') return payload;
         var out = Object.assign({}, payload);
-        out.clientUpdatedAt = Date.now();
+        // Preserve the time of the user's edit. Giving an old offline mutation a
+        // fresh timestamp at flush time lets it overwrite newer work from another device.
+        out.clientUpdatedAt = Number(out.clientUpdatedAt || out.timestamp) || Date.now();
         out._version = (typeof out._version === 'number' ? out._version : 0) + 1;
         return out;
     }
@@ -816,6 +821,50 @@
         return merged;
     }
 
+    function applyAttendancePatchToDocument(document, patch) {
+        var out;
+        try { out = JSON.parse(JSON.stringify(document || {})); }
+        catch (eClone) { out = Object.assign({}, document || {}); }
+        Object.keys(patch || {}).forEach(function (path) {
+            if (path === 'updatedAt' || path === '_version' || path === 'clientUpdatedAt') return;
+            var parts = String(path).split('.');
+            var cursor = out;
+            for (var i = 0; i < parts.length - 1; i++) {
+                if (!cursor[parts[i]] || typeof cursor[parts[i]] !== 'object') cursor[parts[i]] = {};
+                cursor = cursor[parts[i]];
+            }
+            var leaf = parts[parts.length - 1];
+            if (patch[path] == null) delete cursor[leaf];
+            else cursor[leaf] = patch[path];
+        });
+        return out;
+    }
+
+    /** One tenant/document gets one queue row, regardless of full vs patch mutation. */
+    function coalesceAttendanceRows(existing, incoming) {
+        if (!existing || !incoming || !queueRowsSameIdentity(existing, incoming)) return incoming;
+        var existingPatch = existing.type === 'attendance_patch';
+        var incomingPatch = incoming.type === 'attendance_patch';
+        if (existingPatch && incomingPatch) {
+            incoming.payload = mergeAttendancePatchPayload(existing.payload, incoming.payload);
+            return incoming;
+        }
+        var full = existingPatch ? incoming : existing;
+        var patchRow = existingPatch ? existing : incoming;
+        full = Object.assign({}, full, {
+            type: 'attendance',
+            payload: applyAttendancePatchToDocument(full.payload || {}, patchRow.payload || {})
+        });
+        full.meta = Object.assign({}, existing.meta || {}, incoming.meta || {}, {
+            mutationAt: Math.max(
+                Number(existing.meta && existing.meta.mutationAt) || 0,
+                Number(incoming.meta && incoming.meta.mutationAt) || 0
+            )
+        });
+        full.localKey = incoming.localKey || existing.localKey;
+        return full;
+    }
+
     function upsertQueueByDocId(type, docId, row) {
         row = row || {};
         row.type = row.type || type;
@@ -824,8 +873,12 @@
         return ensureQueueDocIdMap().then(function () {
             return findQueueRowByDocId(type, docId, row.tenantId).then(function (existing) {
                 if (existing && existing.id != null) row.id = existing.id;
+                if (existing && isAttendanceQueueType(existing.type) && isAttendanceQueueType(type)) {
+                    row = coalesceAttendanceRows(existing, row);
+                    row.id = existing.id;
+                }
                 // Merge attendance field patches so unrelated period marks are not dropped.
-                if (existing && type === 'attendance_patch'
+                if (existing && existing.type === 'attendance_patch' && row.type === 'attendance_patch'
                     && existing.payload && typeof existing.payload === 'object'
                     && row.payload && typeof row.payload === 'object'
                     && queueRowsSameIdentity(existing, row)) {
@@ -847,6 +900,7 @@
             return Promise.resolve({ ok: false, error: 'missing_db_or_doc', code: 'INVALID_ROW' });
         }
         var payload = stampCloudVersion(row.payload || {});
+        if (row.meta && row.meta.mutationAt) payload.clientUpdatedAt = Number(row.meta.mutationAt);
         var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
         var forceLocal = !!(row.meta && row.meta.forceLocal);
         return checkRemoteVersion(ref, payload, { forceLocal: forceLocal }).then(function (gate) {
@@ -895,7 +949,10 @@
                 patch.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
             }
         } catch (eTs) { /* ignore */ }
-        patch.clientUpdatedAt = Date.now();
+        // Conflict checks must use edit time, never retry/flush time.
+        patch.clientUpdatedAt = Number(
+            (row.meta && row.meta.mutationAt) || patch.clientUpdatedAt || patch.timestamp
+        ) || Date.now();
         patch._version = (typeof patch._version === 'number' ? patch._version : 0) + 1;
         var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
         var forceLocal = !!(row.meta && row.meta.forceLocal);
@@ -1394,6 +1451,7 @@
             }, { localSaved: !!opts.skipLocalSync, docId: cloudDocId }));
         }
         var localKey = opts.localKey || cloudDocId;
+        var mutationAt = Number(opts.mutationAt || (data && (data.clientUpdatedAt || data.timestamp))) || Date.now();
 
         if (!opts.skipLocalSync && typeof global.emsOfflineWriteLocalSync === 'function') {
             global.emsOfflineWriteLocalSync(localKey, data);
@@ -1403,7 +1461,8 @@
             if (opts.patch && typeof global.emsCloudEmitAttendancePatch === 'function') {
                 return global.emsCloudEmitAttendancePatch(cloudDocId, opts.patch, {
                     localKey: localKey,
-                    tenantId: tenantId
+                    tenantId: tenantId,
+                    mutationAt: mutationAt
                 }).then(function (syncRes) {
                     return Object.assign(normalizeCloudResult(syncRes, { localSaved: true, docId: cloudDocId }), {
                         local: true,
@@ -1419,7 +1478,8 @@
                 docId: cloudDocId,
                 payload: data,
                 localKey: localKey,
-                tenantId: tenantId
+                tenantId: tenantId,
+                meta: { mutationAt: mutationAt }
             }).then(function (syncRes) {
                 return Object.assign(normalizeCloudResult(syncRes, { localSaved: true, docId: cloudDocId }), {
                     local: true,

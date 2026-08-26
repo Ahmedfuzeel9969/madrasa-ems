@@ -116,22 +116,23 @@ async function assertParentViewPermission(tenantId, studentId, viewId) {
 async function fetchAttendance(db, tenantId, studentId) {
     const mk = monthKey();
     const snap = await db.collection('All_Madrasas').doc(tenantId).collection('Attendance').get();
+    const finalState = require('./attendance-final-state');
+    const sourceDocs = [];
+    snap.forEach(function (doc) {
+        sourceDocs.push({ id: doc.id, data: doc.data() || {} });
+    });
+    const resolved = finalState.buildFinalAttendanceState(sourceDocs, mk, { includeTypes: ['students'] });
     const days = [];
     const summary = { present: 0, absent: 0, leave: 0, other: 0 };
-    snap.forEach(function (doc) {
-        if (!doc.id.startsWith('att_rec_' + mk)) return;
-        const data = doc.data() || {};
-        const rec = data.records && data.records[studentId];
-        if (!rec) return;
-        Object.keys(rec).forEach(function (dayNum) {
-            const st = rec[dayNum];
-            let label = st;
-            if (st === 'P' || st === 'حاضر') { summary.present++; label = 'حاضر'; }
-            else if (st === 'A' || st === 'غائب') { summary.absent++; label = 'غائب'; }
-            else if (st === 'L' || st === 'رخصت') { summary.leave++; label = 'رخصت'; }
-            else summary.other++;
-            days.push({ day: dayNum, status: label });
-        });
+    Object.keys(resolved).forEach(function (key) {
+        const row = resolved[key];
+        if (row.personId !== String(studentId)) return;
+        let label = row.status;
+        if (row.bucket === 'present') { summary.present++; label = 'حاضر'; }
+        else if (row.bucket === 'absent') { summary.absent++; label = 'غائب'; }
+        else if (row.bucket === 'leave') { summary.leave++; label = 'رخصت'; }
+        else summary.other++;
+        days.push({ day: row.day, status: label });
     });
     days.sort(function (a, b) { return parseInt(a.day, 10) - parseInt(b.day, 10); });
     return { days: days, summary: summary, month: mk, source: 'server' };

@@ -205,6 +205,45 @@ service cloud.firestore {
             && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, moduleId, 'delete')));
     }
 
+    /** Attendance documents are monthly canonical/legacy register sheets only. */
+    function isValidAttendanceDocId(docId) {
+      return docId.matches('^att_rec_[0-9]{4}-[0-9]{2}_(students|teachers|staff)_.+$');
+    }
+
+    function hasValidAttendanceShape() {
+      return request.resource.data.keys().hasOnly([
+          'locked', 'records', 'dailyLocks', 'remarks', 'late', 'periodRecords',
+          'timestamp', 'clientUpdatedAt', 'updatedAt', '_version', 'departmentId'
+        ])
+        && request.resource.data.get('locked', false) is bool
+        && request.resource.data.get('records', {}) is map
+        && request.resource.data.get('dailyLocks', {}) is map
+        && request.resource.data.get('remarks', {}) is map
+        && request.resource.data.get('late', {}) is map
+        && request.resource.data.get('periodRecords', {}) is map;
+    }
+
+    /** UI protection is not enough: ordinary staff cannot mark their own row. */
+    function attendanceCreateDoesNotEditSelf(madrasaId) {
+      return isSuperAdmin() || isOwner(madrasaId)
+        || (!request.resource.data.get('records', {}).keys().hasAny([staffRecordId(madrasaId)])
+          && !request.resource.data.get('periodRecords', {}).keys().hasAny([staffRecordId(madrasaId)])
+          && !request.resource.data.get('remarks', {}).keys().hasAny([staffRecordId(madrasaId)])
+          && !request.resource.data.get('late', {}).keys().hasAny([staffRecordId(madrasaId)]));
+    }
+
+    function attendanceUpdateDoesNotEditSelf(madrasaId) {
+      return isSuperAdmin() || isOwner(madrasaId)
+        || (!request.resource.data.get('records', {}).diff(resource.data.get('records', {}))
+              .affectedKeys().hasAny([staffRecordId(madrasaId)])
+          && !request.resource.data.get('periodRecords', {}).diff(resource.data.get('periodRecords', {}))
+              .affectedKeys().hasAny([staffRecordId(madrasaId)])
+          && !request.resource.data.get('remarks', {}).diff(resource.data.get('remarks', {}))
+              .affectedKeys().hasAny([staffRecordId(madrasaId)])
+          && !request.resource.data.get('late', {}).diff(resource.data.get('late', {}))
+              .affectedKeys().hasAny([staffRecordId(madrasaId)]));
+    }
+
     function isValidEmsAuditCreate() {
       return request.resource.data.keys().hasAll(['module', 'action', 'timestamp', 'uid'])
         && request.resource.data.module is string
@@ -498,9 +537,16 @@ service cloud.firestore {
 
       match /Attendance/{docId} {
         allow read: if canReadTenantStaff(madrasaId);
-        allow create: if canStaffCreate(madrasaId, 'attendance');
-        allow update: if canStaffUpdate(madrasaId, 'attendance');
-        allow delete: if canStaffDelete(madrasaId, 'attendance');
+        allow create: if canStaffCreate(madrasaId, 'attendance')
+          && isValidAttendanceDocId(docId)
+          && hasValidAttendanceShape()
+          && attendanceCreateDoesNotEditSelf(madrasaId);
+        allow update: if canStaffUpdate(madrasaId, 'attendance')
+          && isValidAttendanceDocId(docId)
+          && hasValidAttendanceShape()
+          && attendanceUpdateDoesNotEditSelf(madrasaId);
+        allow delete: if canStaffDelete(madrasaId, 'attendance')
+          && isValidAttendanceDocId(docId);
       }
 
       match /Attendance_Config/{docId} {

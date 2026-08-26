@@ -198,6 +198,12 @@ async function recomputeAttendanceSummaryForMonth(db, tenantId, monthKey) {
         .where(admin.firestore.FieldPath.documentId(), '<=', prefix + '\uf8ff')
         .get();
 
+    var finalStateHelper = require('./attendance-final-state');
+    var sourceDocs = [];
+    snap.forEach(function (doc) { sourceDocs.push({ id: doc.id, data: doc.data() || {} }); });
+    var finalState = finalStateHelper.buildFinalAttendanceState(sourceDocs, monthKey, {
+        includeTypes: ['students']
+    });
     var dailyPresentSets = {};
     var dailyAbsentSets = {};
     var dailyLeaveSets = {};
@@ -207,20 +213,12 @@ async function recomputeAttendanceSummaryForMonth(db, tenantId, monthKey) {
         dailyLeaveSets[d] = new Set();
     }
 
-    snap.forEach(function (doc) {
-        var data = doc.data();
-        if (!data || !data.records) return;
-        Object.keys(data.records).forEach(function (uid) {
-            var dayRec = data.records[uid];
-            if (!dayRec) return;
-            for (var day = 1; day <= 31; day++) {
-                var st = dayRec[day] || dayRec[String(day)];
-                var bucket = attStatusBucket(st);
-                if (bucket === 'present') dailyPresentSets[day].add(uid);
-                else if (bucket === 'absent') dailyAbsentSets[day].add(uid);
-                else if (bucket === 'leave') dailyLeaveSets[day].add(uid);
-            }
-        });
+    Object.keys(finalState).forEach(function (key) {
+        var row = finalState[key];
+        var day = Number(row.day);
+        if (row.bucket === 'present') dailyPresentSets[day].add(row.personId);
+        else if (row.bucket === 'absent') dailyAbsentSets[day].add(row.personId);
+        else if (row.bucket === 'leave') dailyLeaveSets[day].add(row.personId);
     });
 
     var dailyPresent = {};
@@ -358,16 +356,16 @@ async function refreshTodayAttendance(db, tenantId) {
         .where(admin.firestore.FieldPath.documentId(), '>=', prefix)
         .where(admin.firestore.FieldPath.documentId(), '<=', prefix + '\uf8ff')
         .get();
+    var finalStateHelper = require('./attendance-final-state');
+    var sourceDocs = [];
+    snap.forEach(function (doc) { sourceDocs.push({ id: doc.id, data: doc.data() || {} }); });
+    var finalState = finalStateHelper.buildFinalAttendanceState(sourceDocs, month, {
+        includeTypes: ['students']
+    });
     var presentSet = new Set();
-    snap.forEach(function (doc) {
-        var data = doc.data();
-        if (!data || !data.records) return;
-        Object.keys(data.records).forEach(function (uid) {
-            var dayRec = data.records[uid];
-            if (!dayRec) return;
-            var st = dayRec[dayNum] || dayRec[String(dayNum)];
-            if (st === 'P' || st === 'حاضر') presentSet.add(uid);
-        });
+    Object.keys(finalState).forEach(function (key) {
+        var row = finalState[key];
+        if (Number(row.day) === dayNum && row.bucket === 'present') presentSet.add(row.personId);
     });
     await mergeStatsDelta(db, tenantId, function (stats) {
         stats.attendance.todayPresent = presentSet.size;

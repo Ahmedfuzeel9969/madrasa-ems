@@ -367,7 +367,9 @@
             payload: patch,
             localKey: meta && meta.localKey,
             tenantId: meta && meta.tenantId,
-            meta: meta || {}
+            meta: Object.assign({}, meta || {}, {
+                mutationAt: Number(meta && meta.mutationAt) || Number(patch && patch.timestamp) || Date.now()
+            })
         });
     };
 })(typeof window !== 'undefined' ? window : globalThis);

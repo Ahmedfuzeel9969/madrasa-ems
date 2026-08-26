@@ -1312,6 +1312,8 @@ function attHasMeaningfulAttendanceData(sheet) {
   if (Object.keys(sheet.records || {}).length) return true;
   if (Object.keys(sheet.dailyLocks || {}).length) return true;
   if (Object.keys(sheet.periodRecords || {}).length) return true;
+  if (Object.keys(sheet.remarks || {}).length) return true;
+  if (Object.keys(sheet.late || {}).length) return true;
   return false;
 }
 
@@ -5814,7 +5816,11 @@ function attEnqueueEventsDbSync(eventsDb) {
   return attEnqueueSyncModuleBlob(EVT_EVENTS_DB_KEY, eventsDb);
 }
 
-/** Persist one event locally + unified outbox (blob + per-event attendance doc patch). */
+/**
+ * Persist one event to the single canonical event store.
+ * Canonical SSOT: tenant-scoped ModuleData/Attendance__ems_att_events_db.
+ * Historical Attendance/att_evt_* documents are read-only migration evidence.
+ */
 window.attSaveEventAttendance = function (eventRecord, opts) {
   opts = opts || {};
   if (!eventRecord || !eventRecord.id) {
@@ -5840,19 +5846,7 @@ window.attSaveEventAttendance = function (eventRecord, opts) {
     return Promise.resolve({ ok: false, reason: 'local_write_failed' });
   }
 
-  var cloudDocId = attEventCloudDocId(stamped.id);
-  var cloudPatch = attComputeEventCloudPatch(prev, stamped);
   var chain = attEnqueueEventsDbSync(events);
-
-  if (typeof window.emsOfflinePersistAttendance === 'function') {
-    chain = chain.then(function () {
-      var persistOpts = { skipLocalSync: true };
-      if (prev && cloudPatch && Object.keys(cloudPatch).length) {
-        persistOpts.patch = cloudPatch;
-      }
-      return window.emsOfflinePersistAttendance(cloudDocId, stamped, persistOpts);
-    });
-  }
 
   return chain.then(function (syncRes) {
     return {
@@ -5868,29 +5862,16 @@ window.attSaveEventAttendance = function (eventRecord, opts) {
   });
 };
 
-/** Remove event from local blob + outbox sync (blob replace; cloud doc merge with tombstone). */
+/** Remove event from the canonical event blob. Legacy att_evt_* docs are never mutated. */
 window.attDeleteEventAttendance = function (eventId) {
   if (!eventId) return Promise.resolve({ ok: false, reason: 'invalid_id' });
   var events = evtReadEventsDb();
-  var removed = events.find(function (e) { return e && e.id === eventId; });
   events = events.filter(function (e) { return !e || e.id !== eventId; });
   if (!evtWriteEventsDbLocal(events)) {
     return Promise.resolve({ ok: false, reason: 'local_write_failed' });
   }
 
   var chain = attEnqueueEventsDbSync(events);
-  if (removed && typeof window.emsOfflinePersistAttendance === 'function') {
-    chain = chain.then(function () {
-      var tombstone = Object.assign({}, removed, {
-        deleted: true,
-        deletedAt: Date.now()
-      });
-      return window.emsOfflinePersistAttendance(attEventCloudDocId(eventId), tombstone, {
-        skipLocalSync: true,
-        patch: { deleted: true, deletedAt: tombstone.deletedAt }
-      });
-    });
-  }
 
   return chain.then(function (syncRes) {
     return {

@@ -106,6 +106,7 @@ function loadIntegrationEnv() {
         att.indexOf('function attReadTimetablePeriods'),
         att.indexOf('\nfunction attIsTeacherRegister')
     )
+        + att.slice(att.indexOf('function attTimetableCanonicalCloudRef'), att.indexOf('\nfunction attEnqueueSyncModuleBlob'))
         + att.slice(att.indexOf('function attEnqueueSyncModuleBlob'), att.indexOf('\nfunction attReadHolidaysDb'))
         + att.slice(att.indexOf('function attSavePeriodFromModal'), att.indexOf('\nfunction attRemovePeriodById'))
         + att.slice(att.indexOf('function attRemovePeriodById'), att.indexOf('\nwindow.attOpenNewPeriodModal'));
