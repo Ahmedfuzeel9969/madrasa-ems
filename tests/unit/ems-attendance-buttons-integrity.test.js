@@ -82,4 +82,26 @@ describe('Attendance button integrity', function () {
     expect(pull).toMatch(/if \(pullScope === 'attendance'\) \{\s*return pullAttendance\(pullTenant/);
     expect(pull).toMatch(/String\(pullTenant\) !== String\(verified\)/);
   });
+
+  it('uses one attendance palette across unlocked, locked, collective, dashboard, event and report views', function () {
+    var css = source('style.css');
+    var att = source('attendance.js');
+    var collective = source('att-collective.js');
+    var dashboard = source('att-dashboard.js');
+    expect(css).toContain('--att-present: #16a34a');
+    expect(css).toContain('--att-absent: #dc2626');
+    expect(css).toContain('--att-leave: #d97706');
+    expect(css).toMatch(/#smart-register-table td\.att-cell-p[\s\S]{0,180}var\(--att-present\)/);
+    expect(css).toMatch(/#att-col-table td\.att-cell-a[\s\S]{0,180}var\(--att-absent\)/);
+    expect(css).toMatch(/td\.col-locked\.att-cell-p \.print-status-text[\s\S]{0,180}background:\s*var\(--att-present\)/);
+    expect(css).toMatch(/td\.col-locked\.att-cell-a \.print-status-text[\s\S]{0,180}background:\s*var\(--att-absent\)/);
+    expect(css).toMatch(/td\.col-locked\.att-cell-l \.print-status-text[\s\S]{0,180}background:\s*var\(--att-leave\)/);
+    expect(att).toContain('var eventStatusClass =');
+    expect(att).toContain("sel.classList.add('att-status-leave')");
+    expect(att).toContain('class="att-status-leave"');
+    expect(collective).toContain('att-status-present-action');
+    expect(dashboard).toContain("{ color: '#16a34a', label: 'حاضر'");
+    expect(dashboard).toContain("{ color: '#dc2626', label: 'غائب'");
+    expect(dashboard).toContain("{ color: '#d97706', label: 'رخصت'");
+  });
 });

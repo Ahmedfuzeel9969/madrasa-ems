@@ -13,6 +13,16 @@
   --ems-danger: #dc2626;
   --ems-success: #16a34a;
   --ems-warning: #d97706;
+  /* Attendance status palette — one source for register, dashboard and reports. */
+  --att-present: #16a34a;
+  --att-present-soft: #dcfce7;
+  --att-present-border: #86efac;
+  --att-absent: #dc2626;
+  --att-absent-soft: #fee2e2;
+  --att-absent-border: #fca5a5;
+  --att-leave: #d97706;
+  --att-leave-soft: #fef3c7;
+  --att-leave-border: #fcd34d;
   --ems-radius: 10px;
   --ems-radius-lg: 12px;
   --ems-touch: 48px;
@@ -282,9 +292,9 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
   font-size: 15px !important;
   line-height: 1.35;
 }
-#att-dashboard-panel .att-val-present { color: #27ae60; }
-#att-dashboard-panel .att-val-absent { color: #e74c3c; }
-#att-dashboard-panel .att-val-leave { color: #f39c12; }
+#att-dashboard-panel .att-val-present { color: var(--att-present); }
+#att-dashboard-panel .att-val-absent { color: var(--att-absent); }
+#att-dashboard-panel .att-val-leave { color: var(--att-leave); }
 #att-dashboard-panel .att-val-partial { color: #8b5cf6; }
 #att-dashboard-panel .att-val-incomplete { color: #0ea5e9; }
 #att-dashboard-panel .att-val-unmarked { color: #64748b; }
@@ -1353,9 +1363,12 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 .att-cell-btn:hover { transform: scale(1.1); box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
 
 /* سلیکٹڈ اسٹیٹس کے کلرز */
-.att-cell-btn.status-p.active { background: var(--success); color: white; border-color: var(--success); }
-.att-cell-btn.status-a.active { background: var(--danger); color: white; border-color: var(--danger); }
-.att-cell-btn.status-l.active { background: var(--warning); color: white; border-color: var(--warning); }
+.att-cell-btn.status-p.active { background: var(--att-present); color: white; border-color: var(--att-present); }
+.att-cell-btn.status-a.active { background: var(--att-absent); color: white; border-color: var(--att-absent); }
+.att-cell-btn.status-l.active { background: var(--att-leave); color: white; border-color: var(--att-leave); }
+.att-cell-btn.att-status-present-action { color: var(--att-present); border-color: var(--att-present); }
+.att-cell-btn.att-status-absent-action { color: var(--att-absent); border-color: var(--att-absent); }
+.att-cell-btn.att-status-leave-action { color: var(--att-leave); border-color: var(--att-leave); }
 .att-cell-btn.status-custom { background: #eef2f6; color: var(--primary); border-color: var(--accent); }
 .att-cell-btn.status-clear { color: #64748b; border-color: #cbd5e1; font-weight: bold; }
 .att-cell-btn.status-clear.active { background: #f1f5f9; color: #475569; border-color: #94a3b8; }
@@ -1389,9 +1402,9 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
   cursor: pointer;
   color: #334155;
 }
-.att-period-box.is-p { background: #10b981; color: #fff; border-color: #059669; }
-.att-period-box.is-a { background: #ef4444; color: #fff; border-color: #dc2626; }
-.att-period-box.is-l { background: #f59e0b; color: #fff; border-color: #d97706; }
+.att-period-box.is-p { background: var(--att-present); color: #fff; border-color: var(--att-present); }
+.att-period-box.is-a { background: var(--att-absent); color: #fff; border-color: var(--att-absent); }
+.att-period-box.is-l { background: var(--att-leave); color: #fff; border-color: var(--att-leave); }
 .att-period-bulk {
   display: flex;
   flex-wrap: wrap;
@@ -1408,17 +1421,29 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
   font-weight: 700;
   line-height: 1.3;
 }
-.att-period-bulk-btn.is-p { color: #047857; border-color: #6ee7b7; }
-.att-period-bulk-btn.is-a { color: #b91c1c; border-color: #fca5a5; }
-.att-period-bulk-btn.is-l { color: #b45309; border-color: #fcd34d; }
+.att-period-bulk-btn.is-p { color: var(--att-present); border-color: var(--att-present-border); }
+.att-period-bulk-btn.is-a { color: var(--att-absent); border-color: var(--att-absent-border); }
+.att-period-bulk-btn.is-l { color: var(--att-leave); border-color: var(--att-leave-border); }
 .att-period-bulk-btn.is-clear { color: #64748b; }
 #smart-register-table td.att-cell-teacher { min-width: 118px; vertical-align: top; }
 
 #smart-register-table td.att-cell-clickable { cursor: pointer; }
 #smart-register-table td.att-cell-empty { background: #fff !important; }
-#smart-register-table td.att-cell-p { background: #ecfdf5 !important; }
-#smart-register-table td.att-cell-a { background: #fef2f2 !important; }
-#smart-register-table td.att-cell-l { background: #fffbeb !important; }
+#smart-register-table td.att-cell-p {
+  background: var(--att-present-soft) !important;
+  color: var(--att-present);
+  border-color: var(--att-present-border);
+}
+#smart-register-table td.att-cell-a {
+  background: var(--att-absent-soft) !important;
+  color: var(--att-absent);
+  border-color: var(--att-absent-border);
+}
+#smart-register-table td.att-cell-l {
+  background: var(--att-leave-soft) !important;
+  color: var(--att-leave);
+  border-color: var(--att-leave-border);
+}
 #smart-register-table td.att-cell-partial { background: #eff6ff !important; }
 #smart-register-table td.att-cell-incomplete { background: #f8fafc !important; color: #64748b; }
 
@@ -1517,9 +1542,16 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 .att-col-register-controls { padding: 4px 0; }
 #att-col-table .att-cell-controls { margin-top: 4px; }
 #att-col-table td.att-cell-empty { background: #fff !important; }
-#att-col-table td.att-cell-p { background: #ecfdf5 !important; }
-#att-col-table td.att-cell-a { background: #fef2f2 !important; }
-#att-col-table td.att-cell-l { background: #fffbeb !important; }
+#att-col-table td.att-cell-p { background: var(--att-present-soft) !important; color: var(--att-present); border-color: var(--att-present-border); }
+#att-col-table td.att-cell-a { background: var(--att-absent-soft) !important; color: var(--att-absent); border-color: var(--att-absent-border); }
+#att-col-table td.att-cell-l { background: var(--att-leave-soft) !important; color: var(--att-leave); border-color: var(--att-leave-border); }
+
+#module-attendance .att-status-present { color: var(--att-present) !important; }
+#module-attendance .att-status-absent { color: var(--att-absent) !important; }
+#module-attendance .att-status-leave { color: var(--att-leave) !important; }
+#module-attendance .evt-status-select.att-status-present { background: var(--att-present-soft); border-color: var(--att-present-border); }
+#module-attendance .evt-status-select.att-status-absent { background: var(--att-absent-soft); border-color: var(--att-absent-border); }
+#module-attendance .evt-status-select.att-status-leave { background: var(--att-leave-soft); border-color: var(--att-leave-border); }
 
 .att-col-stu-actions { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #cbd5e1; }
 .att-col-stu-actions-title {
@@ -1729,12 +1761,32 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 /* لاک رجسٹر میں بٹن غیر فعال ہوتے ہیں، اس لیے محفوظ حاضری صاف متن میں دکھائیں۔ */
 #smart-register-table td.col-locked .print-status-text {
     display: inline-block;
+    text-align: center;
+    vertical-align: middle;
     min-width: 22px;
     min-height: 22px;
     line-height: 22px;
-    font-size: 13px;
+    padding: 1px 7px;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 11px;
     font-weight: 800;
     color: #0f172a;
+}
+#smart-register-table td.col-locked.att-cell-p .print-status-text {
+    color: #fff !important;
+    background: var(--att-present);
+    border-color: var(--att-present);
+}
+#smart-register-table td.col-locked.att-cell-a .print-status-text {
+    color: #fff !important;
+    background: var(--att-absent);
+    border-color: var(--att-absent);
+}
+#smart-register-table td.col-locked.att-cell-l .print-status-text {
+    color: #fff !important;
+    background: var(--att-leave);
+    border-color: var(--att-leave);
 }
 #smart-register-table td.col-locked .att-cell-controls { display: none; }
 

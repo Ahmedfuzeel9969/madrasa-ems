@@ -1108,15 +1108,15 @@
             if (!f.classFilter && r.className) label += ' <small>(' + escHtmlSafe(r.className) + ')</small>';
             var time = (r.start || '—') + (r.end ? '–' + r.end : '');
             var rateTxt = r.rate == null ? '—' : (r.rate + '%');
-            var col = r.rate == null ? '#94a3b8' : (r.rate >= 75 ? '#27ae60' : (r.rate >= 50 ? '#f39c12' : '#e74c3c'));
+            var col = r.rate == null ? '#94a3b8' : (r.rate >= 75 ? '#16a34a' : (r.rate >= 50 ? '#d97706' : '#dc2626'));
             return '<tr>'
                 + '<td>' + r.index + '</td>'
                 + '<td><strong>' + label + '</strong></td>'
                 + '<td>' + escHtmlSafe(time) + '</td>'
                 + '<td>' + r.total + '</td>'
-                + '<td style="color:#27ae60;font-weight:bold;">' + (r.notTaken ? '—' : r.present) + '</td>'
-                + '<td style="color:#e74c3c;font-weight:bold;">' + (r.notTaken ? '—' : r.absent) + '</td>'
-                + '<td style="color:#f39c12;">' + (r.notTaken ? '—' : r.leave) + '</td>'
+                + '<td style="color:#16a34a;font-weight:bold;">' + (r.notTaken ? '—' : r.present) + '</td>'
+                + '<td style="color:#dc2626;font-weight:bold;">' + (r.notTaken ? '—' : r.absent) + '</td>'
+                + '<td style="color:#d97706;">' + (r.notTaken ? '—' : r.leave) + '</td>'
                 + '<td>' + (r.notMarked != null ? r.notMarked : '—') + '</td>'
                 + '<td style="color:' + col + ';font-weight:bold;">' + rateTxt + '</td>'
                 + '</tr>';
@@ -1130,7 +1130,7 @@
                         label: String(r.name || '').substring(0, 10) || ('#' + r.index),
                         value: r.rate,
                         display: r.rate + '%',
-                        color: r.rate >= 75 ? '#27ae60' : (r.rate >= 50 ? '#f39c12' : '#e74c3c')
+                        color: r.rate >= 75 ? '#16a34a' : (r.rate >= 50 ? '#d97706' : '#dc2626')
                     };
                 }));
             } else if (!withRates.length) {
@@ -1319,9 +1319,9 @@
             return;
         }
         var items = [
-            { color: '#27ae60', label: 'حاضر', val: stats.present },
-            { color: '#e74c3c', label: 'غائب', val: stats.absent },
-            { color: '#f39c12', label: 'رخصت', val: stats.leave }
+            { color: '#16a34a', label: 'حاضر', val: stats.present },
+            { color: '#dc2626', label: 'غائب', val: stats.absent },
+            { color: '#d97706', label: 'رخصت', val: stats.leave }
         ];
         if (stats.partial > 0) items.push({ color: '#8b5cf6', label: 'جزوی حاضری', val: stats.partial });
         if (stats.incomplete > 0) items.push({ color: '#0ea5e9', label: 'نامکمل', val: stats.incomplete });
@@ -1341,9 +1341,9 @@
             attDashRenderTodayLegend(stats);
         } else {
             var segs = [
-                { label: 'حاضر', value: stats.present, color: '#27ae60' },
-                { label: 'غائب', value: stats.absent, color: '#e74c3c' },
-                { label: 'رخصت', value: stats.leave, color: '#f39c12' }
+                { label: 'حاضر', value: stats.present, color: '#16a34a' },
+                { label: 'غائب', value: stats.absent, color: '#dc2626' },
+                { label: 'رخصت', value: stats.leave, color: '#d97706' }
             ];
             if (stats.partial > 0) segs.push({ label: 'جزوی', value: stats.partial, color: '#8b5cf6' });
             if (stats.incomplete > 0) segs.push({ label: 'نامکمل', value: stats.incomplete, color: '#0ea5e9' });
@@ -1359,7 +1359,7 @@
                 attDashRenderTodayLegend(stats);
             } else if (totalSeg > 0) {
                 setHTML('att-dash-chart-today',
-                    '<div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#27ae60 0% ' + (stats.rate || 0) + '%, #e2e8f0 ' + (stats.rate || 0) + '% 100%);display:flex;align-items:center;justify-content:center;margin:0 auto;">' +
+                    '<div style="width:140px;height:140px;border-radius:50%;background:conic-gradient(#16a34a 0% ' + (stats.rate || 0) + '%, #e2e8f0 ' + (stats.rate || 0) + '% 100%);display:flex;align-items:center;justify-content:center;margin:0 auto;">' +
                     '<div style="width:100px;height:100px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:#0f766e;">' + center + '</div></div>');
                 attDashRenderTodayLegend(stats);
             } else {
@@ -1391,7 +1391,7 @@
                         label: (r.className || '').substring(0, 10),
                         value: r.rate,
                         display: r.rate + '%',
-                        color: r.rate >= 75 ? '#27ae60' : (r.rate >= 50 ? '#f39c12' : '#e74c3c')
+                        color: r.rate >= 75 ? '#16a34a' : (r.rate >= 50 ? '#d97706' : '#dc2626')
                     };
                 })
             ));
@@ -1411,7 +1411,7 @@
         }
         tbody.innerHTML = rows.map(function (r) {
             var rateTxt = r.rate == null ? '—' : (r.rate + '%');
-            var col = r.rate == null ? '#94a3b8' : (r.rate >= 75 ? '#27ae60' : (r.rate >= 50 ? '#f39c12' : '#e74c3c'));
+            var col = r.rate == null ? '#94a3b8' : (r.rate >= 75 ? '#16a34a' : (r.rate >= 50 ? '#d97706' : '#dc2626'));
             var pTxt = r.rate == null ? '—' : r.present;
             var aTxt = r.rate == null ? '—' : r.absent;
             var lTxt = r.rate == null ? '—' : r.leave;
@@ -1420,9 +1420,9 @@
                 String(r.className).replace(/'/g, "\\'") + '\')">' +
                 '<td><strong>' + r.className + '</strong></td>' +
                 '<td>' + r.total + '</td>' +
-                '<td style="color:#27ae60;font-weight:bold;">' + pTxt + '</td>' +
-                '<td style="color:#e74c3c;font-weight:bold;">' + aTxt + '</td>' +
-                '<td style="color:#f39c12;">' + lTxt + '</td>' +
+                '<td style="color:#16a34a;font-weight:bold;">' + pTxt + '</td>' +
+                '<td style="color:#dc2626;font-weight:bold;">' + aTxt + '</td>' +
+                '<td style="color:#d97706;">' + lTxt + '</td>' +
                 '<td>' + covTxt + '</td>' +
                 '<td style="color:' + col + ';font-weight:bold;">' + rateTxt + '</td></tr>';
         }).join('');
@@ -1438,7 +1438,7 @@
         box.innerHTML = alerts.map(function (a) {
             return '<div class="att-dash-alert-row">' +
                 '<span><strong>' + a.name + '</strong> <small>(' + a.className + ')</small></span>' +
-                '<span style="color:#e74c3c;font-weight:bold;">' + a.rate + '%</span>' +
+                '<span style="color:#dc2626;font-weight:bold;">' + a.rate + '%</span>' +
                 '<small style="color:#94a3b8;">' + a.present + '/' + a.total + ' دن</small></div>';
         }).join('');
     }

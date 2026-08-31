@@ -12,7 +12,7 @@ module.exports = {
     swUpdate: '20260708_sw_update_v1',
     searchIndex: '20260709_phase_a_drafts',
     offline: '20260628offline5',
-    postAuthLoader: '20260831_attendance_buttons_v10',
+    postAuthLoader: '20260831_smart_register_colors_v11',
     core: '20260708_sw_update_v1'
   },
   /** Resolve script path — cloud/ prefix when file lives under cloud/ */

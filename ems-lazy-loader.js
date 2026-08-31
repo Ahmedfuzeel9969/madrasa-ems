@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260831_attendance_buttons_v10';
+    var CACHE_BUST = '20260831_smart_register_colors_v11';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 

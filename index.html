@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260831_attendance_buttons_v10">
+    <link rel="stylesheet" href="style.css?v=20260831_smart_register_colors_v11">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -372,8 +372,8 @@
                     <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; cursor:pointer;" onclick="window.emsCardDrill('attendance')">
                         <div class="dash-chart-box" id="chart-attendance" style="min-width:150px;"></div>
                         <div class="dash-att-stats" style="flex:1; min-width:140px;">
-                            <div class="row"><span><i class="fas fa-circle" style="color:#27ae60; font-size:9px;"></i> حاضر</span><strong id="dash-att-present">0</strong></div>
-                            <div class="row"><span><i class="fas fa-circle" style="color:#e74c3c; font-size:9px;"></i> غائب</span><strong id="dash-att-absent">0</strong></div>
+                            <div class="row"><span><i class="fas fa-circle" style="color:#16a34a; font-size:9px;"></i> حاضر</span><strong id="dash-att-present" style="color:#16a34a;">0</strong></div>
+                            <div class="row"><span><i class="fas fa-circle" style="color:#dc2626; font-size:9px;"></i> غائب</span><strong id="dash-att-absent" style="color:#dc2626;">0</strong></div>
                             <div class="row"><span><i class="fas fa-circle" style="color:#94a3b8; font-size:9px;"></i> کل طلباء</span><strong id="dash-att-total">0</strong></div>
                             <div class="row"><span><i class="fas fa-percent" style="color:#2980b9; font-size:9px;"></i> شرح</span><strong id="dash-att-rate">0%</strong></div>
                         </div>
@@ -1723,7 +1723,7 @@
                                     <th style="width:130px;">نوعیت</th>
                                     <th style="width:120px;">تاریخ</th>
                                     <th style="width:90px;">شرکاء</th>
-                                    <th style="width:110px;">حاضر/غیرحاضر</th>
+                                    <th style="width:150px;">حاضر/غیرحاضر/رخصت</th>
                                     <th style="width:150px;">کارروائی</th>
                                 </tr>
                             </thead>
@@ -6664,20 +6664,20 @@
     <script defer src="tenant-context.js?v=20260705sync1"></script>
     <script defer src="ems-tenant-storage.js?v=20260704pull3"></script>
     <script defer src="ems-firestore-paths.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-cloud-pull.js?v=20260831_attendance_buttons_v10"></script>
+    <script defer src="ems-cloud-pull.js?v=20260831_smart_register_colors_v11"></script>
     <script defer src="ems-tenant-resolver.js?v=20260809_tenant_loop"></script>
     <script defer src="department-context.js?v=20260620dept4"></script>
-    <script defer src="ems-sw-update.js?v=20260831_attendance_buttons_v10"></script>
-    <script defer src="core.js?v=20260831_attendance_buttons_v10"></script>
+    <script defer src="ems-sw-update.js?v=20260831_smart_register_colors_v11"></script>
+    <script defer src="core.js?v=20260831_smart_register_colors_v11"></script>
     <script defer src="portal-access.js?v=20260809_tenant_loop"></script>
     <script defer src="landing.js?v=20260710_remove_guest_portal"></script>
     <script defer src="ems-offline-session-cache.js?v=20260705desktopfix6"></script>
     <script defer src="ems-offline-policy.js?v=20260707_sync_hardening_v1"></script>
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
-    <script defer src="auth.js?v=20260831_attendance_buttons_v10"></script>
+    <script defer src="auth.js?v=20260831_smart_register_colors_v11"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260831_attendance_buttons_v10"></script>
-    <script defer src="ems-lazy-loader.js?v=20260831_attendance_buttons_v10"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260831_smart_register_colors_v11"></script>
+    <script defer src="ems-lazy-loader.js?v=20260831_smart_register_colors_v11"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>

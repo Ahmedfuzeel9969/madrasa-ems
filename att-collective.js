@@ -600,11 +600,11 @@
     var disData = blocked ? ' data-col-disabled="1"' : '';
     host.className = 'att-cell-controls att-col-register-controls';
     host.innerHTML =
-      '<button type="button" class="att-cell-btn" style="color:green;border-color:green;" data-col-all="P"' + disAttr + disData + '>'
+      '<button type="button" class="att-cell-btn att-status-present-action" data-col-all="P"' + disAttr + disData + '>'
       + escHtml(sym.P) + '</button>'
-      + '<button type="button" class="att-cell-btn" style="color:red;border-color:red;" data-col-all="A"' + disAttr + disData + '>'
+      + '<button type="button" class="att-cell-btn att-status-absent-action" data-col-all="A"' + disAttr + disData + '>'
       + escHtml(sym.A) + '</button>'
-      + '<button type="button" class="att-cell-btn" style="color:orange;border-color:orange;" data-col-all="L"' + disAttr + disData + '>'
+      + '<button type="button" class="att-cell-btn att-status-leave-action" data-col-all="L"' + disAttr + disData + '>'
       + escHtml(sym.L) + '</button>'
       + '<button type="button" class="att-cell-btn status-clear" data-col-all="" title="صاف / خالی"' + disAttr + disData + '>×</button>';
   }

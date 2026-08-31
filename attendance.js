@@ -3435,9 +3435,9 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
                   !isDailyLocked
                     ? `
                 <div class="att-cell-controls">
-                    <button class="att-cell-btn" style="color:green; border-color:green;" onclick="masterToggle('${symbols.P}', ${d})">${symbols.P}</button>
-                    <button class="att-cell-btn" style="color:red; border-color:red;" onclick="masterToggle('${symbols.A}', ${d})">${symbols.A}</button>
-                    <button class="att-cell-btn" style="color:orange; border-color:orange;" onclick="masterToggle('${symbols.L}', ${d})">${symbols.L}</button>
+                    <button class="att-cell-btn att-status-present-action" onclick="masterToggle('${symbols.P}', ${d})">${symbols.P}</button>
+                    <button class="att-cell-btn att-status-absent-action" onclick="masterToggle('${symbols.A}', ${d})">${symbols.A}</button>
+                    <button class="att-cell-btn att-status-leave-action" onclick="masterToggle('${symbols.L}', ${d})">${symbols.L}</button>
                     <button class="att-cell-btn status-clear" onclick="masterClearColumn(${d})" title="تمام کو صاف / خالی">×</button>
                 </div>`
                     : ''
@@ -6815,13 +6815,14 @@ window.renderSavedEvents = function () {
     .map(function (e) {
       const present = (e.participants || []).filter((p) => p.status === symbols.P).length;
       const absent = (e.participants || []).filter((p) => p.status === symbols.A).length;
+      const leave = (e.participants || []).filter((p) => p.status === symbols.L).length;
       var eid = String(e.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       return (
         '<td><strong>' + (e.name || '-') + '</strong>' + (e.time ? '<br><small style="color:#7f8c8d;">' + e.time + '</small>' : '') + '</td>' +
         '<td><span class="evt-type-tag">' + (e.type || '-') + '</span></td>' +
         '<td>' + (e.date || '-') + '</td>' +
         '<td style="text-align:center; font-weight:bold;">' + (e.participants || []).length + '</td>' +
-        '<td style="text-align:center;"><span style="color:var(--success);font-weight:bold;">' + present + '</span> / <span style="color:var(--danger);font-weight:bold;">' + absent + '</span></td>' +
+        '<td style="text-align:center;"><span class="att-status-present" style="font-weight:bold;">' + present + '</span> / <span class="att-status-absent" style="font-weight:bold;">' + absent + '</span> / <span class="att-status-leave" style="font-weight:bold;">' + leave + '</span></td>' +
         '<td>' +
         '<button class="icon-btn" style="color:var(--accent);" title="ترمیم" onclick="editEvent(\'' + eid + '\')"><i class="fas fa-edit"></i></button> ' +
         '<button class="icon-btn delete" title="حذف" onclick="deleteEvent(\'' + eid + '\')"><i class="fas fa-trash"></i></button>' +
@@ -7010,11 +7011,14 @@ function attRenderChunkedRows(cfg) {
 
 function attBuildEventParticipantRow(p, symbols) {
   var uid = String(p.id || '').replace(/'/g, "\\'");
+  var eventKind = attStatusKind(p.status, symbols);
+  var eventStatusClass = eventKind === 'P' ? 'att-status-present'
+    : (eventKind === 'A' ? 'att-status-absent' : (eventKind === 'L' ? 'att-status-leave' : ''));
   return '<tr>' +
     '<td><small>' + (p.id || '') + '</small></td>' +
     '<td><strong>' + (p.name || '') + '</strong><br><small style="color:var(--accent);">' + (p.role || '') + '</small></td>' +
     '<td>' +
-    '<select class="input-control evt-status-select" data-uid="' + (p.id || '') + '" style="width: 150px; font-weight:bold; padding:5px;">' +
+    '<select class="input-control evt-status-select ' + eventStatusClass + '" data-uid="' + (p.id || '') + '" style="width: 150px; font-weight:bold; padding:5px;">' +
     '<option value="' + symbols.P + '" ' + (p.status === symbols.P ? 'selected' : '') + '>حاضر (' + symbols.P + ')</option>' +
     '<option value="' + symbols.A + '" ' + (p.status === symbols.A ? 'selected' : '') + '>غیر حاضر (' + symbols.A + ')</option>' +
     '<option value="' + symbols.L + '" ' + (p.status === symbols.L ? 'selected' : '') + '>رخصت (' + symbols.L + ')</option>' +
@@ -7034,6 +7038,11 @@ function attEnsureEvtStatusDelegation() {
     var uid = sel.getAttribute('data-uid');
     var participant = window.currentEventParticipants.find(function (x) { return x.id === uid; });
     if (participant) participant.status = sel.value;
+    sel.classList.remove('att-status-present', 'att-status-absent', 'att-status-leave');
+    var kind = attStatusKind(sel.value, attGetAttSymbols());
+    if (kind === 'P') sel.classList.add('att-status-present');
+    else if (kind === 'A') sel.classList.add('att-status-absent');
+    else if (kind === 'L') sel.classList.add('att-status-leave');
   });
 }
 
@@ -7157,9 +7166,9 @@ function attBuildReportRowHtml(user, allRecords, fromDate, toDate, symbols) {
     '<td><strong>' + (user.name || uid) + '</strong><br><small style="color:#7f8c8d;">' + uid + '</small></td>' +
     '<td>' + (attGetUserClass(user) || user.type || '—') + '</td>' +
     '<td style="font-weight:bold;">' + totalHours + '</td>' +
-    '<td style="color:var(--success); font-weight:bold;">' + present + '</td>' +
-    '<td style="color:var(--danger); font-weight:bold;">' + absent + '</td>' +
-    '<td style="color:var(--warning); font-weight:bold;">' + leave + '</td>' +
+    '<td class="att-status-present" style="font-weight:bold;">' + present + '</td>' +
+    '<td class="att-status-absent" style="font-weight:bold;">' + absent + '</td>' +
+    '<td class="att-status-leave" style="font-weight:bold;">' + leave + '</td>' +
     '<td style="color:' + pctColor + '; font-weight:bold; font-size:16px;" title="گھنٹہ حاضری (P / P+A+L)">' + percentage + '%</td>' +
     '<td><input type="text" class="input-control" value="' + remarksText.replace(/"/g, '&quot;') + '" placeholder="تبصرہ / کیفیت..." style="border:none; border-bottom:1px solid #ccc; width:100%; border-radius:0; background:transparent;"></td>' +
     '</tr>';

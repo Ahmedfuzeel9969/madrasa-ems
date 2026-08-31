@@ -32,8 +32,8 @@ describe('Attendance P3 Phase 4 — final cleanup', function () {
     it('ATT-P3-D: saved events list uses chunked rendering', function () {
         var js = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
         var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-        expect(js).toMatch(/renderSavedEvents[\s\S]{0,2500}attRenderChunkedRows\(/);
-        expect(js).toMatch(/renderSavedEvents[\s\S]{0,2500}disposeKey:\s*'evt-saved'/);
+        expect(js).toMatch(/renderSavedEvents[\s\S]{0,3400}attRenderChunkedRows\(/);
+        expect(js).toMatch(/renderSavedEvents[\s\S]{0,3400}disposeKey:\s*'evt-saved'/);
         expect(html).toContain('id="evt-saved-chunk-foot"');
     });
 
