@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260826_exams_import_mapping';
+var EMS_SW_BUILD_TAG = '20260831_attendance_buttons_v10';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

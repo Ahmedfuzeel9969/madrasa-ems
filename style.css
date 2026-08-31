@@ -130,6 +130,31 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
   font-size: 12px;
   color: #64748b;
 }
+#att-dashboard-panel .att-cloud-recovery-status {
+  margin: -4px 0 14px;
+  padding: 9px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.7;
+}
+#att-dashboard-panel .att-cloud-recovery-status.is-success {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+#att-dashboard-panel .att-cloud-recovery-status.is-warning {
+  border-color: #fde68a;
+  background: #fffbeb;
+  color: #92400e;
+}
+#att-dashboard-panel .att-cloud-recovery-status.is-error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
 #att-dashboard-panel .att-dash-live-pill {
   display: inline-flex;
   align-items: center;
@@ -165,16 +190,65 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
   color: #64748b;
 }
 
-/* امتحانات — Excel/CSV نتیجہ درآمد */
-.exam-import-modal-content { width: min(980px, 94vw); max-height: 88vh; overflow: auto; }
-.exam-import-modal-content .modal-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:14px; }
-.exam-import-modal-content .modal-header h3 { margin:0; color:var(--primary); }
-.exam-import-modal-content .modal-close { border:0; background:transparent; font-size:28px; line-height:1; cursor:pointer; color:#64748b; }
+/* امتحانات — مستقل امپورٹ / ایکسپورٹ مرکز */
+.exam-data-page { margin-top: 16px; }
+.exam-data-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 24px 28px;
+  margin-bottom: 16px;
+  border-radius: 14px;
+  color: #fff;
+  background: linear-gradient(125deg, #12355b 0%, #185a71 55%, #159a80 100%);
+  box-shadow: 0 12px 30px rgba(18, 53, 91, .18);
+}
+.exam-data-hero h2 { margin: 4px 0 6px; color: #fff; font-size: clamp(22px, 2.4vw, 31px); }
+.exam-data-hero p { margin: 0; color: rgba(255,255,255,.84); line-height: 1.8; }
+.exam-data-hero .btn { flex: 0 0 auto; border-color: rgba(255,255,255,.55); color: #fff; background: rgba(255,255,255,.1); }
+.exam-data-hero .btn:hover { background: rgba(255,255,255,.2); }
+.exam-data-kicker { font-size: 12px; font-weight: 800; letter-spacing: .04em; color: #b9f6e8; }
+.exam-data-context-card { margin-bottom: 16px; border-top: 4px solid #159a80; }
+.exam-data-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
+.exam-data-section-head h3 { margin: 0 0 4px; color: var(--primary); }
+.exam-data-section-head p { margin: 0; color: #64748b; font-size: 13px; line-height: 1.7; }
+.exam-data-context-grid { grid-template-columns: repeat(4, minmax(170px, 1fr)); align-items: end; }
+.exam-data-check-group { justify-content: flex-end; }
+.exam-data-check { min-height: 43px; display: flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 8px; background: #f8fafc; cursor: pointer; }
+.exam-data-check input { width: 18px; height: 18px; accent-color: #159a80; }
+.exam-data-lock-status { display: inline-flex; align-items: center; min-height: 28px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; background: #dcfce7; color: #166534; }
+.exam-data-lock-status.is-locked { background: #fee2e2; color: #991b1b; }
+.exam-data-workspace { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(360px, .8fr); gap: 16px; align-items: start; }
+.exam-data-card { min-width: 0; margin: 0; }
+.exam-data-import-card { border-top: 4px solid #16a34a; }
+.exam-data-export-card { border-top: 4px solid #2563eb; position: sticky; top: 72px; }
+.exam-data-card.is-focused { box-shadow: 0 0 0 3px rgba(21,154,128,.16), 0 12px 26px rgba(15,23,42,.1); }
+.exam-data-note { margin-bottom: 14px; padding: 10px 12px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed; color: #9a3412; font-size: 13px; }
+.exam-export-summary { display: grid; grid-template-columns: repeat(3, minmax(90px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.exam-export-stat { padding: 12px 8px; border: 1px solid #dbeafe; border-radius: 9px; background: #eff6ff; text-align: center; }
+.exam-export-stat strong { display: block; color: #1d4ed8; font-size: 20px; line-height: 1.2; }
+.exam-export-stat span { color: #64748b; font-size: 11px; }
+.exam-data-export-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.exam-export-preview { max-height: 46vh; overflow: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+.exam-export-preview .data-table { margin: 0; font-size: 12px; }
 .exam-import-hint { color:#64748b; font-size:13px; line-height:1.7; }
 .exam-import-errors { margin-top:14px; padding:10px 14px; border:1px solid #fecaca; border-radius:8px; color:#991b1b; background:#fef2f2; font-size:13px; }
 .exam-import-errors ul { margin:7px 0 0; padding-right:20px; }
-.exam-import-modal-content .data-table select.input-control { min-width: 220px; }
-.exam-import-modal-content .data-table small { display:block; margin-top:4px; }
+.exam-data-import-card .data-table select.input-control { min-width: 220px; }
+.exam-data-import-card .data-table small { display:block; margin-top:4px; }
+
+@media (max-width: 1050px) {
+  .exam-data-context-grid { grid-template-columns: repeat(2, minmax(180px, 1fr)); }
+  .exam-data-workspace { grid-template-columns: 1fr; }
+  .exam-data-export-card { position: static; }
+}
+@media (max-width: 640px) {
+  .exam-data-hero { align-items: stretch; flex-direction: column; padding: 20px; }
+  .exam-data-context-grid { grid-template-columns: 1fr; }
+  .exam-data-section-head { flex-direction: column; }
+  .exam-export-summary { grid-template-columns: repeat(2, 1fr); }
+}
 
 #att-dashboard-panel .att-dash-period-sequence-panel {
   margin-bottom: 16px;
@@ -1642,6 +1716,27 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 
 /* پرنٹ کے علاوہ اسکرین پر ٹیکسٹ چھپا رہے گا */
 .print-status-text { display: none; }
+
+/* Unlocked cells normally communicate P/A/L through active buttons. Partial
+   and incomplete states have no matching button, so keep their saved text visible. */
+#smart-register-table td.att-cell-partial .print-status-text,
+#smart-register-table td.att-cell-incomplete .print-status-text {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+/* لاک رجسٹر میں بٹن غیر فعال ہوتے ہیں، اس لیے محفوظ حاضری صاف متن میں دکھائیں۔ */
+#smart-register-table td.col-locked .print-status-text {
+    display: inline-block;
+    min-width: 22px;
+    min-height: 22px;
+    line-height: 22px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+}
+#smart-register-table td.col-locked .att-cell-controls { display: none; }
 
 /* ================= رجسٹر ہیڈر اور کسٹم ٹیچر اسٹائلز (CSS کے آخر میں) ================= */
 #att-on-screen-header { box-shadow: 0 -4px 10px rgba(0,0,0,0.05); }

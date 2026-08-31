@@ -15,6 +15,29 @@ const { inventoryTenantPayload, writeJson } = require('./backup-lib');
 
 const ROOT = path.resolve(__dirname, '..');
 
+/**
+ * Reuse the signed-in Firebase CLI account for read-only/local recovery exports.
+ * firebase-admin otherwise only checks GOOGLE_APPLICATION_CREDENTIALS and misses
+ * the credential file that Firebase CLI has already provisioned on this device.
+ */
+async function setupCliCredentials(projectId) {
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) return true;
+  var os = require('os');
+  var candidates = [
+    path.join(process.env.APPDATA || '', 'configstore', 'firebase-tools.json'),
+    path.join(os.homedir(), '.config', 'configstore', 'firebase-tools.json')
+  ];
+  var cfgPath = candidates.find(function (p) { return p && fs.existsSync(p); });
+  if (!cfgPath) return false;
+  var cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+  var defaults = require(path.join(ROOT, 'node_modules', 'firebase-tools', 'lib', 'defaultCredentials'));
+  var credentialPath = await defaults.getCredentialPathAsync({ user: cfg.user, tokens: cfg.tokens });
+  if (!credentialPath) return false;
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialPath;
+  process.env.GCLOUD_PROJECT = projectId || 'madrasa-mangment-app';
+  return true;
+}
+
 function parseArgs() {
   var opts = { tenant: null, out: null, project: 'madrasa-mangment-app' };
   process.argv.slice(2).forEach(function (arg) {
@@ -96,6 +119,9 @@ async function main() {
     console.error('Usage: node scripts/tenant-firestore-export.js --tenant=TENANT_UID [--out=path]');
     process.exit(1);
   }
+  if (!(await setupCliCredentials(args.project))) {
+    throw new Error('Firebase CLI credentials not found');
+  }
   var admin = loadAdmin(args.project);
   var db = admin.firestore();
   var payload = await exportTenant(db, args.tenant);
@@ -115,4 +141,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { exportTenant: exportTenant, loadAdmin: loadAdmin };
+module.exports = {
+  exportTenant: exportTenant,
+  loadAdmin: loadAdmin,
+  setupCliCredentials: setupCliCredentials
+};

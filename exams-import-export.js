@@ -18,23 +18,60 @@
   function norm(s) { return String(s == null ? '' : s).toLowerCase().replace(/[\s_.\-\/]+/g, '').trim(); }
   function readJson(key, fallback) {
     try {
-      var raw = typeof global.emsCacheGetRaw === 'function' ? global.emsCacheGetRaw(key) : localStorage.getItem(key);
+      var raw = typeof global.emsCacheGetRaw === 'function' ? global.emsCacheGetRaw(key) : null;
+      if ((raw == null || raw === '') && typeof global.emsDurableReadRaw === 'function'
+          && typeof global.emsIsLargeBlobKey === 'function' && global.emsIsLargeBlobKey(key)) {
+        raw = global.emsDurableReadRaw(key);
+      }
+      if (raw == null || raw === '') {
+        raw = typeof global.emsSafeLocalGet === 'function' ? global.emsSafeLocalGet(key) : localStorage.getItem(key);
+      }
       return raw ? JSON.parse(raw) : fallback;
     } catch (e) { return fallback; }
   }
   function dateYmd(v) {
+    if (v instanceof Date && !isNaN(v.getTime())) {
+      return v.getFullYear() + '-' + String(v.getMonth() + 1).padStart(2, '0') + '-' + String(v.getDate()).padStart(2, '0');
+    }
     var s = String(v == null ? '' : v).trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    var ymd = s.match(/^(\d{4})[\/.](\d{1,2})[\/.](\d{1,2})$/);
+    if (ymd) return ymd[1] + '-' + String(ymd[2]).padStart(2, '0') + '-' + String(ymd[3]).padStart(2, '0');
+    var dmy = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/);
+    if (dmy) return dmy[3] + '-' + String(dmy[2]).padStart(2, '0') + '-' + String(dmy[1]).padStart(2, '0');
+    var serial = Number(v);
+    if (isFinite(serial) && serial > 1 && serial < 100000) {
+      if (global.XLSX && global.XLSX.SSF && typeof global.XLSX.SSF.parse_date_code === 'function') {
+        var parsed = global.XLSX.SSF.parse_date_code(serial);
+        if (parsed && parsed.y) return parsed.y + '-' + String(parsed.m).padStart(2, '0') + '-' + String(parsed.d).padStart(2, '0');
+      }
+      var excelDate = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86400000);
+      return excelDate.getUTCFullYear() + '-' + String(excelDate.getUTCMonth() + 1).padStart(2, '0') + '-' + String(excelDate.getUTCDate()).padStart(2, '0');
+    }
     var d = new Date(s);
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    if (!isNaN(d.getTime())) return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     return '';
   }
   function currentContext() {
     return {
-      examName: (($('mrk-exam-name') || {}).value || '').trim(),
-      className: (($('mrk-class') || {}).value || '').trim(),
-      resultDate: (($('mrk-result-date') || {}).value || '').trim()
+      examName: ((($('exam-data-exam-name') || {}).value || ($('mrk-exam-name') || {}).value) || '').trim(),
+      className: ((($('exam-data-class') || {}).value || ($('mrk-class') || {}).value) || '').trim(),
+      resultDate: ((($('exam-data-result-date') || {}).value || ($('mrk-result-date') || {}).value) || '').trim()
     };
+  }
+
+  function contextLocked() {
+    var ctx = currentContext();
+    return !!(ctx.examName && ctx.className && ctx.resultDate
+      && typeof global.exmIsExamLocked === 'function'
+      && global.exmIsExamLocked(ctx.examName, ctx.className, ctx.resultDate));
+  }
+
+  function resultDateOf(row) {
+    if (!row) return '';
+    if (row.resultDate) return dateYmd(row.resultDate);
+    if (row.timestamp) return dateYmd(new Date(row.timestamp));
+    return '';
   }
   function activeBooks(cls) {
     var templates = readJson('ems_exam_templates', []);
@@ -142,6 +179,23 @@
 
   function parseFileLocal(file) {
     var ext = String(file.name || '').split('.').pop().toLowerCase();
+    if (ext === 'json') {
+      return file.text().then(function (text) {
+        var data = JSON.parse(String(text).replace(/^\uFEFF/, ''));
+        if (!Array.isArray(data)) {
+          if (data && Array.isArray(data.records)) data = data.records;
+          else if (data && Array.isArray(data.results)) data = data.results;
+        }
+        if (!Array.isArray(data) || !data.length) throw new Error('JSON میں نتائج کی فہرست موجود نہیں');
+        var headers = [];
+        data.forEach(function (obj) {
+          if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+          Object.keys(obj).forEach(function (k) { if (headers.indexOf(k) < 0) headers.push(k); });
+        });
+        if (!headers.length) throw new Error('JSON ریکارڈ درست نہیں');
+        return { headers: headers, rows: data.map(function (obj) { return headers.map(function (h) { return obj && obj[h] != null ? obj[h] : ''; }); }), sheetName: '', sheetNames: [], rawAoa: [] };
+      });
+    }
     if (ext === 'xlsx' || ext === 'xls') {
       if (typeof global.emsLoadXlsxLib !== 'function') return Promise.reject(new Error('Excel لائبریری دستیاب نہیں'));
       return global.emsLoadXlsxLib().then(function () {
@@ -151,7 +205,7 @@
         return workbookToParsed(wb, wb.SheetNames[0], 0);
       });
     }
-    if (ext !== 'csv') return Promise.reject(new Error('صرف Excel (.xlsx/.xls) یا CSV فائل منتخب کریں'));
+    if (ext !== 'csv') return Promise.reject(new Error('صرف Excel، CSV یا JSON فائل منتخب کریں'));
     return file.text().then(function (text) {
       var rows = csvRows(String(text).replace(/^\uFEFF/, ''));
       if (rows.length < 2) throw new Error('فائل خالی ہے یا کم از کم ایک data row درکار ہے');
@@ -335,28 +389,29 @@
       var id = String(u.id || u.regId || u.uid || '').trim();
       var name = String(u.name || '').trim();
       if (id) byId[id] = u;
-      if (name) byName[name] = u;
+      if (name) byName[name] = Object.prototype.hasOwnProperty.call(byName, name) ? false : u;
     });
     var valid = [], errors = [], seen = Object.create(null);
     S.parsed.rows.forEach(function (row, i) {
       var rowNo = i + (Number(S.parsed.headerRow) || 0) + 2;
       var sid = String(cell(row, idIx) || '').trim();
       var name = String(cell(row, nameIx) || '').trim();
-      var user = (sid && byId[sid]) || (name && byName[name]) || (!sid && name && byName[name]);
+      var user = sid ? byId[sid] : (name ? byName[name] : null);
       var rowClass = String(cell(row, classIx) || defaultClass).trim();
       var exam = String(cell(row, examIx) || defaultExam).trim();
       var resultDate = dateYmd(cell(row, dateIx) || defaultDate);
-      if (!user) return errors.push({ rowNo: rowNo, message: 'طالب علم ID/نام نہیں ملا' });
+      if (!sid && name && byName[name] === false) return errors.push({ rowNo: rowNo, message: 'یہ نام ایک سے زیادہ طلبہ کا ہے؛ درست ID/رول نمبر دیں' });
+      if (!user) return errors.push({ rowNo: rowNo, message: sid ? 'طالب علم ID/رول نمبر نہیں ملا' : 'طالب علم نام نہیں ملا' });
       if (!rowClass) return errors.push({ rowNo: rowNo, message: 'درجہ خالی ہے' });
       if (defaultClass && rowClass !== defaultClass) return errors.push({ rowNo: rowNo, message: 'درجہ منتخب درجے سے مختلف ہے (' + rowClass + ')' });
       if (!exam) return errors.push({ rowNo: rowNo, message: 'امتحان موجود نہیں' });
       if (!resultDate) return errors.push({ rowNo: rowNo, message: 'نتیجے کی تاریخ درست نہیں' });
-      var ukey = String(user.id || sid);
-      if (seen[ukey]) return errors.push({ rowNo: rowNo, message: 'یہ طالب علم فائل میں دوبارہ موجود ہے' });
+      var ukey = [String(user.id || sid), exam, rowClass, resultDate].join('||');
+      if (seen[ukey]) return errors.push({ rowNo: rowNo, message: 'اسی طالب علم، امتحان، درجہ اور تاریخ کی قطار فائل میں دوبارہ موجود ہے' });
       seen[ukey] = true;
       var marks = {}, marked = 0, badBook = '';
       bookCols.forEach(function (b) {
-        var value = mark(cell(row, b.ix), b.max);
+        var value = mark(cell(row, b.ix), bookMaxMarks(rowClass, b.name));
         if (value == null && String(cell(row, b.ix) || '').trim() !== '') { badBook = b.name; return; }
         if (value == null) return;
         marks[b.name] = value;
@@ -380,14 +435,17 @@
   function renderFileStep() {
     var ctx = currentContext();
     var body = $('exam-import-body');
-    body.innerHTML = '<p><b>مرحلہ ۱:</b> Excel یا CSV فائل منتخب کریں۔</p>'
+    if (!body) return;
+    var locked = contextLocked();
+    body.innerHTML = '<p><b>مرحلہ ۱:</b> Excel، CSV یا JSON فائل منتخب کریں۔</p>'
       + '<p class="exam-import-hint">امتحان، درجہ اور تاریخ فائل کے کالم سے بھی آ سکتے ہیں — یا کشف الدرجات میں پہلے سے منتخب کریں۔</p>'
       + '<ul class="exam-import-hint" style="margin:0 0 12px;padding-right:20px;">'
       + '<li>ہر کالم کو اگلے مرحلے میں کسی بھی خانے سے جوڑ سکتے ہیں</li>'
       + '<li>فائل کے کالم کا نام بطور مضمون بھی استعمال ہو سکتا ہے</li>'
       + '<li>Excel میں متعدد شیٹس اور ہیڈر قطار منتخب کریں</li></ul>'
       + (ctx.examName ? '<p>منتخب: <b>' + esc(ctx.examName) + '</b> · ' + esc(ctx.className) + ' · ' + esc(ctx.resultDate) + '</p>' : '<p class="exam-import-hint">(کشف الدرجات میں امتحان/درجہ/تاریخ خالی بھی رہ سکتی ہے اگر فائل میں ہیں)</p>')
-      + '<input id="exam-import-file" type="file" accept=".xlsx,.xls,.csv,.json" class="input-control">';
+      + (locked ? '<div class="exam-data-note"><b>یہ نتیجہ لاک ہے۔</b> ایکسپورٹ کیا جا سکتا ہے مگر اسی دائرے میں امپورٹ محفوظ نہیں ہوگا۔</div>' : '')
+      + '<input id="exam-import-file" type="file" accept=".xlsx,.xls,.csv,.json" class="input-control"' + (locked ? ' disabled' : '') + '>';
     var fileEl = $('exam-import-file');
     if (fileEl) fileEl.onchange = function () {
       var f = this.files && this.files[0];
@@ -411,9 +469,8 @@
   }
 
   function render() {
-    var modal = $('exam-import-modal');
     var body = $('exam-import-body');
-    if (!modal || !body || !S) return;
+    if (!body || !S) return;
     if (!S.parsed) {
       renderFileStep();
       return;
@@ -543,69 +600,103 @@
     if (confirmBtn) confirmBtn.onclick = persist;
   }
 
+  function findExistingResult(rows, result) {
+    var matches = (rows || []).filter(function (x) {
+      return x && x.examName === result.examName && x.class === result.className
+        && String(x.studentId) === String(result.user.id)
+        && resultDateOf(x) === result.resultDate;
+    });
+    matches.sort(function (a, b) { return Number(b.timestamp || 0) - Number(a.timestamp || 0); });
+    return matches[0] || null;
+  }
+
+  function summarizeMarks(className, marks) {
+    var total = 0, grand = 0;
+    Object.keys(marks || {}).forEach(function (bookName) {
+      grand += bookMaxMarks(className, bookName);
+      var value = marks[bookName];
+      if (value != null && value !== 'AB') total += Number(value) || 0;
+    });
+    var percentage = grand > 0 ? (total / grand) * 100 : 0;
+    return { total: total, grand: grand, percentage: percentage, grade: grade(percentage) };
+  }
+
   function persist() {
     var p = S.preview;
     if (!p || !p.valid.length) return;
+    if (typeof global.emsRequireStaffAction === 'function' && !global.emsRequireStaffAction('exams', 'edit')) return;
+    var confirmBtn = $('btn-exam-import-confirm');
+    if (confirmBtn) { confirmBtn.disabled = true; confirmBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> محفوظ ہو رہا ہے…'; }
     var lockFn = global.exmIsExamLocked;
     for (var li = 0; li < p.valid.length; li++) {
       var chk = p.valid[li];
       if (typeof lockFn === 'function' && lockFn(chk.examName, chk.className, chk.resultDate)) {
+        if (confirmBtn) confirmBtn.disabled = false;
         return toast('لاک شدہ نتیجہ: ' + chk.examName + ' — درآمد ممکن نہیں', 'error');
       }
     }
     var db = readJson(EXAMS_KEY, []);
-    var now = Date.now(), inserted = 0, updated = 0;
+    if (!Array.isArray(db)) db = [];
+    var now = Date.now(), inserted = 0, updated = 0, healed = 0;
     p.valid.forEach(function (r) {
-      var marks = r.marks;
-      var bookNames = Object.keys(marks);
-      var total = 0, grand = 0;
-      bookNames.forEach(function (bn) {
-        grand += bookMaxMarks(r.className, bn);
-        var v = marks[bn];
-        if (v != null && v !== 'AB') total += Number(v) || 0;
-      });
-      var percentage = grand > 0 ? (total / grand) * 100 : 0;
-      var existingIndex = db.findIndex(function (x) {
-        return x && x.examName === r.examName && x.class === r.className
-          && String(x.studentId) === String(r.user.id) && String(x.resultDate || '').slice(0, 10) === r.resultDate;
-      });
-      var record = {
-        id: existingIndex >= 0 ? db[existingIndex].id : ('RES' + now + '_' + r.user.id),
+      var existing = findExistingResult(db, r);
+      // جزوی subject import پر پہلے سے موجود دوسرے مضامین محفوظ رہیں۔
+      var marks = Object.assign({}, existing && existing.marks || {}, r.marks || {});
+      var summary = summarizeMarks(r.className, marks);
+      var record = Object.assign({}, existing || {}, {
+        id: existing && existing.id
+          ? existing.id
+          : (typeof global.exmCanonicalResultId === 'function'
+            ? global.exmCanonicalResultId(r.examName, r.className, r.user.id, r.resultDate)
+            : ('RES-' + now + '-' + r.rowNo)),
         examName: r.examName, class: r.className, studentId: r.user.id, studentName: r.user.name || '',
         studentPhoto: r.user.photoBase64 || r.user.photoUrl || '',
-        marks: marks, totalObtained: total, grandTotal: grand,
-        percentage: percentage.toFixed(1), grade: grade(percentage), resultDate: r.resultDate, timestamp: now
-      };
+        marks: marks, totalObtained: summary.total, grandTotal: summary.grand,
+        percentage: summary.percentage.toFixed(1), grade: summary.grade, resultDate: r.resultDate, timestamp: now
+      });
       if (typeof global.emsStampDepartment === 'function') global.emsStampDepartment(record, r.user.departmentId);
-      if (existingIndex >= 0) { db[existingIndex] = record; updated++; } else { db.push(record); inserted++; }
+      if (typeof global.exmUpsertResultByIdentity === 'function') {
+        var upsert = global.exmUpsertResultByIdentity(db, record);
+        if (upsert.inserted) inserted++; else updated++;
+        healed += Number(upsert.duplicatesRemoved || 0);
+      } else if (existing) {
+        var existingIndex = db.indexOf(existing);
+        db[existingIndex] = record; updated++;
+      } else {
+        db.push(record); inserted++;
+      }
     });
     var save = typeof global.emsSaveModuleData === 'function'
       ? global.emsSaveModuleData(EXAMS_KEY, JSON.stringify(db), { mutation: true, autoDelta: true })
       : Promise.resolve(localStorage.setItem(EXAMS_KEY, JSON.stringify(db)));
     Promise.resolve(save).then(function () {
-      toast(inserted + ' نئے اور ' + updated + ' نتائج محفوظ ہو گئے' + (p.errors.length ? '؛ ' + p.errors.length + ' غلط قطاریں چھوڑی گئیں' : ''), p.errors.length ? 'warning' : 'success');
-      global.examCloseResultImport();
-      var refresh = $('btn-generate-mark-sheet');
-      if (refresh) refresh.click();
+      toast(inserted + ' نئے اور ' + updated + ' نتائج محفوظ ہو گئے'
+        + (healed ? '؛ ' + healed + ' پرانی نقلیں ختم ہوئیں' : '')
+        + (p.errors.length ? '؛ ' + p.errors.length + ' غلط قطاریں چھوڑی گئیں' : ''), p.errors.length ? 'warning' : 'success');
+      S = { file: null, parsed: null, map: {}, customBooks: {}, preview: null, workbook: null, sheetNames: [] };
+      render();
+      if (typeof global.examUpdateExportSummary === 'function') global.examUpdateExportSummary();
     }).catch(function (err) {
+      if (confirmBtn) { confirmBtn.disabled = false; confirmBtn.textContent = 'دوبارہ محفوظ کریں'; }
       toast((err && err.message) || 'نتائج محفوظ نہیں ہو سکے', 'error');
     });
   }
 
-  function examExportResultsXlsx(format) {
-    if (typeof global.emsRequireStaffAction === 'function' && !global.emsRequireStaffAction('exams', 'view')) return;
-    var examName = ($('mrk-exam-name') || {}).value || ($('res-exam-name') || {}).value || '';
-    var cls = ($('mrk-class') || {}).value || ($('res-class') || {}).value || '';
-    var resultDate = (($('mrk-result-date') || {}).value || ($('res-result-date') || {}).value || '').trim();
+  function filteredResults() {
+    var ctx = currentContext();
+    var allDates = !!(($('exam-export-all-dates') || {}).checked);
     var db = readJson(EXAMS_KEY, []);
-    var list = db.filter(function (m) {
+    if (!Array.isArray(db)) db = [];
+    return db.filter(function (m) {
       if (!m) return false;
-      if (examName && m.examName !== examName) return false;
-      if (cls && m.class !== cls) return false;
-      if (resultDate && String(m.resultDate || '').slice(0, 10) !== resultDate) return false;
+      if (ctx.examName && m.examName !== ctx.examName) return false;
+      if (ctx.className && m.class !== ctx.className) return false;
+      if (!allDates && ctx.resultDate && resultDateOf(m) !== ctx.resultDate) return false;
       return true;
     });
-    if (!list.length) return toast('برآمد کے لیے کوئی نتیجہ نہیں ملا', 'warning');
+  }
+
+  function exportMatrix(list) {
     var bookSet = {};
     list.forEach(function (r) {
       Object.keys(r.marks || {}).forEach(function (b) { bookSet[b] = true; });
@@ -613,7 +704,7 @@
     var books = Object.keys(bookSet).sort();
     var header = ['ID', 'نام', 'درجہ', 'امتحان', 'تاریخ'].concat(books).concat(['کل حاصل', 'کل ممکن', 'فیصد', 'گریڈ']);
     var rows = list.map(function (r) {
-      var line = [r.studentId, r.studentName, r.class, r.examName, String(r.resultDate || '').slice(0, 10)];
+      var line = [r.studentId, r.studentName, r.class, r.examName, resultDateOf(r)];
       books.forEach(function (b) {
         var v = r.marks && r.marks[b];
         line.push(v == null ? '' : v);
@@ -621,40 +712,183 @@
       line.push(r.totalObtained, r.grandTotal, r.percentage, r.grade);
       return line;
     });
+    return { header: header, rows: rows, books: books };
+  }
+
+  function downloadBlob(content, filename, type) {
+    var blob = new Blob([content], { type: type || 'application/octet-stream' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+    setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); URL.revokeObjectURL(url); }, 100);
+  }
+
+  function examExportResultsXlsx(format) {
+    var list = filteredResults();
+    if (!list.length) return toast('منتخب دائرے میں برآمد کے لیے کوئی نتیجہ نہیں ملا', 'warning');
+    var matrix = exportMatrix(list);
+    var ctx = currentContext();
     var stamp = new Date().toISOString().slice(0, 10);
-    var fname = 'نتائج_' + (cls || 'تمام') + '_' + stamp;
+    var fname = 'نتائج_' + (ctx.className || 'تمام') + '_' + stamp;
     if (format === 'xlsx' && global.XLSX) {
-      var ws = global.XLSX.utils.aoa_to_sheet([header].concat(rows));
+      var ws = global.XLSX.utils.aoa_to_sheet([matrix.header].concat(matrix.rows));
       var wb = global.XLSX.utils.book_new();
       global.XLSX.utils.book_append_sheet(wb, ws, 'Results');
       global.XLSX.writeFile(wb, fname + '.xlsx');
       toast(list.length + ' نتائج Excel میں برآمد ہوئے', 'success');
       return;
     }
+    if (format === 'json') {
+      var clean = list.map(function (r) {
+        var row = Object.assign({}, r);
+        delete row.studentPhoto;
+        return row;
+      });
+      downloadBlob(JSON.stringify(clean, null, 2), fname + '.json', 'application/json;charset=utf-8');
+      toast(list.length + ' نتائج JSON میں برآمد ہوئے', 'success');
+      return;
+    }
     if (typeof global.examDownloadCSV === 'function') {
-      global.examDownloadCSV([header].concat(rows), fname + '.csv');
+      global.examDownloadCSV([matrix.header].concat(matrix.rows), fname + '.csv');
       toast(list.length + ' نتائج CSV میں برآمد ہوئے', 'success');
     }
   }
 
-  global.examOpenResultExport = function () {
+  global.examRunResultExport = function (format) {
     if (typeof global.emsRequireStaffAction === 'function' && !global.emsRequireStaffAction('exams', 'view')) return;
-    var run = function () { examExportResultsXlsx(global.XLSX ? 'xlsx' : 'csv'); };
-    if (global.XLSX) run();
-    else if (typeof global.emsLoadXlsxLib === 'function') global.emsLoadXlsxLib().then(run).catch(function () { examExportResultsXlsx('csv'); });
-    else examExportResultsXlsx('csv');
+    format = format || 'xlsx';
+    if (format !== 'xlsx') return examExportResultsXlsx(format);
+    if (global.XLSX) return examExportResultsXlsx('xlsx');
+    if (typeof global.emsLoadXlsxLib === 'function') {
+      global.emsLoadXlsxLib().then(function () { examExportResultsXlsx('xlsx'); })
+        .catch(function () { toast('Excel لائبریری لوڈ نہیں ہوئی؛ CSV استعمال کریں', 'error'); });
+      return;
+    }
+    toast('Excel لائبریری دستیاب نہیں؛ CSV استعمال کریں', 'error');
   };
+
+  global.examExportResultsXlsx = examExportResultsXlsx;
+
+  function setDataField(id, value) {
+    var el = $(id);
+    if (!el || value == null || value === '') return;
+    el.value = String(value);
+  }
+
+  function focusDataCard(mode) {
+    var importCard = $('exam-import-card');
+    var exportCard = $('exam-export-card');
+    if (importCard) importCard.classList.toggle('is-focused', mode === 'import');
+    if (exportCard) exportCard.classList.toggle('is-focused', mode === 'export');
+  }
+
+  global.examUpdateDataPageState = function () {
+    var locked = contextLocked();
+    var status = $('exam-data-lock-status');
+    var note = $('exam-import-permission-note');
+    if (status) {
+      status.classList.toggle('is-locked', locked);
+      status.innerHTML = locked ? '<i class="fas fa-lock"></i>&nbsp; نتیجہ لاک ہے' : '<i class="fas fa-lock-open"></i>&nbsp; امپورٹ کے لیے کھلا';
+    }
+    if (note) {
+      note.hidden = !locked;
+      note.innerHTML = locked ? '<b>محفوظ کرنا بند ہے:</b> منتخب امتحان، درجہ اور تاریخ لاک ہیں۔ ایکسپورٹ بدستور دستیاب ہے۔' : '';
+    }
+    var file = $('exam-import-file');
+    if (file) file.disabled = locked;
+  };
+
+  global.examUpdateExportSummary = function () {
+    var list = filteredResults();
+    var summary = $('exam-export-summary');
+    var preview = $('exam-export-preview');
+    var classSet = {}, bookSet = {};
+    list.forEach(function (r) {
+      if (r.class) classSet[r.class] = true;
+      Object.keys(r.marks || {}).forEach(function (b) { bookSet[b] = true; });
+    });
+    if (summary) summary.innerHTML = ''
+      + '<div class="exam-export-stat"><strong>' + list.length + '</strong><span>نتائج</span></div>'
+      + '<div class="exam-export-stat"><strong>' + Object.keys(classSet).length + '</strong><span>درجات</span></div>'
+      + '<div class="exam-export-stat"><strong>' + Object.keys(bookSet).length + '</strong><span>مضامین</span></div>';
+    if (!preview) return;
+    if (!list.length) {
+      preview.innerHTML = '<p class="exam-import-hint" style="padding:14px;margin:0;">منتخب دائرے میں کوئی محفوظ نتیجہ نہیں۔</p>';
+      return;
+    }
+    var sample = list.slice(0, 10);
+    preview.innerHTML = '<table class="data-table"><thead><tr><th>ID</th><th>نام</th><th>درجہ</th><th>امتحان</th><th>تاریخ</th><th>فیصد</th></tr></thead><tbody>'
+      + sample.map(function (r) {
+        return '<tr><td>' + esc(r.studentId) + '</td><td>' + esc(r.studentName) + '</td><td>' + esc(r.class) + '</td><td>' + esc(r.examName) + '</td><td>' + esc(resultDateOf(r)) + '</td><td>' + esc(r.percentage) + '%</td></tr>';
+      }).join('') + '</tbody></table>'
+      + (list.length > sample.length ? '<p class="exam-import-hint" style="padding:8px 12px;margin:0;">پہلے 10 نتائج دکھائے گئے؛ فائل میں تمام ' + list.length + ' شامل ہوں گے۔</p>' : '');
+  };
+
+  global.examPrepareDataPage = function (mode) {
+    var seed = global._examDataSeed || {};
+    setDataField('exam-data-exam-name', seed.examName);
+    setDataField('exam-data-class', seed.className);
+    setDataField('exam-data-result-date', seed.resultDate || dateYmd(new Date()));
+    global._examDataSeed = null;
+    if (!S) S = { file: null, parsed: null, map: {}, customBooks: {}, preview: null, workbook: null, sheetNames: [] };
+    render();
+    global.examUpdateDataPageState();
+    global.examUpdateExportSummary();
+    focusDataCard(mode || '');
+    ['exam-data-exam-name', 'exam-data-class', 'exam-data-result-date', 'exam-export-all-dates'].forEach(function (id) {
+      var el = $(id);
+      if (!el || el._examDataBound) return;
+      el._examDataBound = true;
+      el.addEventListener('change', function () {
+        global.examUpdateDataPageState();
+        global.examUpdateExportSummary();
+        if (S && !S.parsed) render();
+      });
+    });
+  };
+
+  global.examOpenDataPage = function (mode) {
+    if (typeof global.emsRequireStaffAction === 'function' && !global.emsRequireStaffAction('exams', 'view')) return;
+    global._examDataSeed = {
+      examName: (($('mrk-exam-name') || {}).value || '').trim(),
+      className: (($('mrk-class') || {}).value || '').trim(),
+      resultDate: (($('mrk-result-date') || {}).value || '').trim()
+    };
+    var nav = document.querySelector('#exam-ribbon-menu [onclick*="exam-win-data"]');
+    if (typeof global.switchExamTab === 'function') global.switchExamTab('exam-win-data', nav);
+    global.examPrepareDataPage(mode || 'import');
+  };
+
+  global.examDownloadResultTemplate = function () {
+    var ctx = currentContext();
+    var books = activeBooks(ctx.className).map(function (b) { return b.name; });
+    var header = ['طالب علم ID / رول نمبر', 'طالب علم کا نام', 'درجہ', 'امتحان', 'نتیجے کی تاریخ'].concat(books);
+    var row = ['', '', ctx.className || '', ctx.examName || '', ctx.resultDate || dateYmd(new Date())].concat(books.map(function () { return ''; }));
+    var run = function () {
+      if (!global.XLSX) {
+        if (typeof global.examDownloadCSV === 'function') global.examDownloadCSV([header, row], 'امتحانی_نتائج_سانچہ.csv');
+        return;
+      }
+      var ws = global.XLSX.utils.aoa_to_sheet([header, row]);
+      var wb = global.XLSX.utils.book_new();
+      global.XLSX.utils.book_append_sheet(wb, ws, 'Results Template');
+      global.XLSX.writeFile(wb, 'امتحانی_نتائج_سانچہ.xlsx');
+    };
+    if (global.XLSX) run();
+    else if (typeof global.emsLoadXlsxLib === 'function') global.emsLoadXlsxLib().then(run).catch(run);
+    else run();
+  };
+
+  global.examOpenResultExport = function () { global.examOpenDataPage('export'); };
 
   global.examOpenResultImport = function () {
     if (typeof global.emsRequireStaffAction === 'function' && !global.emsRequireStaffAction('exams', 'edit')) return;
     S = { file: null, parsed: null, map: {}, customBooks: {}, preview: null, workbook: null, sheetNames: [] };
-    var modal = $('exam-import-modal');
-    if (modal) modal.style.display = 'flex';
-    render();
+    global.examOpenDataPage('import');
   };
   global.examCloseResultImport = function () {
-    var modal = $('exam-import-modal');
-    if (modal) modal.style.display = 'none';
     S = null;
+    var nav = document.querySelector('#exam-ribbon-menu [onclick*="exam-win-marks"]');
+    if (typeof global.switchExamTab === 'function') global.switchExamTab('exam-win-marks', nav);
   };
 })(typeof window !== 'undefined' ? window : globalThis);

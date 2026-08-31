@@ -27,18 +27,39 @@ describe('Teacher timetable period boxes in smart register', function () {
 
     it('rolls period marks into legacy day status', function () {
         var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
+        var statusStart = src.indexOf('function attStatusKind');
+        var statusEnd = src.indexOf('\nfunction attReadTimetablePeriods', statusStart);
         var start = src.indexOf('function attRollupPeriodDayStatus');
         var end = src.indexOf('\nfunction attEnsurePeriodDayMap');
+        expect(statusStart).toBeGreaterThan(-1);
         expect(start).toBeGreaterThan(-1);
-        var fnSrc = src.slice(start, end);
-        var sandbox = {};
+        var fnSrc = src.slice(statusStart, statusEnd) + '\n' + src.slice(start, end);
+        var sandbox = { window: {} };
         vm.runInNewContext(fnSrc + '\nthis.attRollupPeriodDayStatus = attRollupPeriodDayStatus;', sandbox);
         var sym = { P: 'P', A: 'A', L: 'L' };
         expect(sandbox.attRollupPeriodDayStatus({ a: 'P', b: 'P' }, sym)).toBe('P');
+        expect(sandbox.attRollupPeriodDayStatus({ a: 'ح', b: 'P' }, sym)).toBe('P');
+        expect(sandbox.attRollupPeriodDayStatus({ a: 'غ', b: 'A' }, sym)).toBe('A');
+        expect(sandbox.attRollupPeriodDayStatus({ a: 'ر', b: 'L' }, sym)).toBe('L');
         expect(sandbox.attRollupPeriodDayStatus({ a: 'P', b: 'A' }, sym)).toBe('جزوی حاضری');
         expect(sandbox.attRollupPeriodDayStatus({ a: 'L', b: 'L' }, sym)).toBe('L');
         expect(sandbox.attRollupPeriodDayStatus({}, sym)).toBe('');
         expect(sandbox.attRollupPeriodDayStatus({ a: 'P' }, sym, ['a', 'b'])).toBe('نامکمل');
+    });
+
+    it('shows historical Urdu marks with the current device symbols', function () {
+        var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
+        var start = src.indexOf('function attStatusKind');
+        var end = src.indexOf('\nfunction attReadTimetablePeriods', start);
+        var sandbox = { window: {} };
+        vm.runInNewContext(src.slice(start, end), sandbox);
+        var sym = { P: 'P', A: 'A', L: 'L' };
+        expect(sandbox.attDisplayStatus('ح', sym)).toBe('P');
+        expect(sandbox.attDisplayStatus('غ', sym)).toBe('A');
+        expect(sandbox.attDisplayStatus('ر', sym)).toBe('L');
+
+        var css = fs.readFileSync(path.join(ROOT, 'style.css'), 'utf8');
+        expect(css).toMatch(/td\.col-locked \.print-status-text\s*\{[\s\S]{0,220}display:\s*inline-block/);
     });
 
     it('filters timetable periods by teacher and weekday', function () {

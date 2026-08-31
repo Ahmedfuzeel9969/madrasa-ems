@@ -20,6 +20,9 @@
         // Cloud pull is a live data write. Only the verified session tenant is
         // allowed — never auth.uid fallback (staff UID ≠ madrasa) and never a
         // stale persisted tenant from a previous Gmail.
+        if (typeof global.emsGetCanonicalTenantId === 'function') {
+            return global.emsGetCanonicalTenantId();
+        }
         if (global.CURRENT_MADRASA_TENANT_ID) return global.CURRENT_MADRASA_TENANT_ID;
         if (global.EMS_ACTIVE_TENANT_ID) return global.EMS_ACTIVE_TENANT_ID;
         return null;
@@ -212,10 +215,25 @@
         }
     }
 
-    function resolvePullTarget() {
+    function resolvePullTarget(scope) {
         return ensureCloudReady().then(function (dbReady) {
             if (!dbReady) {
                 return { ok: false, reason: 'firestore_unavailable' };
+            }
+            // Department downloads must stay on the verified active tenant.
+            // Do not run the registration-path discovery here: on a partially
+            // booted browser that can select a stale registration candidate,
+            // although this button only needs the active tenant's own records.
+            if (isDeptPullScope(scope)) {
+                var departmentTenant = resolveTenantId();
+                return {
+                    ok: !!departmentTenant,
+                    tenantId: departmentTenant,
+                    path: firestorePathFor(departmentTenant, scope),
+                    hasData: null,
+                    count: null,
+                    source: 'verified_active_tenant'
+                };
             }
             if (typeof global.emsFirestoreFindTenantWithRegistrationData === 'function') {
                 return global.emsFirestoreFindTenantWithRegistrationData();
@@ -323,29 +341,135 @@
         return Promise.resolve({ ok: false, source: 'no_fn', count: 0, error: 'Cloud pull not loaded' });
     }
 
+    function ensureAttendanceCloudRecoveryReady() {
+        // The attendance helper is intentionally deferred after sign-in.  The
+        // old path could run before it loaded and report success after restoring
+        // settings only — no attendance sheets.  A user click must wait for the
+        // real recovery function instead of taking that unsafe fallback.
+        var needsAttendanceHelper = typeof global.emsPullAttendanceFromCloud !== 'function';
+        var needsTimetableReader = typeof global.emsPullAttendanceTimetableFromCloud !== 'function';
+        // Attendance owns its helper in the lazy manifest. This prevents an
+        // unrelated deferred/AI load failure from blocking this button.
+        if ((needsAttendanceHelper || needsTimetableReader)
+            && typeof global.emsLazyLoadModule === 'function') {
+            return global.emsLazyLoadModule('attendance').then(function () {
+                if (typeof global.emsPullAttendanceFromCloud === 'function') return true;
+                throw new Error('attendance_recovery_helper_unavailable');
+            });
+        }
+        var waitForDeferred = typeof global.emsEnsurePostAuthDeferredScripts === 'function'
+            ? global.emsEnsurePostAuthDeferredScripts()
+            : Promise.resolve();
+        return waitForDeferred.then(function () {
+            return true;
+        }).then(function () {
+            if (typeof global.emsPullAttendanceFromCloud === 'function') return true;
+            throw new Error('attendance_recovery_helper_unavailable');
+        });
+    }
+
+    function timetableReasonUrdu(reason) {
+        var reasons = {
+            empty_cloud_timetable: 'Firebase میں درست نظام الاوقات محفوظ نہیں',
+            no_cloud_timetable: 'Firebase میں نظام الاوقات موجود نہیں',
+            timetable_helper_unavailable: 'نظام الاوقات کا ماڈیول لوڈ نہیں ہوا',
+            cloud_timetable_rejected: 'نظام الاوقات اس مدرسے کے اساتذہ سے مطابقت نہیں رکھتا',
+            foreign_cloud_timetable: 'غیر متعلقہ مدرسے کا نظام الاوقات مسترد کر دیا گیا',
+            tenant_mismatch: 'مدرسے کی شناخت مطابقت نہیں رکھتی'
+        };
+        return reasons[reason] || reason || 'نظام الاوقات بحال نہیں ہوا';
+    }
+
+    function updateAttendanceRecoveryStatus(res, tenantId, path) {
+        var el = document.getElementById('att-cloud-recovery-status');
+        if (!el) return;
+        res = res || {};
+        el.title = path || firestorePathFor(tenantId, 'attendance') || '';
+        if (res.ok === false) {
+            el.className = 'att-cloud-recovery-status is-error';
+            el.textContent = 'کلاؤڈ بحالی ناکام: ' +
+                (res.error || timetableReasonUrdu(res.reason) || 'نامعلوم خرابی');
+            return;
+        }
+        var parts = ['کلاؤڈ بحالی مکمل'];
+        parts.push((res.count || 0) + ' حاضری شیٹیں');
+        if (res.rosterCount != null) parts.push((res.rosterCount || 0) + ' استاد/طلبہ');
+        if (res.timetablePulled) {
+            parts.push((res.timetableCount || 0) + ' اسباق');
+        } else {
+            parts.push(timetableReasonUrdu(res.timetableReason));
+        }
+        el.className = 'att-cloud-recovery-status ' + (res.count > 0 ? 'is-success' : 'is-warning');
+        el.textContent = parts.join(' · ');
+    }
+
+    function recoverAttendanceRosterIfNeeded(tenantId) {
+        // Attendance is keyed by registration ids. A partially hydrated local
+        // roster is just as unsafe as an empty one: sheets download correctly,
+        // yet missing teachers/students never appear in Smart Register. This is
+        // an explicit, confirmed cloud-recovery action, so always hydrate the
+        // complete roster from the same verified tenant before its attendance.
+        var localCount = localRecordCount();
+        if (typeof global.emsForceCloudDisasterRecoverySync !== 'function') {
+            return Promise.resolve({
+                ok: false,
+                reason: 'attendance_roster_recovery_unavailable',
+                count: 0,
+                error: 'Registration recovery module not loaded'
+            });
+        }
+        return global.emsForceCloudDisasterRecoverySync(tenantId, {
+            skipProbe: true,
+            source: 'attendance_cloud_pull_roster_recovery'
+        }).then(function (result) {
+            var recoveredCount = localRecordCount();
+            if (!result || result.ok === false || recoveredCount <= 0) {
+                return {
+                    ok: false,
+                    reason: 'attendance_roster_recovery_failed',
+                    count: recoveredCount,
+                    error: result && result.error || 'No registrations were restored'
+                };
+            }
+            return {
+                ok: true,
+                recovered: true,
+                count: recoveredCount,
+                previousLocalCount: localCount
+            };
+        }).catch(function (err) {
+            return {
+                ok: false,
+                reason: 'attendance_roster_recovery_failed',
+                count: 0,
+                error: err && err.message ? err.message : String(err)
+            };
+        });
+    }
+
     function pullAttendance(tenantId, pullOpts) {
         pullOpts = pullOpts || {};
-        if (typeof global.emsPullAttendanceFromCloud === 'function') {
+        return ensureAttendanceCloudRecoveryReady().then(function () {
+            return recoverAttendanceRosterIfNeeded(tenantId);
+        }).then(function (rosterResult) {
+            if (!rosterResult || rosterResult.ok === false) return rosterResult;
             return global.emsPullAttendanceFromCloud(tenantId, {
                 source: pullOpts.source || 'cloud_pull_execute'
+            }).then(function (attendanceResult) {
+                attendanceResult = attendanceResult || {};
+                attendanceResult.rosterRecovered = !!rosterResult.recovered;
+                attendanceResult.rosterCount = rosterResult.count || 0;
+                return attendanceResult;
             });
-        }
-        if (typeof global.emsPullModuleGroup === 'function') {
-            return global.emsPullModuleGroup('Attendance').then(function (r) {
-                return {
-                    ok: true,
-                    count: (r && r.pulled) || 0,
-                    settingsOnly: true,
-                    source: 'attendance_settings_fallback'
-                };
-            });
-        }
-        console.error('[EMS] cloud pull: attendance pull function not loaded');
-        return Promise.resolve({
-            ok: false,
-            source: 'no_fn',
-            count: 0,
-            error: 'Attendance cloud pull not loaded'
+        }).catch(function (err) {
+            console.error('[EMS] cloud pull: attendance recovery helper unavailable', err);
+            return {
+                ok: false,
+                reason: 'attendance_recovery_helper_unavailable',
+                source: 'attendance_recovery_loader',
+                count: 0,
+                error: 'Attendance cloud recovery module could not be loaded'
+            };
         });
     }
 
@@ -438,7 +562,11 @@
                 no_network: 'انٹرنیٹ دستیاب نہیں',
                 not_signed_in: 'پہلے Gmail / Firebase لاگ ان کریں',
                 no_tenant: 'Tenant ID نہیں ملی',
-                firestore_unavailable: 'Firestore دستیاب نہیں'
+                tenant_mismatch: 'مدرسہ شناخت میں اختلاف ہے — غلط مدرسے کا ڈیٹا نہیں لایا گیا',
+                firestore_unavailable: 'Firestore دستیاب نہیں',
+                attendance_recovery_helper_unavailable: 'حاضری بحالی ماڈیول لوڈ نہیں ہو سکا — صفحہ ری لوڈ کریں',
+                attendance_roster_recovery_unavailable: 'استاد و طلبہ کی بحالی کا ماڈیول لوڈ نہیں ہو سکا — صفحہ ری لوڈ کریں',
+                attendance_roster_recovery_failed: 'استاد و طلبہ کی فہرست Firebase سے بحال نہیں ہو سکی'
             };
             global.showToast(reasons[res.reason] || res.error || 'کلاؤڈ بحالی ناکام', 'error');
             return;
@@ -447,11 +575,20 @@
         if (scope === 'attendance') unit = 'حاضری شیٹ';
         else if (scope === 'exams') unit = 'امتحانی آئٹم';
         if (n > 0 && res && res.ok !== false) {
+            if (scope === 'attendance' && Number(res.pendingLocalKept || 0) > 0) {
+                global.showToast(
+                    'کلاؤڈ حاضری دیکھی گئی؛ ' + res.pendingLocalKept
+                    + ' زیرِ التوا مقامی شیٹ محفوظ رکھی گئی، اسے مٹایا نہیں گیا',
+                    'warning'
+                );
+                return;
+            }
             if (scope === 'attendance' && res.timetablePulled) {
                 global.showToast(
                     '✅ کلاؤڈ بحالی مکمل: ' + n + ' حاضری شیٹ · ' +
                     (res.timetableCount || 0) + ' اسباق · ' +
-                    (res.timetableTeacherCount || 0) + ' اساتذہ',
+                    (res.timetableTeacherCount || 0) + ' اساتذہ' +
+                    (res.rosterRecovered ? ' · ' + (res.rosterCount || 0) + ' افراد کی فہرست' : ''),
                     'success'
                 );
             } else if (scope === 'attendance' && res.timetableReason) {
@@ -550,7 +687,7 @@
 
             var pullScope = opts.scope || 'registrations';
 
-            return resolvePullTarget().then(function (target) {
+            return resolvePullTarget(pullScope).then(function (target) {
             if (target && target.reason === 'firestore_unavailable') {
                 throw new Error('Firestore دستیاب نہیں — آن لائن موڈ آن کریں');
             }
@@ -640,6 +777,9 @@
                     scope: pullScope,
                     at: Date.now()
                 });
+                if (pullScope === 'attendance') {
+                    updateAttendanceRecoveryStatus(lastResult, pullTenant, pullPath);
+                }
                 refreshUIAfterPull(lastResult, pullScope);
                 toastOutcome(lastResult, pullTenant, pullPath, pullScope);
                 try {
@@ -654,6 +794,9 @@
                 error: err && err.message ? err.message : String(err),
                 tenantId: resolveTenantId()
             };
+            if ((opts.scope || '') === 'attendance') {
+                updateAttendanceRecoveryStatus(lastResult, lastResult.tenantId, null);
+            }
             toastOutcome(lastResult, lastResult.tenantId);
             return lastResult;
         }).finally(function () {

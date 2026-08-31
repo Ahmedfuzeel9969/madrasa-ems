@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260826_exams_import_mapping">
+    <link rel="stylesheet" href="style.css?v=20260831_attendance_buttons_v10">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -1263,8 +1263,8 @@
                 <p id="att-save-queue-summary" class="att-save-queue-summary">لوڈ…</p>
                 <ul id="att-save-queue-list" class="att-save-queue-list"></ul>
                 <div class="att-save-queue-actions">
-                    <button type="button" id="att-save-queue-retry" class="btn btn-primary btn-sm"><i class="fas fa-redo"></i> دوبارہ بھیجیں</button>
-                    <button type="button" id="att-save-queue-force" class="btn btn-warning btn-sm" title="cloud تنازعہ پر مقامی کاپی دوبارہ بھیجیں"><i class="fas fa-upload"></i> مقامی کاپی دوبارہ بھیجیں</button>
+                    <button type="button" id="att-save-queue-retry" class="btn btn-primary btn-sm" title="صرف ناکام سنک دوبارہ چلتا ہے؛ نئی یا نقل حاضری نہیں بنتی"><i class="fas fa-redo"></i> ناکام سنک دوبارہ چلائیں</button>
+                    <button type="button" id="att-save-queue-force" class="btn btn-warning btn-sm" title="احتیاط: cloud تنازعہ میں دوسرے آلے کی نئی تبدیلی overwrite ہو سکتی ہے"><i class="fas fa-upload"></i> مقامی کاپی غالب کریں</button>
                 </div>
             </div>
 
@@ -1282,10 +1282,11 @@
                                 <span id="att-dash-live-dot"></span>
                                 <span id="att-dash-live-text">مقامی ڈیٹا</span>
                             </span>
-                            <button type="button" class="btn btn-warning btn-sm" id="btn-att-cloud-pull" data-ems-cloud-pull="attendance" data-ems-busy-label="ڈاؤن لوڈ…" data-ems-probe-label="براہ کرم انتظار…" title="Firebase سے حاضری اور نظام الاوقات بحال کریں" aria-label="Pull attendance and timetable data from Firebase cloud"><i class="fas fa-cloud-download-alt" aria-hidden="true"></i> کلاؤڈ سے بحالی</button>
+                            <button type="button" class="btn btn-warning btn-sm" id="btn-att-cloud-pull" data-ems-cloud-pull="attendance" data-ems-busy-label="ڈاؤن لوڈ…" data-ems-probe-label="براہ کرم انتظار…" title="Firebase سے حاضری اور صرف تصدیق شدہ نظام الاوقات بحال کریں" aria-label="Pull attendance and ownership-verified timetable data from Firebase cloud"><i class="fas fa-cloud-download-alt" aria-hidden="true"></i> کلاؤڈ سے بحالی</button>
                             <button type="button" class="btn btn-secondary btn-sm" onclick="window.emsExportAttDashboard()"><i class="fas fa-file-pdf"></i> پرنٹ / PDF</button>
                         </div>
                     </div>
+                    <p id="att-cloud-recovery-status" class="att-cloud-recovery-status" role="status" aria-live="polite">کلاؤڈ بحالی ابھی نہیں چلائی گئی۔</p>
 
                     <div class="att-dash-toolbar form-grid att-dash-filters">
                         <div class="input-group">
@@ -1741,9 +1742,6 @@
                             <button class="tt-view-btn active" id="tt-view-teacher" onclick="ttSetView('teacher')"><i class="fas fa-chalkboard-teacher"></i> استاد وار</button>
                             <button class="tt-view-btn" id="tt-view-class" onclick="ttSetView('class')"><i class="fas fa-layer-group"></i> درجہ وار</button>
                         </div>
-                        <button class="btn btn-outline btn-sm" id="btn-att-tt-push-browser" type="button" onclick="attPushBrowserTimetableToFirebase()" title="اس براؤزر کا نظام الاوقات Firebase میں محفوظ کریں">
-                            <i class="fas fa-cloud-upload-alt"></i> براؤزر سے Firebase
-                        </button>
                         <button class="btn btn-primary btn-sm" onclick="attOpenNewPeriodModal()"><i class="fas fa-plus"></i> نیا سبق</button>
                     </div>
 
@@ -1891,7 +1889,7 @@
                             <div class="input-group"><label>حاضر (Present)</label><input type="text" id="sym-p" class="input-control" value="P"></div>
                             <div class="input-group"><label>غیر حاضر (Absent)</label><input type="text" id="sym-a" class="input-control" value="A"></div>
                             <div class="input-group"><label>رخصت (Leave)</label><input type="text" id="sym-l" class="input-control" value="L"></div>
-                            <button class="btn btn-primary btn-icon-only" style="align-self: flex-end;" onclick="saveSymbols()" title="علامات محفوظ کریں"><i class="fas fa-save"></i></button>
+                            <button class="btn btn-primary btn-icon-only" id="btn-save-att-symbols" type="button" style="align-self: flex-end;" onclick="saveSymbols()" title="علامات محفوظ کریں"><i class="fas fa-save"></i></button>
                         </div>
         
                         <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ccc; padding-bottom: 5px; margin-bottom: 10px;">
@@ -1961,6 +1959,11 @@
                     </div>
                     <div class="input-group"><label>گھنٹہ (مثلاً: پہلا گھنٹہ)</label><input type="text" id="new-period-name" class="input-control"></div>
                     <div class="input-group"><label>مقام (کمرہ/ہال)</label><input type="text" id="new-period-location" class="input-control" placeholder="مثلاً: کمرہ نمبر 3"></div>
+                    <div class="input-group form-grid-full" id="period-recovery-id-area" style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:10px;">
+                        <label>پرانا گھنٹہ شناختی نمبر <small style="color:#64748b;font-weight:normal;">(صرف سابقہ حاضری کی بحالی کے لیے)</small></label>
+                        <input type="text" id="new-period-recovery-id" class="input-control" dir="ltr" autocomplete="off" placeholder="مثلاً: PRD-10768">
+                        <small id="new-period-recovery-id-help" style="display:block; color:#64748b; margin-top:6px;">اگر اس گھنٹے کی پہلے سے حاضری لگی ہوئی ہے تو اس کا پرانا شناختی نمبر یہاں درج کریں۔ اسے صرف بحالی کی فہرست سے کاپی کریں؛ دہرے یا غیر محفوظ نمبر قبول نہیں ہوں گے۔</small>
+                    </div>
                     <div class="input-group"><label>وقت (شروع - ختم)</label><div style="display:flex; gap:5px;"><input type="time" id="new-period-start" class="input-control"><input type="time" id="new-period-end" class="input-control"></div></div>
                     <div class="input-group form-grid-full">
                         <label>ہفتہ وار دن (جن دنوں یہ سبق ہوگا)</label>
@@ -2273,20 +2276,11 @@
                             <button class="reg-tab" onclick="switchExamTab('exam-win-result', this)"><i class="fas fa-trophy"></i> نتائج و رپورٹ کارڈ</button>
                             <button class="reg-tab" onclick="switchExamTab('exam-win-analysis', this)"><i class="fas fa-chart-pie"></i> تجزیہ و شماریات</button>
                             <button class="reg-tab" onclick="switchExamTab('exam-win-promote', this)"><i class="fas fa-arrow-up-right-dots"></i> ترقی (Promotion)</button>
+                            <button class="reg-tab reg-tab-data" onclick="switchExamTab('exam-win-data', this)"><i class="fas fa-database"></i> امپورٹ / ایکسپورٹ</button>
                             <span class="reg-tabs-sep"></span>
                             <button type="button" class="btn btn-warning btn-sm" id="btn-exam-cloud-pull" data-ems-cloud-pull="exams" data-ems-busy-label="ڈاؤن لوڈ…" data-ems-probe-label="براہ کرم انتظار…" title="Firebase سے شعبہ امتحانات کے تمام ذیلی شعبوں کا ڈیٹا (ترتیبات، کتب، ماسٹر شیٹ، نمبرز، لاکس)" aria-label="Pull all exams subsection data from Firebase cloud" style="margin:4px 6px;"><i class="fas fa-cloud-download-alt" aria-hidden="true"></i> کلاؤڈ سے بحالی</button>
                         </div>
                     </div>
-        
-            <div class="modal-overlay" id="exam-import-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="exam-import-title" onclick="if(event.target===this)window.examCloseResultImport()">
-                <div class="modal-content exam-import-modal-content">
-                    <div class="modal-header">
-                        <h3 id="exam-import-title"><i class="fas fa-file-import"></i> نتائج درآمد — کالم میپنگ</h3>
-                        <button type="button" class="modal-close" onclick="window.examCloseResultImport()" aria-label="بند کریں">×</button>
-                    </div>
-                    <div id="exam-import-body"></div>
-                </div>
-            </div>
 
                     <div id="exam-win-settings" class="premium-card exam-tab-content">
                         <div class="dashboard-grid" style="grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));">
@@ -2637,8 +2631,7 @@
                                 <button class="btn btn-primary" id="btn-generate-mark-sheet"><i class="fas fa-table"></i> ایکسل گرڈ تیار کریں</button>
                             </div>
                             <div class="input-group" style="justify-content: flex-end;">
-                                <button class="btn btn-success" id="btn-import-exam-results" onclick="window.examOpenResultImport()"><i class="fas fa-file-import"></i> نتائج درآمد (کالم میپنگ)</button>
-                                <button class="btn btn-outline" id="btn-export-exam-results" onclick="window.examOpenResultExport()"><i class="fas fa-file-export"></i> نتائج برآمد (Excel)</button>
+                                <button class="btn btn-success" id="btn-exam-data-page" onclick="window.examOpenDataPage('import')"><i class="fas fa-database"></i> امپورٹ / ایکسپورٹ صفحہ</button>
                             </div>
                             <div style="grid-column:1/-1;font-size:12px;color:#64748b;">
                                 نیا نتیجہ = نئی تاریخ منتخب کر کے محفوظ کریں۔ پرانا نتیجہ تبدیل کیے بغیر لامحدود تواریخ محفوظ ہو سکتی ہیں۔
@@ -2697,10 +2690,54 @@
         
                         <div class="btn-action-group" style="margin-top: 20px; display:flex; gap:10px; flex-wrap:wrap;">
                             <button class="btn btn-success" id="btn-save-all-marks" style="display:none; flex:1; min-width:240px; font-size:16px; padding:15px;"><i class="fas fa-save"></i> تمام نمبرات ڈیٹا بیس میں محفوظ کریں</button>
-                            <button class="btn btn-outline" id="btn-export-marks" style="display:none;" onclick="window.examExportMarksGrid()"><i class="fas fa-file-excel"></i> گرڈ برآمد (CSV)</button>
-                            <button class="btn btn-outline" id="btn-import-marks" style="display:none;" onclick="window.examOpenResultImport()"><i class="fas fa-file-import"></i> فائل درآمد (میپنگ)</button>
-                            <button class="btn btn-outline btn-sm" id="btn-import-marks-quick" style="display:none;" onclick="document.getElementById('mrk-import-file').click()" title="صرف CSV — فوری گرڈ اپڈیٹ"><i class="fas fa-bolt"></i> فوری CSV</button>
-                            <input type="file" id="mrk-import-file" accept=".csv,text/csv" style="display:none;" onchange="window.examImportMarksCSV(this)">
+                        </div>
+                    </div>
+
+                    <div id="exam-win-data" class="exam-tab-content exam-data-page" style="display:none;">
+                        <div class="exam-data-hero">
+                            <div>
+                                <span class="exam-data-kicker"><i class="fas fa-database"></i> شعبۂ امتحانات</span>
+                                <h2>نتائج امپورٹ / ایکسپورٹ مرکز</h2>
+                                <p>فائل منتخب کرنے سے لے کر کالم میپنگ، توثیق، محفوظ کرنے اور برآمد تک تمام کام ایک ہی صاف صفحے پر۔</p>
+                            </div>
+                            <button type="button" class="btn btn-outline" onclick="window.examCloseResultImport()"><i class="fas fa-arrow-right"></i> کشف الدرجات پر واپس</button>
+                        </div>
+
+                        <div class="premium-card exam-data-context-card">
+                            <div class="exam-data-section-head">
+                                <div><h3><i class="fas fa-filter"></i> نتیجے کا دائرہ</h3><p>یہ انتخاب امپورٹ کے default اور ایکسپورٹ کے filter کے طور پر استعمال ہوگا۔</p></div>
+                                <span id="exam-data-lock-status" class="exam-data-lock-status"></span>
+                            </div>
+                            <div class="form-grid exam-data-context-grid">
+                                <div class="input-group"><label>امتحان</label><select id="exam-data-exam-name" class="input-control exm-dynamic-examnames"></select></div>
+                                <div class="input-group"><label>درجہ</label><select id="exam-data-class" class="input-control exm-dynamic-class"><option value="">تمام / فائل سے</option></select></div>
+                                <div class="input-group"><label>نتیجے کی تاریخ</label><input type="date" id="exam-data-result-date" class="input-control"></div>
+                                <div class="input-group exam-data-check-group"><label class="exam-data-check"><input type="checkbox" id="exam-export-all-dates"> ایکسپورٹ میں تمام تواریخ شامل کریں</label></div>
+                            </div>
+                        </div>
+
+                        <div class="exam-data-workspace">
+                            <section class="premium-card exam-data-card exam-data-import-card" id="exam-import-card">
+                                <div class="exam-data-section-head">
+                                    <div><h3 id="exam-import-title"><i class="fas fa-file-import"></i> نتائج امپورٹ</h3><p>Excel، CSV یا JSON فائل کی کالم میپنگ اور پیش منظر کے بعد محفوظ کریں۔</p></div>
+                                    <button type="button" class="btn btn-outline btn-sm" onclick="window.examDownloadResultTemplate()"><i class="fas fa-download"></i> خالی سانچہ</button>
+                                </div>
+                                <div id="exam-import-permission-note" class="exam-data-note" hidden></div>
+                                <div id="exam-import-body"></div>
+                            </section>
+
+                            <section class="premium-card exam-data-card exam-data-export-card" id="exam-export-card">
+                                <div class="exam-data-section-head">
+                                    <div><h3><i class="fas fa-file-export"></i> نتائج ایکسپورٹ</h3><p>اوپر منتخب دائرے کے مطابق پہلے خلاصہ دیکھیں، پھر مطلوبہ format برآمد کریں۔</p></div>
+                                </div>
+                                <div id="exam-export-summary" class="exam-export-summary"></div>
+                                <div class="exam-data-export-actions">
+                                    <button type="button" class="btn btn-success" onclick="window.examRunResultExport('xlsx')"><i class="fas fa-file-excel"></i> Excel</button>
+                                    <button type="button" class="btn btn-primary" onclick="window.examRunResultExport('csv')"><i class="fas fa-file-csv"></i> CSV</button>
+                                    <button type="button" class="btn btn-warning" onclick="window.examRunResultExport('json')"><i class="fas fa-code"></i> JSON</button>
+                                </div>
+                                <div id="exam-export-preview" class="table-responsive exam-export-preview"></div>
+                            </section>
                         </div>
                     </div>
         
@@ -6137,8 +6174,8 @@
         <h3><i class="fas fa-user-tag"></i> RBAC — سسٹم کردار (Roles)</h3>
         <div id="sa-rbac-roles-list"></div>
         <h3 style="margin-top:20px;"><i class="fas fa-th"></i> اجازت مат्रिकس (Permission Matrix)</h3>
-        <div id="sa-rbac-permissions-matrix"></div>
-    </div>
+    <div id="sa-rbac-permissions-matrix"></div>
+</div>
 
     </div>
 
@@ -6627,20 +6664,20 @@
     <script defer src="tenant-context.js?v=20260705sync1"></script>
     <script defer src="ems-tenant-storage.js?v=20260704pull3"></script>
     <script defer src="ems-firestore-paths.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-cloud-pull.js?v=20260809_att_print_bw"></script>
+    <script defer src="ems-cloud-pull.js?v=20260831_attendance_buttons_v10"></script>
     <script defer src="ems-tenant-resolver.js?v=20260809_tenant_loop"></script>
     <script defer src="department-context.js?v=20260620dept4"></script>
-    <script defer src="ems-sw-update.js?v=20260708_sw_update_v1"></script>
-    <script defer src="core.js?v=20260809_att_print_bw"></script>
+    <script defer src="ems-sw-update.js?v=20260831_attendance_buttons_v10"></script>
+    <script defer src="core.js?v=20260831_attendance_buttons_v10"></script>
     <script defer src="portal-access.js?v=20260809_tenant_loop"></script>
     <script defer src="landing.js?v=20260710_remove_guest_portal"></script>
     <script defer src="ems-offline-session-cache.js?v=20260705desktopfix6"></script>
     <script defer src="ems-offline-policy.js?v=20260707_sync_hardening_v1"></script>
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
-    <script defer src="auth.js?v=20260809_tenant_loop"></script>
+    <script defer src="auth.js?v=20260831_attendance_buttons_v10"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260826_exams_import_mapping"></script>
-    <script defer src="ems-lazy-loader.js?v=20260826_exams_import_mapping"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260831_attendance_buttons_v10"></script>
+    <script defer src="ems-lazy-loader.js?v=20260831_attendance_buttons_v10"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>

@@ -16,6 +16,7 @@
     var ATT_INDEX_KEY = 'ems_att_keys_index';
     var _queueDocIdMap = Object.create(null);
     var _queueMapLoaded = false;
+    var _queueTokenCounter = 0;
     var _syncFailureState = { failed: 0, pending: 0, deadLetter: 0, lastError: null };
 
     function computeBackoffMs(retryCount) {
@@ -139,6 +140,46 @@
             && String(a.tenantId || '') === String(b.tenantId || '');
     }
 
+    function nextQueueToken() {
+        _queueTokenCounter++;
+        return String(Date.now()) + '-' + String(_queueTokenCounter) + '-'
+            + Math.random().toString(36).slice(2, 10);
+    }
+
+    function queueRowMutationAt(row) {
+        row = row || {};
+        var payload = row.payload || {};
+        return Number(
+            (row.meta && row.meta.mutationAt)
+            || payload.clientUpdatedAt
+            || payload.timestamp
+            || row.ts
+        ) || 0;
+    }
+
+    function queueRowPayloadSignature(row) {
+        try {
+            return JSON.stringify({
+                type: row && row.type,
+                payload: row && row.payload,
+                localKey: row && row.localKey,
+                mutationAt: queueRowMutationAt(row)
+            });
+        } catch (e) {
+            return '';
+        }
+    }
+
+    /** True only when the stored row is exactly the mutation that was flushed. */
+    function queueRowsSameStoredVersion(current, flushed) {
+        if (!queueRowsSameIdentity(current, flushed)) return false;
+        if ((current && current.queueToken) || (flushed && flushed.queueToken)) {
+            return !!(current && flushed && current.queueToken && flushed.queueToken
+                && current.queueToken === flushed.queueToken);
+        }
+        return queueRowPayloadSignature(current) === queueRowPayloadSignature(flushed);
+    }
+
     function rowBelongsToActiveTenant(row) {
         if (!row || !row.tenantId) return false;
         var isAtt = isAttendanceQueueType(row.type);
@@ -253,46 +294,78 @@
         return openQueueIdb().then(function (idb) {
             return new Promise(function (resolve, reject) {
                 var tx = idb.transaction([STORE, DEAD_LETTER_STORE], 'readwrite');
-                tx.objectStore(DEAD_LETTER_STORE).add(entry);
-                if (row.id != null) tx.objectStore(STORE).delete(row.id);
+                var queueStore = tx.objectStore(STORE);
+                var moved = false;
+                if (row.id == null) {
+                    tx.objectStore(DEAD_LETTER_STORE).add(entry);
+                    moved = true;
+                } else {
+                    var getReq = queueStore.get(row.id);
+                    getReq.onsuccess = function () {
+                        var current = getReq.result || null;
+                        // A newer save may have replaced this queue id while the
+                        // old request was failing. Never dead-letter/delete it.
+                        if (!queueRowsSameStoredVersion(current, row)) return;
+                        tx.objectStore(DEAD_LETTER_STORE).add(Object.assign({}, current, entry));
+                        queueStore.delete(row.id);
+                        moved = true;
+                    };
+                    getReq.onerror = function () { reject(getReq.error); };
+                }
                 tx.oncomplete = function () {
-                    if (row.type && row.docId != null) {
+                    if (moved && row.type && row.docId != null
+                        && _queueDocIdMap[queueMapKey(row.type, row.docId, row.tenantId)] === row.id) {
                         delete _queueDocIdMap[queueMapKey(row.type, row.docId, row.tenantId)];
                     }
-                    resolve();
+                    resolve({ moved: moved, superseded: !moved });
                 };
                 tx.onerror = function () { reject(tx.error); };
             });
         });
     }
 
+    function isFirestoreNotFoundCode(code) {
+        var normalized = String(code == null ? '' : code).toLowerCase();
+        return normalized === 'not-found'
+            || normalized === 'firestore/not-found'
+            || normalized === '5';
+    }
+
     function markRowFailed(row, res) {
         if (!row) return Promise.resolve();
-        row.retryCount = (row.retryCount || 0) + 1;
-        row.failed = true;
-        row.lastError = (res && res.error) || 'flush_failed';
-        row.lastErrorCode = (res && res.code) || 'FLUSH_ERROR';
-        row.failedAt = Date.now();
-        _syncFailureState.lastError = row.lastError;
-        if (row.retryCount >= MAX_FLUSH_RETRIES) {
-            console.error('[EMS] row moved to dead-letter after max retries', row.type, row.docId, row.lastError);
-            return moveToDeadLetter(row, res).then(function () {
-                return refreshSyncFailureCounts().then(function (counts) {
-                    notifySyncFailureUI({
-                        failed: counts.failed,
-                        pending: counts.pending,
-                        deadLetter: counts.deadLetter,
-                        docId: row.docId,
-                        type: row.type,
-                        error: row.lastError,
-                        code: row.lastErrorCode,
-                        deadLettered: true
+        return findQueueRowByDocId(row.type, row.docId, row.tenantId).then(function (current) {
+            // The failed request is obsolete if a later attendance edit already
+            // occupies this outbox identity. Leave the newer row untouched.
+            if (current && !queueRowsSameStoredVersion(current, row)) {
+                return { superseded: true };
+            }
+            var target = current || row;
+            target.retryCount = (target.retryCount || 0) + 1;
+            target.failed = true;
+            target.lastError = (res && res.error) || 'flush_failed';
+            target.lastErrorCode = (res && res.code) || 'FLUSH_ERROR';
+            target.failedAt = Date.now();
+            _syncFailureState.lastError = target.lastError;
+            if (target.retryCount >= MAX_FLUSH_RETRIES) {
+                console.error('[EMS] row moved to dead-letter after max retries', target.type, target.docId, target.lastError);
+                return moveToDeadLetter(target, res).then(function () {
+                    return refreshSyncFailureCounts().then(function (counts) {
+                        notifySyncFailureUI({
+                            failed: counts.failed,
+                            pending: counts.pending,
+                            deadLetter: counts.deadLetter,
+                            docId: target.docId,
+                            type: target.type,
+                            error: target.lastError,
+                            code: target.lastErrorCode,
+                            deadLettered: true
+                        });
                     });
                 });
-            });
-        }
-        row.nextRetryAt = Date.now() + computeBackoffMs(row.retryCount);
-        return upsertQueueByDocId(row.type, row.docId, row);
+            }
+            target.nextRetryAt = Date.now() + computeBackoffMs(target.retryCount);
+            return upsertQueueByDocId(target.type, target.docId, target);
+        });
     }
 
     function getTenantId() {
@@ -311,6 +384,9 @@
 
     /** Attendance only — never substitute auth.uid for linked teacher/staff Gmail accounts. */
     function getVerifiedAttendanceTenantId() {
+        if (typeof global.emsGetCanonicalTenantId === 'function') {
+            return global.emsGetCanonicalTenantId();
+        }
         if (typeof global.emsGetTenantId === 'function') {
             var t = global.emsGetTenantId();
             if (t) return t;
@@ -345,7 +421,10 @@
             && global.emsIsTenantTransitionInProgress()) {
             return false;
         }
-        if (!getDb() || !getTenantId()) return false;
+        var activeTenant = opts.attendance
+            ? getVerifiedAttendanceTenantId()
+            : getTenantId();
+        if (!getDb() || !activeTenant) return false;
         if (typeof global.emsMayPushToCloud === 'function') {
             if (opts.manual) return global.emsMayPushToCloud({ manual: true });
             if (opts.force) return global.emsMayPushToCloud({ force: true });
@@ -733,6 +812,10 @@
 
     function enqueue(row) {
         row = Object.assign({ ts: Date.now() }, row);
+        // Every physical upsert gets a unique token. A completed older network
+        // request may only dequeue the token it actually sent, never a newer
+        // attendance edit that reused the same tenant/document queue id.
+        row.queueToken = nextQueueToken();
         if (!row.tenantId) row.tenantId = defaultQueueTenantId(row.type);
         return openQueueIdb().then(function (idb) {
             return new Promise(function (resolve, reject) {
@@ -798,6 +881,41 @@
                         if (_queueDocIdMap[k] === id) delete _queueDocIdMap[k];
                     });
                     resolve();
+                };
+                tx.onerror = function () { reject(tx.error); };
+            });
+        });
+    }
+
+    /** Atomically delete only the exact queued mutation that just reached cloud. */
+    function deleteQueueRowIfFlushedVersion(row) {
+        if (!row || row.id == null) {
+            return Promise.resolve({ deleted: false, pendingNewer: false });
+        }
+        return openQueueIdb().then(function (idb) {
+            return new Promise(function (resolve, reject) {
+                var tx = idb.transaction(STORE, 'readwrite');
+                var store = tx.objectStore(STORE);
+                var req = store.get(row.id);
+                var deleted = false;
+                var pendingNewer = false;
+                req.onsuccess = function () {
+                    var current = req.result || null;
+                    if (!current) return;
+                    if (!queueRowsSameStoredVersion(current, row)) {
+                        if (queueRowsSameIdentity(current, row)) pendingNewer = true;
+                        return;
+                    }
+                    store.delete(row.id);
+                    deleted = true;
+                };
+                req.onerror = function () { reject(req.error); };
+                tx.oncomplete = function () {
+                    if (deleted && row.type && row.docId != null
+                        && _queueDocIdMap[queueMapKey(row.type, row.docId, row.tenantId)] === row.id) {
+                        delete _queueDocIdMap[queueMapKey(row.type, row.docId, row.tenantId)];
+                    }
+                    resolve({ deleted: deleted, pendingNewer: pendingNewer });
                 };
                 tx.onerror = function () { reject(tx.error); };
             });
@@ -938,6 +1056,11 @@
             return k.indexOf('periodRecords.') === 0;
         });
         if (hasGranularPeriod && patch.periodRecords) delete patch.periodRecords;
+        // If update() reports a genuinely missing document, its fallback must be
+        // a normal nested attendance document. Passing dotted patch keys to
+        // set(..., {merge:true}) stores them literally and makes saved marks
+        // invisible to Smart Register/dashboard readers.
+        var createDocument = applyAttendancePatchToDocument({}, patch);
         // null sentinel → FieldValue.delete() so cleared cells are removed.
         try {
             if (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) {
@@ -954,14 +1077,23 @@
             (row.meta && row.meta.mutationAt) || patch.clientUpdatedAt || patch.timestamp
         ) || Date.now();
         patch._version = (typeof patch._version === 'number' ? patch._version : 0) + 1;
+        createDocument.clientUpdatedAt = patch.clientUpdatedAt;
+        createDocument._version = patch._version;
+        if (patch.timestamp != null) createDocument.timestamp = patch.timestamp;
+        if (patch.updatedAt != null) createDocument.updatedAt = patch.updatedAt;
         var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
         var forceLocal = !!(row.meta && row.meta.forceLocal);
         return checkRemoteVersion(ref, patch, { forceLocal: forceLocal }).then(function (gate) {
             if (!gate.proceed) return gate;
             return flushOp(ref.update(patch), { type: 'attendance_patch', docId: row.docId }).then(function (res) {
                 if (res && res.ok) return res;
-                return flushOp(ref.set(patch, { merge: true }), {
-                    type: 'attendance_patch', docId: row.docId, fallback: 'set'
+                // Creating a nested document is valid only when update() proves
+                // that the document does not exist. A network/permission error
+                // must remain queued; replacing an existing register from a
+                // partial patch could erase unrelated attendance.
+                if (!isFirestoreNotFoundCode(res && res.code)) return res;
+                return flushOp(ref.set(createDocument, { merge: false }), {
+                    type: 'attendance_patch', docId: row.docId, fallback: 'set_nested_create'
                 });
             });
         });
@@ -1191,6 +1323,35 @@
         if (!activeTid || String(tid) !== String(activeTid)) {
             return Promise.resolve({ ok: false, error: 'tenant_mismatch', code: 'TENANT_MISMATCH', skip: true });
         }
+        // A queued timetable can outlive the browser session that produced it.
+        // Before it reaches Firestore, require the current Attendance module to
+        // prove that every non-empty lesson belongs to this tenant's teacher
+        // roster.  Other module settings retain their normal sync behaviour.
+        if (String(key) === 'ems_att_periods') {
+            var periods;
+            try {
+                periods = typeof value === 'string' ? JSON.parse(value) : value;
+            } catch (ePeriods) {
+                return Promise.resolve({ ok: false, error: 'invalid_timetable_payload', code: 'TIMETABLE_INVALID' });
+            }
+            if (!Array.isArray(periods)) {
+                return Promise.resolve({ ok: false, error: 'invalid_timetable_payload', code: 'TIMETABLE_INVALID' });
+            }
+            if (periods.length) {
+                if (typeof global.attVerifyRemoteTimetableOwnership !== 'function') {
+                    return Promise.resolve({ ok: false, error: 'timetable_verification_unavailable', code: 'TIMETABLE_UNVERIFIED' });
+                }
+                var ownership = global.attVerifyRemoteTimetableOwnership(periods);
+                if (!ownership || ownership.ok !== true) {
+                    return Promise.resolve({
+                        ok: false,
+                        error: 'timetable_teacher_roster_mismatch',
+                        code: 'TIMETABLE_UNVERIFIED',
+                        ownership: ownership || null
+                    });
+                }
+            }
+        }
         if (global.EmsSyncEngine && typeof global.EmsSyncEngine.writeModuleKey === 'function') {
             return flushOp(global.EmsSyncEngine.writeModuleKey(tid, key, value), {
                 type: 'sync_module', docId: key, tenantId: tid
@@ -1274,23 +1435,25 @@
             delete row.lastError;
             delete row.lastErrorCode;
             delete row.failedAt;
-            return listQueue().then(function (rows) {
-                var hit = rows.find(function (r) {
-                    return queueRowsSameIdentity(r, row);
-                });
-                if (hit && hit.id != null) {
-                    return deleteQueueRow(hit.id).then(function () {
-                        return refreshSyncFailureCounts().then(function (counts) {
-                            if (counts.failed === 0) notifySyncFailureUI({ failed: 0, pending: counts.pending, cleared: true });
-                            if (row.type === 'attendance' || row.type === 'attendance_patch') {
-                                try {
-                                    global.dispatchEvent(new CustomEvent('ems:att-save-status', {
-                                        detail: { source: 'outbox', docId: row.docId, type: row.type, synced: true, cloud: 'synced' }
-                                    }));
-                                } catch (eAttOk) { /* ignore */ }
-                            }
-                            return { synced: true };
-                        });
+            return deleteQueueRowIfFlushedVersion(row).then(function (dequeueRes) {
+                if (dequeueRes.deleted) {
+                    return refreshSyncFailureCounts().then(function (counts) {
+                        if (counts.failed === 0) notifySyncFailureUI({ failed: 0, pending: counts.pending, cleared: true });
+                        if (row.type === 'attendance' || row.type === 'attendance_patch') {
+                            try {
+                                global.dispatchEvent(new CustomEvent('ems:att-save-status', {
+                                    detail: { source: 'outbox', docId: row.docId, type: row.type, synced: true, cloud: 'synced' }
+                                }));
+                            } catch (eAttOk) { /* ignore */ }
+                        }
+                        return { synced: true, pendingNewer: false };
+                    });
+                }
+                if (dequeueRes.pendingNewer) {
+                    // The cloud accepted this version, but another local edit is
+                    // already queued. Do not claim the document is fully synced.
+                    return refreshSyncFailureCounts().then(function (counts) {
+                        return { synced: false, queued: true, pendingNewer: true, pending: counts.pending };
                     });
                 }
                 return refreshSyncFailureCounts().then(function () { return { synced: true }; });
@@ -1310,6 +1473,17 @@
     global.emsOfflineQueueUpsert = upsertQueueByDocId;
     global.emsOfflineListQueue = listQueueForActiveTenant;
     global.emsOfflineListQueueAll = listQueue;
+    global.emsOfflineHasPendingAttendanceMutation = function (tenantId, docId) {
+        tenantId = tenantId || getVerifiedAttendanceTenantId();
+        if (!tenantId || !docId) return Promise.resolve(false);
+        return listQueue().then(function (rows) {
+            return (rows || []).some(function (row) {
+                return isAttendanceQueueType(row && row.type)
+                    && String(row.tenantId || '') === String(tenantId)
+                    && String(row.docId || '') === String(docId);
+            });
+        });
+    };
     global.emsOfflineFlushMutationRow = flushMutationRowAndDequeue;
     global.emsOfflineFlushRowInternal = flushRow;
     global.emsOutboxQueueMapKey = queueMapKey;
@@ -1348,8 +1522,9 @@
             tenantId: tenantId,
             meta: env.meta
         };
-        return upsertQueueByDocId(qType, env.docId, queueRow).then(function () {
-            if (!canCloudWrite()) {
+        return upsertQueueByDocId(qType, env.docId, queueRow).then(function (storedRow) {
+            storedRow = storedRow || queueRow;
+            if (!canCloudWrite({ attendance: isAttQueue })) {
                 return normalizeCloudResult({
                     synced: false,
                     offline: true,
@@ -1357,7 +1532,7 @@
                     docId: env.docId
                 }, { localSaved: true, docId: env.docId, type: qType });
             }
-            return flushMutationRowAndDequeue(queueRow).then(function (res) {
+            return flushMutationRowAndDequeue(storedRow).then(function (res) {
                 return normalizeCloudResult(res, { localSaved: true, docId: env.docId, type: qType });
             });
         });
@@ -1441,7 +1616,16 @@
                 reason: 'no_key'
             }, { localSaved: false }));
         }
-        var tenantId = getVerifiedAttendanceTenantId();
+        var tenantId = opts.tenantId || getVerifiedAttendanceTenantId();
+        var activeTenantId = getVerifiedAttendanceTenantId();
+        if (tenantId && activeTenantId && String(tenantId) !== String(activeTenantId)) {
+            return Promise.resolve(normalizeCloudResult({
+                ok: false,
+                reason: 'tenant_mismatch',
+                code: 'TENANT_MISMATCH',
+                queued: true
+            }, { localSaved: !!opts.skipLocalSync, docId: cloudDocId }));
+        }
         if (!tenantId) {
             return Promise.resolve(normalizeCloudResult({
                 ok: false,
@@ -1596,9 +1780,14 @@
                             return { ok: false, reason: 'flush_failed', id: rowId, error: res && res.error, code: res && res.code };
                         });
                     }
-                    return deleteQueueRow(rowId).then(function () {
+                    return deleteQueueRowIfFlushedVersion(row).then(function (dequeueRes) {
                         return refreshSyncFailureCounts().then(function () {
-                            return { ok: true, flushed: 1, id: rowId };
+                            return {
+                                ok: true,
+                                flushed: 1,
+                                id: rowId,
+                                pendingNewer: !!dequeueRes.pendingNewer
+                            };
                         });
                     });
                 });
@@ -1642,7 +1831,7 @@
                         row.failed = false;
                         row.retryCount = 0;
                         delete row.nextRetryAt;
-                        return deleteQueueRow(row.id);
+                        return deleteQueueRowIfFlushedVersion(row);
                     });
                 });
             });
@@ -1664,7 +1853,7 @@
                         flushed: flushed,
                         failed: failed,
                         skipped: skipped,
-                        pending: Math.max(0, (rows || []).filter(rowBelongsToActiveTenant).length - flushed),
+                        pending: counts.pending,
                         queueFailed: counts.failed,
                         deadLetter: counts.deadLetter
                     };
@@ -1847,8 +2036,8 @@
                     delete row.lastErrorCode;
                     delete row.failedAt;
                     delete row.nextRetryAt;
-                    return upsertQueueByDocId(row.type, row.docId, row).then(function () {
-                        return flushMutationRowAndDequeue(row).then(function (res) {
+                    return upsertQueueByDocId(row.type, row.docId, row).then(function (storedRow) {
+                        return flushMutationRowAndDequeue(storedRow || row).then(function (res) {
                             retried++;
                             if (!res || !res.synced) stillFailed++;
                         });

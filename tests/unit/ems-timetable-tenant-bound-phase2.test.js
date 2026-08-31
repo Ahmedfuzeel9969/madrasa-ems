@@ -74,6 +74,12 @@ function loadRaceEnv() {
         sb
     );
 
+    sb.attGetUsers = function () {
+        return [{ id: 'TCH-OWN', name: 'اپنا استاد', type: 'teacher' }];
+    };
+    sb.attUserMatchesType = function (u, type) { return !!u && u.type === type; };
+    sb.attGetUserId = function (u) { return u && u.id; };
+
     var att = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
     var getTenantBlock = att.slice(
         att.indexOf('function getAttendanceTenantId'),
@@ -160,7 +166,9 @@ describe('Phase 2 — TASK 2.1 listener source-tenant binding', function () {
 
     it('A listener writes to ems_t_tenant-A__ems_att_periods', function () {
         env.emsStartAttendanceSync();
-        env.deliverSnapshot(TENANT_A, [{ id: 'P-A', name: 'A Period', days: [1] }]);
+        env.deliverSnapshot(TENANT_A, [{
+            id: 'P-A', name: 'A Period', teacherId: 'TCH-OWN', teacherName: 'اپنا استاد', days: [1]
+        }]);
         expect(env.physical[scopedKey(TENANT_A)]).toBeTruthy();
         expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('P-A');
         expect(env.physical[scopedKey(TENANT_B)]).toBeFalsy();
@@ -169,7 +177,9 @@ describe('Phase 2 — TASK 2.1 listener source-tenant binding', function () {
     it('B listener writes to B partition only', function () {
         env.setBoth(TENANT_B);
         env.emsStartAttendanceSync();
-        env.deliverSnapshot(TENANT_B, [{ id: 'P-B', name: 'B Period', days: [1] }]);
+        env.deliverSnapshot(TENANT_B, [{
+            id: 'P-B', name: 'B Period', teacherId: 'TCH-OWN', teacherName: 'اپنا استاد', days: [1]
+        }]);
         expect(env.physical[scopedKey(TENANT_B)]).toBeTruthy();
         expect(env.physical[scopedKey(TENANT_A)]).toBeFalsy();
     });
@@ -219,7 +229,9 @@ describe('Phase 2 — TASK 2.1 listener source-tenant binding', function () {
         env.emsActivateTenantStorage(TENANT_A);
         await env.awaitReady();
         env.emsStartAttendanceSync();
-        env.deliverSnapshot(TENANT_A, [{ id: 'BACK-A', days: [1] }]);
+        env.deliverSnapshot(TENANT_A, [{
+            id: 'BACK-A', teacherId: 'TCH-OWN', teacherName: 'اپنا استاد', days: [1]
+        }]);
         expect(env.physical[scopedKey(TENANT_A)]).toBeTruthy();
         expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('BACK-A');
     });

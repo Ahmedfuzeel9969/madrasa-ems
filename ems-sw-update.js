@@ -5,7 +5,7 @@
     'use strict';
 
     /** Must match service-worker.js EMS_SW_BUILD_TAG on each deploy. */
-    global.EMS_BUILD_TAG = '20260708_sw_update_v1';
+    global.EMS_BUILD_TAG = '20260831_attendance_buttons_v10';
 
     var _state = {
         bound: false,

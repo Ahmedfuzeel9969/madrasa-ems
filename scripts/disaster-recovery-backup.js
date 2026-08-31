@@ -140,6 +140,10 @@ async function tryTenantExport(tenantId, destDir) {
     var mod = require('./tenant-firestore-export');
     var rc = readJsonSafe('.firebaserc') || {};
     var proj = rc.projects && rc.projects.default ? rc.projects.default : 'madrasa-mangment-app';
+    if (typeof mod.setupCliCredentials === 'function') {
+      var credentialsReady = await mod.setupCliCredentials(proj);
+      if (!credentialsReady) throw new Error('Firebase CLI credentials not found');
+    }
     var admin = mod.loadAdmin(proj);
     var db = admin.firestore();
     var payload = await mod.exportTenant(db, tenantId);

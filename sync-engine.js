@@ -166,6 +166,11 @@
         return true;
     }
 
+    /* See cloud/sync-engine.js: timetable reads require attendance ownership checks. */
+    function isGenericPullKey(key) {
+        return isActiveSyncKey(key) && key !== 'ems_att_periods';
+    }
+
     function notifySyncConflict(key, reason) {
         emitSyncEvent('sync_conflict', { key: key, reason: reason });
         if (typeof global.showToast === 'function') {
@@ -585,7 +590,7 @@
         }
         var db = getDb();
         if (!db || !uid) return Promise.resolve({ pulled: 0 });
-        var keys = Object.keys(SYNC_REGISTRY).filter(isActiveSyncKey);
+        var keys = Object.keys(SYNC_REGISTRY).filter(isGenericPullKey);
         var pulled = 0;
         var chain = Promise.resolve();
         keys.forEach(function (key) {
@@ -606,7 +611,7 @@
         if (typeof global.emsMayPullFromCloud === 'function' && !global.emsMayPullFromCloud(options)) {
             return Promise.resolve({ pulled: 0, source: 'pull_blocked_offline_first' });
         }
-        var keys = (MODULE_KEYS[groupName] || []).filter(isActiveSyncKey);
+        var keys = (MODULE_KEYS[groupName] || []).filter(isGenericPullKey);
         var pulled = 0;
         var chain = Promise.resolve();
         keys.forEach(function (key) {
@@ -634,7 +639,8 @@
                     var cursor = ev.target.result;
                     if (!cursor) return resolve({ hydrated: hydrated });
                     var row = cursor.value;
-                    if (row && row.key && row.value != null && (!filter || filter[row.key])) {
+                    if (row && row.key && row.key !== 'ems_att_periods'
+                        && row.value != null && (!filter || filter[row.key])) {
                         var remoteStr = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
                         applyLocalFromRemote(row.key, remoteStr, state.uid);
                         hydrated++;

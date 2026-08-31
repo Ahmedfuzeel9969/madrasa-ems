@@ -130,6 +130,63 @@
     return '';
   }
 
+  function exmResultIdentityMatches(a, b) {
+    if (!a || !b) return false;
+    return String(a.examName || '').trim() === String(b.examName || '').trim()
+      && String(a.class || '').trim() === String(b.class || '').trim()
+      && String(a.studentId == null ? '' : a.studentId).trim() === String(b.studentId == null ? '' : b.studentId).trim()
+      && exmResultDateOf(a) === exmResultDateOf(b);
+  }
+
+  function exmIdentityHash(value, seed) {
+    var h = seed >>> 0;
+    var str = String(value || '');
+    for (var i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return ('00000000' + h.toString(16)).slice(-8);
+  }
+
+  /** ایک ہی طالب علم/امتحان/درجہ/تاریخ کے لیے ہر آلے پر یکساں ID۔ */
+  window.exmCanonicalResultId = function (examName, cls, studentId, resultDate) {
+    var key = [examName, cls, studentId, resultDate].map(function (v) {
+      return String(v == null ? '' : v).trim().toLocaleLowerCase();
+    }).join('||');
+    return 'RES-' + exmIdentityHash(key, 2166136261) + exmIdentityHash(key, 2246822519);
+  };
+
+  /** Identity-based upsert؛ پرانی duplicate rows بھی اسی save میں ختم ہو جاتی ہیں۔ */
+  window.exmUpsertResultByIdentity = function (rows, record) {
+    rows = Array.isArray(rows) ? rows : [];
+    var matches = [];
+    for (var i = 0; i < rows.length; i++) {
+      if (exmResultIdentityMatches(rows[i], record)) matches.push(i);
+    }
+    if (!matches.length) {
+      record.id = record.id || window.exmCanonicalResultId(record.examName, record.class, record.studentId, exmResultDateOf(record));
+      rows.push(record);
+      return { inserted: true, updated: false, duplicatesRemoved: 0, record: record };
+    }
+    var keepIndex = matches[0];
+    matches.forEach(function (idx) {
+      if (Number(rows[idx] && rows[idx].timestamp || 0) > Number(rows[keepIndex] && rows[keepIndex].timestamp || 0)) keepIndex = idx;
+    });
+    record.id = (rows[keepIndex] && rows[keepIndex].id)
+      || record.id
+      || window.exmCanonicalResultId(record.examName, record.class, record.studentId, exmResultDateOf(record));
+    rows[keepIndex] = record;
+    var removed = 0;
+    for (var ri = matches.length - 1; ri >= 0; ri--) {
+      var duplicateIndex = matches[ri];
+      if (duplicateIndex === keepIndex) continue;
+      rows.splice(duplicateIndex, 1);
+      removed++;
+      if (duplicateIndex < keepIndex) keepIndex--;
+    }
+    return { inserted: false, updated: true, duplicatesRemoved: removed, record: record };
+  };
+
   function exmReadResultDateInput(prefix) {
     var el = document.getElementById(prefix + '-result-date');
     var v = el && el.value ? String(el.value).trim().slice(0, 10) : '';
@@ -160,13 +217,16 @@
   function exmFindStudentResult(dbMarks, examName, cls, studentId, resultDate) {
     var want = resultDate ? String(resultDate).slice(0, 10) : '';
     var legacy = null;
+    var exact = null;
     for (var i = 0; i < (dbMarks || []).length; i++) {
       var m = dbMarks[i];
-      if (!m || m.examName !== examName || m.class !== cls || m.studentId !== studentId) continue;
+      if (!m || m.examName !== examName || m.class !== cls
+          || String(m.studentId == null ? '' : m.studentId) !== String(studentId == null ? '' : studentId)) continue;
       var d = exmResultDateOf(m);
-      if (want && d === want) return m;
-      if (!m.resultDate && !legacy) legacy = m;
+      if (want && d === want && (!exact || Number(m.timestamp || 0) > Number(exact.timestamp || 0))) exact = m;
+      if (!m.resultDate && (!legacy || Number(m.timestamp || 0) > Number(legacy.timestamp || 0))) legacy = m;
     }
+    if (exact) return exact;
     // صرف اس صورت میں پرانا بلا تاریخ ریکارڈ دیں جب پوچھی گئی تاریخ آج ہو / صرف ایک لیگیسی ہو
     if (want && legacy && !legacy.resultDate && exmListResultDates(examName, cls).length <= 1) {
       return legacy;
@@ -282,9 +342,7 @@
   window.exmApplyMarksLockUi = function () {
     var locked = exmIsMarksContextLocked();
     var saveBtn = document.getElementById('btn-save-all-marks');
-    var importBtn = document.getElementById('btn-import-marks');
-    var quickImportBtn = document.getElementById('btn-import-marks-quick');
-    var resultImportBtn = document.getElementById('btn-import-exam-results');
+    var dataPageBtn = document.getElementById('btn-exam-data-page');
     var frBtn = document.getElementById('btn-find-replace');
     var frMarks = document.getElementById('fr-marks');
 
@@ -292,9 +350,9 @@
       saveBtn.disabled = locked;
       saveBtn.title = locked ? 'یہ نتیجہ لاک ہو چکا ہے' : '';
     }
-    if (importBtn) importBtn.disabled = locked;
-    if (quickImportBtn) quickImportBtn.disabled = locked;
-    if (resultImportBtn) resultImportBtn.disabled = locked;
+    if (dataPageBtn) dataPageBtn.title = locked
+      ? 'یہ نتیجہ لاک ہے؛ ایکسپورٹ دستیاب ہے مگر اسی دائرے میں امپورٹ محفوظ نہیں ہوگا'
+      : 'امپورٹ اور ایکسپورٹ کے الگ صفحے پر جائیں';
     if (frBtn) frBtn.disabled = locked;
     if (frMarks) frMarks.disabled = locked;
 
@@ -308,6 +366,7 @@
         inp.title = locked ? 'یہ نتیجہ لاک ہو چکا ہے' : 'آپ اس مضمون کے مجاز استاد نہیں';
       }
     });
+    if (typeof window.examUpdateDataPageState === 'function') window.examUpdateDataPageState();
   };
 
   window.exmToggleExamLock = function () {
@@ -453,7 +512,7 @@
           }
       });
 
-      if (activeTabId === 'exam-win-settings' || activeTabId === 'exam-win-marks' || activeTabId === 'exam-win-schedule' || activeTabId === 'exam-win-template' || activeTabId === 'exam-win-analysis') {
+      if (activeTabId === 'exam-win-settings' || activeTabId === 'exam-win-marks' || activeTabId === 'exam-win-schedule' || activeTabId === 'exam-win-template' || activeTabId === 'exam-win-analysis' || activeTabId === 'exam-win-data') {
           renderSettingsData();
           if (activeTabId === 'exam-win-template' && typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
               try {
@@ -469,6 +528,9 @@
           }
           if (activeTabId === 'exam-win-analysis' && typeof window.exmUpdateAnaScopeUi === 'function') {
               window.exmUpdateAnaScopeUi();
+          }
+          if (activeTabId === 'exam-win-data' && typeof window.examPrepareDataPage === 'function') {
+              window.examPrepareDataPage();
           }
       }
       if (typeof window.examUpdateTplScopePreview === 'function') window.examUpdateTplScopePreview();
@@ -523,30 +585,38 @@
 
   function renderSettingsData() {
 
+      var examTypesRaw = exmReadRaw('ems_exam_types');
       let examTypes = exmReadJson('ems_exam_types', ['ماہانہ امتحان', 'ششماہی امتحان', 'سالانہ امتحان']);
-
-      emsSaveKey('ems_exam_types', JSON.stringify(examTypes));
+      if (!Array.isArray(examTypes) || !examTypes.length) examTypes = ['ماہانہ امتحان', 'ششماہی امتحان', 'سالانہ امتحان'];
+      // صرف پہلی مرتبہ default بنائیں؛ ہر tab refresh پر غیر ضروری cloud mutation نہ کریں۔
+      if (examTypesRaw == null || examTypesRaw === '') emsSaveKey('ems_exam_types', JSON.stringify(examTypes));
 
       
 
       const typeTbody = document.querySelector('#table-exam-names tbody');
 
       if(typeTbody) {
-
-          typeTbody.innerHTML = '';
-
-          examTypes.forEach(type => {
-
-              typeTbody.innerHTML += `<tr><td>${type}</td><td><button class="icon-btn edit" onclick="editExamType('${type}')"><i class="fas fa-edit"></i></button> <button class="icon-btn delete" onclick="deleteExamType('${type}')"><i class="fas fa-trash"></i></button></td></tr>`;
-
+          typeTbody.textContent = '';
+          examTypes.forEach(function (type) {
+              var tr = document.createElement('tr');
+              var nameTd = document.createElement('td');
+              var actionTd = document.createElement('td');
+              var editBtn = document.createElement('button');
+              var deleteBtn = document.createElement('button');
+              nameTd.textContent = type;
+              editBtn.className = 'icon-btn edit'; editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+              deleteBtn.className = 'icon-btn delete'; deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+              editBtn.addEventListener('click', function () { window.editExamType(type); });
+              deleteBtn.addEventListener('click', function () { window.deleteExamType(type); });
+              actionTd.appendChild(editBtn); actionTd.appendChild(document.createTextNode(' ')); actionTd.appendChild(deleteBtn);
+              tr.appendChild(nameTd); tr.appendChild(actionTd); typeTbody.appendChild(tr);
           });
-
       }
 
       document.querySelectorAll('.exm-dynamic-examnames').forEach(sel => {
-
-          let v = sel.value; sel.innerHTML = ''; examTypes.forEach(t => sel.innerHTML += `<option value="${t}">${t}</option>`); sel.value = v;
-
+          let v = sel.value; sel.textContent = '';
+          examTypes.forEach(function (t) { var opt = document.createElement('option'); opt.value = t; opt.textContent = t; sel.appendChild(opt); });
+          sel.value = v;
       });
 
 
@@ -577,9 +647,10 @@
       }
 
       document.querySelectorAll('.exm-dynamic-lib').forEach(sel => {
-
-          let v = sel.value; sel.innerHTML = '<option value="">لائبریری سے کتابیں...</option>'; libBooks.forEach(b => sel.innerHTML += `<option value="${b}">${b}</option>`); sel.value = v;
-
+          let v = sel.value; sel.textContent = '';
+          var first = document.createElement('option'); first.value = ''; first.textContent = 'لائبریری سے کتابیں...'; sel.appendChild(first);
+          libBooks.forEach(function (b) { var opt = document.createElement('option'); opt.value = b; opt.textContent = b; sel.appendChild(opt); });
+          sel.value = v;
       });
 
       if (typeof window.attRefreshPeriodBookSelect === 'function') {
@@ -2061,6 +2132,8 @@
 
 
 
+      if(!examName) return showToast("امتحان منتخب کرنا لازمی ہے!", "error");
+
       if(!cls) return showToast("درجہ منتخب کرنا لازمی ہے!", "error");
 
       if (!resultDate) return showToast("نتیجے کی تاریخ منتخب کریں!", "error");
@@ -2071,7 +2144,7 @@
 
       let classTpl = templates.find(t => t.class === cls);
 
-      if(!classTpl || classTpl.books.length === 0) return showToast("اس درجے کی ماسٹر شیٹ میں کوئی کتاب نہیں ہے۔", "error");
+      if(!classTpl || !Array.isArray(classTpl.books) || classTpl.books.length === 0) return showToast("اس درجے کی ماسٹر شیٹ میں کوئی کتاب نہیں ہے۔", "error");
 
 
 
@@ -2111,7 +2184,7 @@
 
           headerHTML += `<th>${b.name} <br><small>(${b.marks})</small></th>`; 
 
-          currentTotalPossibleMarks += b.marks;
+          currentTotalPossibleMarks += Number(b.marks) || 0;
 
           frBookSelect.innerHTML += `<option value="${b.name}">${b.name}</option>`;
 
@@ -2156,11 +2229,7 @@
       document.getElementById('mrk-filters-area').style.display = 'block';
 
       document.getElementById('btn-save-all-marks').style.display = 'inline-flex';
-      if (document.getElementById('btn-export-marks')) document.getElementById('btn-export-marks').style.display = 'inline-flex';
-      if (document.getElementById('btn-import-marks')) document.getElementById('btn-import-marks').style.display = 'inline-flex';
-      if (document.getElementById('btn-import-marks-quick')) document.getElementById('btn-import-marks-quick').style.display = 'inline-flex';
-      if (document.getElementById('btn-import-exam-results')) document.getElementById('btn-import-exam-results').style.display = 'inline-flex';
-      if (document.getElementById('btn-export-exam-results')) document.getElementById('btn-export-exam-results').style.display = 'inline-flex';
+      if (document.getElementById('btn-exam-data-page')) document.getElementById('btn-exam-data-page').style.display = 'inline-flex';
 
       
 
@@ -2396,6 +2465,8 @@
       const cls = document.getElementById('mrk-class').value;
       const resultDate = exmReadResultDateInput('mrk');
 
+      if (!examName) return showToast("امتحان منتخب کرنا لازمی ہے!", "error");
+      if (!cls) return showToast("درجہ منتخب کرنا لازمی ہے!", "error");
       if (window.exmIsExamLocked(examName, cls, resultDate)) {
           return showToast("یہ نتیجہ لاک ہو چکا ہے — محفوظ نہیں ہو سکتا", "error");
       }
@@ -2420,7 +2491,7 @@
 
           let recordObj = {
 
-              id: generateID('RES'), examName: examName, class: cls, studentId: row.student.id,
+              id: window.exmCanonicalResultId(examName, cls, row.student.id, resultDate), examName: examName, class: cls, studentId: row.student.id,
 
               studentName: row.student.name, studentPhoto: (typeof window.emsGetUserPhotoSrc === 'function' ? window.emsGetUserPhotoSrc(row.student) : (row.student.photoBase64 || row.student.photoUrl || '')),
 
@@ -2439,23 +2510,7 @@
           row.marks = normalizedMarks;
           row.totalObtained = totalObtained;
 
-          let existingIndex = -1;
-          if (existingRecord && existingRecord.id) {
-              existingIndex = dbMarks.findIndex(function (m) { return m && m.id === existingRecord.id; });
-          }
-          if (existingIndex < 0) {
-              existingIndex = dbMarks.findIndex(function (m) {
-                  return m && m.examName === examName && m.class === cls && m.studentId === row.student.id
-                      && exmResultDateOf(m) === resultDate;
-              });
-          }
-
-          if (existingIndex !== -1) {
-              recordObj.id = dbMarks[existingIndex].id;
-              dbMarks[existingIndex] = recordObj;
-          } else {
-              dbMarks.push(recordObj);
-          }
+          window.exmUpsertResultByIdentity(dbMarks, recordObj);
 
       });
 
@@ -2469,8 +2524,9 @@
           } else {
               showToast("نمبرات محفوظ ہو گئے! تاریخ: " + exmFormatResultDateLabel(resultDate), "success");
           }
-      }).catch(function () {
-          showToast("نمبرات محفوظ ہو گئے! تاریخ: " + exmFormatResultDateLabel(resultDate), "success");
+      }).catch(function (err) {
+          console.error('Exam marks save failed', err);
+          showToast("نمبرات محفوظ نہیں ہو سکے — دوبارہ کوشش کریں", "error");
       });
       };
 
@@ -2506,6 +2562,8 @@
       const printArea = document.getElementById('result-printable-area');
 
 
+
+      if(!examName) return showToast("پہلے امتحان منتخب کریں!", "error");
 
       if(!cls) return showToast("پہلے درجہ منتخب کریں!", "error");
 
@@ -2574,7 +2632,7 @@
 
           classResults.forEach(res => {
 
-              let gradeColor = res.grade.includes('راسب') ? 'red' : 'green';
+              let gradeColor = String(res.grade || '').includes('راسب') ? 'red' : 'green';
 
               html += `<tr>
 
@@ -2582,7 +2640,7 @@
 
                           <td><strong>${res.studentName}</strong> <br><small>${res.studentId}</small></td>`;
 
-              tplBooks.forEach(b => { html += `<td>${exmDisplayMark(res.marks[b.name])}</td>`; });
+              tplBooks.forEach(b => { html += `<td>${exmDisplayMark((res.marks || {})[b.name])}</td>`; });
 
               html += `<td>${res.grandTotal}</td><td style="font-weight:bold;">${res.totalObtained}</td><td>${res.percentage}%</td><td style="color:${gradeColor}; font-weight:bold;">${res.grade}</td></tr>`;
 
@@ -2596,7 +2654,7 @@
 
       else if (resType === 'student_card') {
 
-          let res = classResults.find(r => r.studentId === stdId);
+          let res = classResults.find(r => String(r.studentId) === String(stdId));
 
           if(!res) { printArea.innerHTML = '<p>اس طالب علم کا اس تاریخ کا رزلٹ موجود نہیں!</p>'; printArea.style.display='block'; return; }
 
@@ -2837,7 +2895,7 @@
       });
       if (!list.length) { box.innerHTML = '<p style="color:#dc2626;">منتخب کسوٹی پر کوئی نتیجہ موجود نہیں۔</p>'; return; }
 
-      var pass = list.filter(function (r) { return !String(r.grade).includes('راسب'); }).length;
+      var pass = list.filter(exmIsPassingResult).length;
       var fail = list.length - pass;
       var avg = (list.reduce(function (s, r) { return s + parseFloat(r.percentage || 0); }, 0) / list.length).toFixed(1);
 
@@ -2865,7 +2923,7 @@
               '<thead><tr><th>درجہ</th><th>طلبہ</th><th>اوسط %</th><th>کامیاب</th><th>ناکام</th><th>کامیابی %</th></tr></thead><tbody>' +
               classKeys.map(function (c) {
                   var rows = byClass[c];
-                  var p = rows.filter(function (r) { return !String(r.grade).includes('راسب'); }).length;
+                  var p = rows.filter(exmIsPassingResult).length;
                   var f = rows.length - p;
                   var a = rows.reduce(function (s, r) { return s + parseFloat(r.percentage || 0); }, 0) / rows.length;
                   var passPct = rows.length ? Math.round((p / rows.length) * 100) : 0;
@@ -2920,10 +2978,12 @@
 
       var passSegs = [{ label: 'کامیاب', value: pass, color: '#16a34a' }, { label: 'ناکام', value: fail, color: '#dc2626' }];
 
-      // سال بہ سال موازنہ (timestamp سے سال اخذ کر کے اوسط فیصد)
+      // سال بہ سال موازنہ — اصل resultDate کو ترجیح، timestamp صرف legacy fallback۔
       var byYear = {};
       list.forEach(function (r) {
-          var y = r.timestamp ? new Date(r.timestamp).getFullYear() : (new Date().getFullYear());
+          var resultYmd = exmResultDateOf(r);
+          var y = resultYmd ? Number(resultYmd.slice(0, 4))
+              : (r.timestamp ? new Date(r.timestamp).getFullYear() : (new Date().getFullYear()));
           (byYear[y] = byYear[y] || []).push(parseFloat(r.percentage || 0));
       });
       var yearKeys = Object.keys(byYear).sort();
@@ -3003,13 +3063,17 @@
 
       window._promoRows = students.map(function (std) {
           var candidates = dbMarks.filter(function (m) {
-              return m.examName === examName && m.class === fromClass && m.studentId === std.id;
+              return m.examName === examName && m.class === fromClass && String(m.studentId) === String(std.id);
           });
-          candidates.sort(function (a, b) { return (b.timestamp || 0) - (a.timestamp || 0); });
+          candidates.sort(function (a, b) {
+              var dateCmp = exmResultDateOf(b).localeCompare(exmResultDateOf(a));
+              return dateCmp || ((b.timestamp || 0) - (a.timestamp || 0));
+          });
           var res = candidates[0] || null;
-          var passing = res ? !String(res.grade).includes('راسب') : false;
+          var passing = res ? exmIsPassingResult(res) : false;
           return {
               id: std.id, name: std.name,
+              student: std,
               totalObtained: res ? res.totalObtained : '-',
               percentage: res ? res.percentage : '-',
               grade: res ? res.grade : 'نتیجہ نہیں',
@@ -3090,29 +3154,58 @@
       if (!confirm(selected.length + " طلبہ کو '" + fromClass + "' سے '" + toClass + "' میں ترقی دی جائے؟")) return;
 
       var ts = new Date().getTime();
-      var fdb = window.EMS_FIRESTORE_DB;
-      var uid = (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser) ? firebase.auth().currentUser.uid : null;
+      var tenantId = (typeof window.emsGetTenantId === 'function' && window.emsGetTenantId())
+          || window.CURRENT_MADRASA_TENANT_ID || window.EMS_ACTIVE_TENANT_ID || null;
+      if (!tenantId) return showToast("مدرسہ شناخت دستیاب نہیں — ترقی محفوظ نہیں کی گئی", "error");
 
-      if (fdb && uid) {
-          // فائر بیس میں merge — onSnapshot خودکار localStorage اپڈیٹ کرے گا
-          try {
-              var col = fdb.collection('All_Madrasas').doc(uid).collection('Registrations');
-              var batch = fdb.batch();
-              selected.forEach(function (r) {
-                  batch.set(col.doc(r.id), { class: toClass, prevClass: fromClass, promotedAt: ts, promotedFrom: fromClass }, { merge: true });
+      try {
+          if (typeof window.emsRegRepoPersistRegistration === 'function') {
+              // رجسٹریشن SSOT + offline queue؛ filtered exam roster کو کبھی مکمل users blob پر نہ لکھیں۔
+              var saves = selected.map(function (r) {
+                  var source = r.student || {};
+                  var updated = Object.assign({}, source, {
+                      id: r.id,
+                      class: toClass,
+                      prevClass: fromClass,
+                      promotedAt: ts,
+                      promotedFrom: fromClass
+                  });
+                  return window.emsRegRepoPersistRegistration(updated, {
+                      tenantId: tenantId,
+                      status: 'approved',
+                      type: updated.type || 'student',
+                      currentEditingId: r.id,
+                      isEditingRejected: false
+                  }).then(function (res) {
+                      if (res && res.ok === false) throw new Error(res.reason || 'registration_save_failed');
+                      return res;
+                  });
               });
-              await batch.commit();
-          } catch (err) {
-              console.error('Promotion cloud save failed', err);
-              showToast("کلاؤڈ میں محفوظ نہیں ہو سکا: " + err.message, "error");
-              return;
+              await Promise.all(saves);
+          } else {
+              var fdb = window.EMS_FIRESTORE_DB;
+              if (fdb) {
+                  var col = fdb.collection('All_Madrasas').doc(tenantId).collection('Registrations');
+                  var batch = fdb.batch();
+                  selected.forEach(function (r) {
+                      batch.set(col.doc(String(r.id)), { class: toClass, prevClass: fromClass, promotedAt: ts, promotedFrom: fromClass }, { merge: true });
+                  });
+                  await batch.commit();
+              } else {
+                  var users = typeof window.emsGetUsersMerged === 'function' ? window.emsGetUsersMerged() : [];
+                  var map = {}; selected.forEach(function (r) { map[String(r.id)] = true; });
+                  users.forEach(function (u) {
+                      if (u.type === 'student' && map[String(u.id)]) {
+                          u.prevClass = u.class; u.class = toClass; u.promotedAt = ts; u.promotedFrom = fromClass;
+                      }
+                  });
+                  await emsSaveKey(DB.users, JSON.stringify(users));
+              }
           }
-      } else {
-          // آف لائن fallback — مقامی ریکارڈ اپڈیٹ
-          var users = exmGetUsers();
-          var map = {}; selected.forEach(function (r) { map[r.id] = true; });
-          users.forEach(function (u) { if (u.type === 'student' && map[u.id]) { u.prevClass = u.class; u.class = toClass; u.promotedAt = ts; } });
-          emsSaveKey(DB.users, JSON.stringify(users));
+      } catch (err) {
+          console.error('Promotion save failed', err);
+          showToast("ترقی محفوظ نہیں ہو سکی: " + (err && err.message ? err.message : 'نامعلوم خرابی'), "error");
+          return;
       }
 
       showToast(selected.length + " طلبہ کو کامیابی سے ترقی دے دی گئی!", "success");
@@ -3159,7 +3252,7 @@ document.getElementById('btn-exm-lock-toggle')?.addEventListener('click', functi
 /**
  * Manual cloud pull — ALL Exams department keys:
  * settings (types/books), master sheet/templates, marks, locks.
- * forceFull + forceApply so dirty local cannot block cloud recovery.
+ * Full read with conflict protection؛ dirty/newer local work is never silently overwritten.
  */
 window.EMS_EXAMS_CLOUD_KEYS = [
   'ems_full_exams',
@@ -3204,8 +3297,19 @@ function exmPullModuleDataFallback(tenantId, key) {
     var d = doc.data() || {};
     if (d.data == null) return false;
     var remoteStr = typeof d.data === 'string' ? d.data : JSON.stringify(d.data);
-    if (window.EmsDirect && typeof window.EmsDirect.applyRemote === 'function') {
-      return window.EmsDirect.applyRemote(key, remoteStr, true);
+    if (window.EmsCachePolicy && typeof window.EmsCachePolicy.resolvePullConflict === 'function') {
+      var localStr = exmReadRaw(key) || '';
+      var remoteAt = typeof window.EmsCachePolicy.remoteDocTimestamp === 'function'
+        ? window.EmsCachePolicy.remoteDocTimestamp(d)
+        : 0;
+      var decision = window.EmsCachePolicy.resolvePullConflict(key, localStr, remoteStr, remoteAt);
+      if (!decision.apply) {
+        if (decision.markSync && typeof window.EmsCachePolicy.markSynced === 'function') {
+          window.EmsCachePolicy.markSynced(key, remoteAt || Date.now());
+          return true;
+        }
+        return false;
+      }
     }
     try {
       if (window._emsOriginalSetItem) {
@@ -3214,6 +3318,9 @@ function exmPullModuleDataFallback(tenantId, key) {
         localStorage.setItem(key, remoteStr);
       }
       if (typeof window.emsCacheInvalidate === 'function') window.emsCacheInvalidate(key);
+      if (window.EmsCachePolicy && typeof window.EmsCachePolicy.markSynced === 'function') {
+        window.EmsCachePolicy.markSynced(key, Date.now());
+      }
       return true;
     } catch (eWrite) {
       return false;

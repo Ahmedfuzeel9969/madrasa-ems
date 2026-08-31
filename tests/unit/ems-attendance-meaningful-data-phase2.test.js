@@ -159,13 +159,23 @@ describe('Phase 2 — load/reconcile paths (TASK 2.2)', function () {
         expect(merged.periodRecords.t1['5'].p1).toBe('A');
     });
 
-    it('cleared local sheet beats older remote marks on equal-or-older remote ts', function () {
+    it('equal-timestamp full cloud acknowledgement repairs an incomplete local snapshot', function () {
         var h = loadMeaningfulHelpers();
         var local = h.attNormalizeRecord({
             timestamp: 2000,
-            records: {},
-            periodRecords: {}
+            periodRecords: { t1: { '5': { p1: 'P' } } }
         });
+        var remote = h.attNormalizeRecord({
+            timestamp: 2000,
+            periodRecords: { t1: { '5': { p1: 'P', p2: 'A' } } }
+        });
+        var merged = h.attReconcileAttendanceRecord(local, remote);
+        expect(merged.periodRecords.t1['5'].p2).toBe('A');
+    });
+
+    it('newer cleared local sheet still beats stale remote marks', function () {
+        var h = loadMeaningfulHelpers();
+        var local = h.attNormalizeRecord({ timestamp: 2001, records: {}, periodRecords: {} });
         var remote = h.attNormalizeRecord({
             timestamp: 2000,
             periodRecords: { t1: { '5': { p1: 'P' } } }
@@ -187,6 +197,6 @@ describe('Phase 2 — load/reconcile paths (TASK 2.2)', function () {
         expect(js).toMatch(/attReadSheetByKeyAsync[\s\S]{0,400}attHelperHasMeaningfulSheet/);
         var reportStart = js.indexOf('global.emsAttCollectReportSheetsAsync');
         var reportBlock = js.slice(reportStart, reportStart + 900);
-        expect(reportBlock).toMatch(/attReadSheetByKeyAsync/);
+        expect(reportBlock).toMatch(/emsAttCollectMonthSheetsAsync/);
     });
 });

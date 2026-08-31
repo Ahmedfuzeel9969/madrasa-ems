@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260826_exams_import_mapping';
+    var CACHE_BUST = '20260831_attendance_buttons_v10';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 
@@ -24,7 +24,7 @@
             'ems-import-queue.js',
             'registration-ui.js'
         ],
-        attendance: ['att-metrics.js', 'att-dashboard.js', 'att-save-status.js', 'attendance.js', 'att-collective.js'],
+        attendance: ['attendance-helper.js', 'att-metrics.js', 'att-dashboard.js', 'att-save-status.js', 'attendance.js', 'att-collective.js'],
         exams: ['ems-import-export.js', 'ems-import-templates.js', 'exams.js', 'exams-import-export.js'],
         curriculum: ['curriculum.js'],
         training: ['training.js'],

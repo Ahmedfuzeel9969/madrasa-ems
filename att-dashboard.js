@@ -5,6 +5,7 @@
     'use strict';
 
     var _attDashInflight = null;
+    var _attDashManualRefreshInflight = null;
     var _attDashFilterTimer = null;
     var _attDashRenderGen = 0;
     var _attSheetCache = { month: null, tenantId: null, sheets: null };
@@ -532,14 +533,24 @@
     }
 
     function attDashCollectSheetsAsync(monthStr, force) {
-        var tenantId = typeof global.emsGetTenantId === 'function'
-            ? global.emsGetTenantId()
-            : global.CURRENT_MADRASA_TENANT_ID;
+        var tenantId = typeof global.emsGetCanonicalTenantId === 'function'
+            ? global.emsGetCanonicalTenantId()
+            : (typeof global.emsGetTenantId === 'function'
+                ? global.emsGetTenantId()
+                : global.CURRENT_MADRASA_TENANT_ID);
         // No identified madrasa: never briefly reuse sheets from an earlier account.
         if (!tenantId) return Promise.resolve([]);
         if (!force && _attSheetCache.month === monthStr
             && _attSheetCache.tenantId === tenantId && _attSheetCache.sheets) {
             return Promise.resolve(_attSheetCache.sheets);
+        }
+        if (typeof global.emsAttCollectMonthSheetsAsync === 'function') {
+            return global.emsAttCollectMonthSheetsAsync(monthStr, { force: !!force }).then(function (sheets) {
+                _attSheetCache.month = monthStr;
+                _attSheetCache.tenantId = tenantId;
+                _attSheetCache.sheets = sheets || [];
+                return _attSheetCache.sheets;
+            });
         }
         var listFn = typeof global.emsOfflineListAttendanceKeysAsync === 'function'
             ? global.emsOfflineListAttendanceKeysAsync
@@ -1695,8 +1706,29 @@
         if (btn && !btn._attDashBound) {
             btn._attDashBound = true;
             btn.addEventListener('click', function () {
-                attDashInvalidateSheetCache();
-                global.renderAttDashboard();
+                if (_attDashManualRefreshInflight) return _attDashManualRefreshInflight;
+                if (!btn._attDashPrevHtml) btn._attDashPrevHtml = btn.innerHTML;
+                btn.disabled = true;
+                btn.setAttribute('aria-busy', 'true');
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> تازہ ہو رہا ہے…';
+                // If an automatic render is already running, let it finish and
+                // then perform the user's explicit fresh read. Previously the
+                // click merely returned the old in-flight promise and appeared broken.
+                var waitForCurrent = _attDashInflight || Promise.resolve();
+                _attDashManualRefreshInflight = Promise.resolve(waitForCurrent)
+                    .catch(function () { /* the manual refresh still runs */ })
+                    .then(function () {
+                        attDashInvalidateSheetCache();
+                        return global.renderAttDashboard();
+                    })
+                    .finally(function () {
+                        _attDashManualRefreshInflight = null;
+                        btn.disabled = false;
+                        btn.setAttribute('aria-busy', 'false');
+                        btn.innerHTML = btn._attDashPrevHtml || '<i class="fas fa-sync-alt"></i> تجزیات تازہ کریں';
+                        delete btn._attDashPrevHtml;
+                    });
+                return _attDashManualRefreshInflight;
             });
         }
         ['att-dash-date', 'att-dash-role-filter', 'att-dash-class-filter', 'att-dash-period-filter', 'att-dash-calc-mode'].forEach(function (id) {
@@ -1794,6 +1826,9 @@
         menu.addEventListener('click', function (ev) {
             var btn = ev.target && ev.target.closest ? ev.target.closest('button.reg-tab') : null;
             if (!btn || !menu.contains(btn)) return;
+            // Normal inline onclick already handled this click. Delegation is
+            // only a fallback for environments that do not compile inline handlers.
+            if (typeof btn.onclick === 'function') return;
             var onclick = btn.getAttribute('onclick') || '';
             var m = onclick.match(/switchAttTab\s*\(\s*['"]([^'"]+)['"]/);
             if (!m) return;

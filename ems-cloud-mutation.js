@@ -151,7 +151,10 @@
             meta: row.meta
         };
 
-        return global.emsOfflineQueueUpsert(row.type, row.docId, queueRow).then(function () {
+        return global.emsOfflineQueueUpsert(row.type, row.docId, queueRow).then(function (storedRow) {
+            // Queue upsert may have coalesced an older offline patch with this
+            // edit. Flush that exact stored version, not the unmerged input.
+            storedRow = storedRow || queueRow;
             if (!canPushNow({ mutation: true })) {
                 var offlineRes = typeof global.emsNormalizeCloudResult === 'function'
                     ? global.emsNormalizeCloudResult({
@@ -180,7 +183,7 @@
                 queuedRes.op = row.op;
                 return queuedRes;
             }
-            return global.emsOfflineFlushMutationRow(queueRow).then(function (flushRes) {
+            return global.emsOfflineFlushMutationRow(storedRow).then(function (flushRes) {
                 var synced = !!(flushRes && flushRes.synced);
                 if (synced) {
                     notifyRegistrationWrite(row);

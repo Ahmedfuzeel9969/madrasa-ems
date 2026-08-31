@@ -500,7 +500,8 @@ window.emsStartSyncEngine = function (user, options) {
 };
 
 /** ماڈیول کھلنے پر — آف لائن فرسٹ: مقامی IDB؛ ورنہ Firestore pull */
-window.emsPullModuleGroup = function (groupName) {
+window.emsPullModuleGroup = function (groupName, options) {
+    options = options || {};
     if (typeof window.emsMayPullFromCloud === 'function' && !window.emsMayPullFromCloud()) {
         if (typeof window.emsOfflineModuleStoreHydrateGroup === 'function') {
             return window.emsOfflineModuleStoreHydrateGroup(groupName);
@@ -508,14 +509,14 @@ window.emsPullModuleGroup = function (groupName) {
         return Promise.resolve({ pulled: 0, source: 'local_hydrate_only' });
     }
     if (window.EmsDirect && typeof window.EmsDirect.pullGroup === 'function') {
-        return window.EmsDirect.pullGroup(groupName);
+        return window.EmsDirect.pullGroup(groupName, options);
     }
     if (!window.EmsSyncEngine || typeof window.EmsSyncEngine.pullModuleGroup !== 'function') {
         return Promise.resolve({ pulled: 0 });
     }
     var tenantId = (window.emsGetTenantId && window.emsGetTenantId()) || window.CURRENT_MADRASA_TENANT_ID;
     if (!tenantId) return Promise.resolve({ pulled: 0 });
-    return window.EmsSyncEngine.pullModuleGroup(tenantId, groupName);
+    return window.EmsSyncEngine.pullModuleGroup(tenantId, groupName, options);
 };
 
 window.waitForDb = function (callback, onFailure) {

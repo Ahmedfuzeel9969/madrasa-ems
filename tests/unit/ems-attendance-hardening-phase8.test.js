@@ -8,8 +8,11 @@ const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 describe('attendance hardening phase 8', function () {
     it('uses edit time rather than flush time for attendance conflict checks', function () {
         const src = fs.readFileSync(path.join(ROOT, 'ems-offline-write.js'), 'utf8');
-        expect(src).toContain('row.meta && row.meta.mutationAt');
-        expect(src).toMatch(/flushAttendancePatchRow[\s\S]{0,2200}mutationAt[\s\S]{0,800}checkRemoteVersion/);
+        const start = src.indexOf('function flushAttendancePatchRow');
+        const end = src.indexOf('\n    function flushModuleItemRow', start);
+        const block = src.slice(start, end);
+        expect(block).toContain('row.meta && row.meta.mutationAt');
+        expect(block).toMatch(/mutationAt[\s\S]*checkRemoteVersion/);
         expect(src).toMatch(/stampCloudVersion[\s\S]{0,500}out\.timestamp/);
     });
 

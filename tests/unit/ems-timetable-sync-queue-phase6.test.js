@@ -31,7 +31,8 @@ function loadOutboxEnv() {
                 return Promise.resolve(true);
             },
             getRegistryModule: function () { return 'Attendance'; }
-        }
+        },
+        attVerifyRemoteTimetableOwnership: function () { return { ok: true }; }
     };
     sb.global = sb;
     sb.globalThis = sb;
@@ -219,6 +220,23 @@ describe('Phase 6 — TASK 6.2 offline tenant-switch safety', function () {
         expect(res.ok).toBe(true);
         expect(env._lastFlush.tenantId).toBe(TENANT_A);
         expect(env._lastFlush.key).toBe(PERIODS_KEY);
+    });
+
+    it('flushSyncModuleRow blocks a queued timetable that no longer matches the active teacher roster', async function () {
+        env.setBoth(TENANT_A);
+        env.attVerifyRemoteTimetableOwnership = function () {
+            return { ok: false, reason: 'teacher_roster_mismatch' };
+        };
+        var row = {
+            type: 'sync_module',
+            docId: PERIODS_KEY,
+            tenantId: TENANT_A,
+            payload: { key: PERIODS_KEY, value: '[{"id":"FOREIGN-1","teacherId":"OTHER"}]' }
+        };
+        var res = await env.flushSyncModuleRow(row);
+        expect(res.ok).toBe(false);
+        expect(res.code).toBe('TIMETABLE_UNVERIFIED');
+        expect(env._lastFlush).toBeFalsy();
     });
 
     it('switch A→B→A: A row survives and flushes only when A active', async function () {

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260711_exams_masterpiece';
+    var CACHE_BUST = '20260831_attendance_buttons_v10';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,

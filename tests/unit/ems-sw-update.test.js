@@ -38,8 +38,10 @@ describe('Phase 4 P3 — service worker update handling', function () {
 
     it('index.html loads ems-sw-update.js before core.js', function () {
         var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+        var app = fs.readFileSync(path.join(ROOT, 'ems-sw-update.js'), 'utf8');
+        var appTag = app.match(/EMS_BUILD_TAG\s*=\s*'([^']+)'/);
         var updIdx = html.indexOf('ems-sw-update.js');
-        var coreIdx = html.indexOf('core.js?v=20260708_sw_update_v1');
+        var coreIdx = html.indexOf('core.js?v=' + (appTag && appTag[1]));
         expect(updIdx).toBeGreaterThan(-1);
         expect(coreIdx).toBeGreaterThan(updIdx);
     });

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260826_exams_import_mapping';
+    var CACHE_BUST = '20260831_attendance_buttons_v10';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;
@@ -231,6 +231,18 @@
                 throw err;
             });
         return loadPromise;
+    };
+
+    /**
+     * Wait for post-auth deferred helpers when a visible department action
+     * needs one of them immediately.  `emsEnsurePostAuthScripts()` intentionally
+     * resolves after the critical boot, which is too early for the attendance
+     * cloud-recovery helper that lives in OFFLINE_DEFERRED.
+     */
+    global.emsEnsurePostAuthDeferredScripts = function () {
+        return startDeferredLoad().then(function () {
+            return { ready: allReady, deferred: true };
+        });
     };
 
     global.emsIsPostAuthReady = function () {

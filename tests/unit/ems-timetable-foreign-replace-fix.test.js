@@ -85,12 +85,14 @@ function loadEnv() {
     vm.runInNewContext(
         getTenant + '\n' + recoveryBlock
         + '\nthis.attRecoverLegacyTimetablePeriods = attRecoverLegacyTimetablePeriods;'
+        + '\nthis.attRecoverStrongLocalLegacyTimetable = attRecoverStrongLocalLegacyTimetable;'
         + '\nthis.attRecoverContaminatedTimetable = attRecoverContaminatedTimetable;'
         + '\nthis.attTimetableLooksLikeForeignCopy = attTimetableLooksLikeForeignCopy;'
         + '\nthis.attChooseTimetableFromCloudLists = attChooseTimetableFromCloudLists;'
         + '\nthis.attShouldAcceptRemoteTimetable = attShouldAcceptRemoteTimetable;'
         + '\nthis.attRememberTrustedTimetable = attRememberTrustedTimetable;'
         + '\nthis.attTimetableFailsRosterTeacherBinding = attTimetableFailsRosterTeacherBinding;'
+        + '\nthis.attVerifyRemoteTimetableOwnership = attVerifyRemoteTimetableOwnership;'
         + '\nthis.attTimetableRosterScore = attTimetableRosterScore;'
         + '\nthis.attChooseBestTimetableCandidate = attChooseBestTimetableCandidate;'
         + '\nthis.attGetUsers = function(){ return [{ id: "CTCH-68140", name: "عبد اللہ", role: "teacher" }]; };'
@@ -121,6 +123,28 @@ describe('Foreign timetable replacing own — production fix', function () {
         expect(report.copied).toBe(0);
         expect(env.physical[scopedKey(TENANT_B)]).toBeFalsy();
         expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('P-A');
+    });
+
+    it('rescues a strongly roster-bound former global timetable locally without cloud write', async function () {
+        env.put(scopedKey(TENANT_B), [{ id: 'FOREIGN-1', teacherId: 'UNKNOWN', days: [1] }]);
+        env.attGetUsers = function () {
+            return [
+                { id: 'CTCH-68140', name: 'عبد اللہ', role: 'teacher' },
+                { id: 'T-2', name: 'استاد دو', role: 'teacher' },
+                { id: 'T-3', name: 'استاد تین', role: 'teacher' }
+            ];
+        };
+        env.put(PERIODS_KEY, [
+            { id: 'OWN-1', teacherId: 'CTCH-68140', teacherName: 'عبد اللہ', days: [1] },
+            { id: 'OWN-2', teacherId: 'T-2', teacherName: 'استاد دو', days: [2] },
+            { id: 'OWN-3', teacherId: 'T-3', teacherName: 'استاد تین', days: [3] }
+        ]);
+
+        var res = await env.attRecoverStrongLocalLegacyTimetable(TENANT_B);
+        expect(res.ok).toBe(true);
+        expect(res.restored).toBe(3);
+        expect(res.cloudWritten).toBe(false);
+        expect(JSON.parse(env.physical[scopedKey(TENANT_B)])).toHaveLength(3);
     });
 
     it('restores B Attendance_Config when ModuleData still holds A leaked periods', async function () {
@@ -199,6 +223,16 @@ describe('Foreign timetable replacing own — production fix', function () {
         expect(env.attShouldAcceptRemoteTimetable([{ id: 'P-B', name: 'own', days: [2] }], TENANT_B)).toBe(true);
     });
 
+    it('rejects a disjoint cloud timetable even on a fresh page before a trusted copy is recorded', function () {
+        env.put(scopedKey(TENANT_B), [
+            { id: 'OWN-1', teacherId: 'CTCH-68140', teacherName: 'عبد اللہ', days: [1] },
+            { id: 'OWN-2', teacherId: 'CTCH-68140', teacherName: 'عبد اللہ', days: [2] }
+        ]);
+        expect(env.attShouldAcceptRemoteTimetable([
+            { id: 'FOREIGN-1', teacherId: 'UNKNOWN-1', teacherName: 'غیر متعلق', days: [1] }
+        ], TENANT_B)).toBe(false);
+    });
+
     it('rejects foreign canonical when classes match but teacher ids/names do not belong to this madrasa', function () {
         var foreign = [{
             id: 'PRD-35564',
@@ -216,5 +250,20 @@ describe('Foreign timetable replacing own — production fix', function () {
         ], TENANT_B);
         expect(choice.source).toBe('empty');
         expect(choice.list).toEqual([]);
+    });
+
+    it('requires every remote lesson to bind to this madrasa teacher roster', function () {
+        var own = [{ id: 'OWN-1', teacherId: 'CTCH-68140', teacherName: 'عبد اللہ', days: [1] }];
+        var mixed = own.concat([{ id: 'FOREIGN-1', teacherId: 'OTHER-1', teacherName: 'دوسرا استاد', days: [2] }]);
+        expect(env.attVerifyRemoteTimetableOwnership(own).ok).toBe(true);
+        expect(env.attVerifyRemoteTimetableOwnership(mixed).ok).toBe(false);
+        expect(env.attVerifyRemoteTimetableOwnership(mixed).reason).toBe('teacher_roster_mismatch');
+    });
+
+    it('generic module pull excludes timetable blobs; only the checked reader may apply them', function () {
+        var sync = fs.readFileSync(path.join(ROOT, 'cloud', 'sync-engine.js'), 'utf8');
+        expect(sync).toContain('function isGenericPullKey');
+        expect(sync).toContain("key !== 'ems_att_periods'");
+        expect(sync).toContain('filter(isGenericPullKey)');
     });
 });

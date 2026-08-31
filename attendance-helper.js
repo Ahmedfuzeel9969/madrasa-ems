@@ -5,6 +5,11 @@
     'use strict';
 
     function getTenantId() {
+        // Use the same fail-closed tenant authority as the attendance writer.
+        // During a tenant switch/mismatch, never pull into a stale partition.
+        if (typeof global.emsGetCanonicalTenantId === 'function') {
+            return global.emsGetCanonicalTenantId();
+        }
         if (typeof global.emsGetTenantId === 'function') {
             var tid = global.emsGetTenantId();
             if (tid) return tid;
@@ -98,13 +103,104 @@
         return key.indexOf('att_rec_' + tenantId + '_') === 0;
     }
 
-    function attParseSheet(raw) {
-        if (raw == null) return null;
-        try {
-            return typeof raw === 'string' ? JSON.parse(raw) : raw;
-        } catch (e) {
-            return null;
+    var ATT_DOTTED_MAP_ROOTS = {
+        records: true,
+        periodRecords: true,
+        teacherPeriodRecords: true,
+        remarks: true,
+        late: true,
+        dailyLocks: true
+    };
+
+    function attCloneAttendanceMap(value) {
+        if (Array.isArray(value)) return value.map(attCloneAttendanceMap);
+        if (!value || typeof value !== 'object') return value;
+        var proto = Object.getPrototypeOf ? Object.getPrototypeOf(value) : Object.prototype;
+        // Preserve Firestore Timestamp and other SDK value objects verbatim.
+        if (proto && proto !== Object.prototype) return value;
+        var out = {};
+        Object.keys(value).forEach(function (key) {
+            out[key] = attCloneAttendanceMap(value[key]);
+        });
+        return out;
+    }
+
+    function attFillMissingAttendancePath(target, parts, value) {
+        var cursor = target;
+        for (var i = 0; i < parts.length - 1; i++) {
+            var part = parts[i];
+            if (!cursor[part] || typeof cursor[part] !== 'object') cursor[part] = {};
+            cursor = cursor[part];
         }
+        var leaf = parts[parts.length - 1];
+        if (!Object.prototype.hasOwnProperty.call(cursor, leaf)) {
+            cursor[leaf] = attCloneAttendanceMap(value);
+            return true;
+        }
+        return false;
+    }
+
+    function attMergeMissingAttendanceMap(target, source) {
+        Object.keys(source || {}).forEach(function (key) {
+            if (!Object.prototype.hasOwnProperty.call(target, key)) {
+                target[key] = attCloneAttendanceMap(source[key]);
+                return;
+            }
+            if (target[key] && source[key]
+                && typeof target[key] === 'object' && typeof source[key] === 'object') {
+                attMergeMissingAttendanceMap(target[key], source[key]);
+            }
+        });
+        return target;
+    }
+
+    /**
+     * Old patch fallbacks stored keys such as `periodRecords.TCH-1.2.PRD-1`
+     * literally at document root. Readers previously ignored those saved marks.
+     * Fold only missing paths into the canonical maps; an existing nested cell is
+     * kept because it is the already-visible/current value. The raw object is not
+     * mutated and dotted keys are omitted from the normalized cache copy.
+     */
+    function attNormalizeAttendanceCloudDocument(raw) {
+        if (raw == null) return null;
+        var parsed = raw;
+        if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch (eParse) { return null; }
+        }
+        if (!parsed || typeof parsed !== 'object') return parsed;
+        var out = Object.assign({}, parsed);
+        var clonedRoots = Object.create(null);
+
+        function ensureRoot(root) {
+            if (!clonedRoots[root]) {
+                out[root] = attCloneAttendanceMap(out[root] && typeof out[root] === 'object' ? out[root] : {});
+                clonedRoots[root] = true;
+            }
+            return out[root];
+        }
+
+        Object.keys(parsed).forEach(function (key) {
+            var dot = key.indexOf('.');
+            if (dot <= 0) return;
+            var root = key.slice(0, dot);
+            if (!ATT_DOTTED_MAP_ROOTS[root]) return;
+            var parts = key.slice(dot + 1).split('.').filter(Boolean);
+            if (parts.length) attFillMissingAttendancePath(ensureRoot(root), parts, parsed[key]);
+            delete out[key];
+        });
+
+        // One early release used teacherPeriodRecords; make it visible to every
+        // current reader without deleting the legacy map from the cloud object.
+        if (out.teacherPeriodRecords && typeof out.teacherPeriodRecords === 'object') {
+            attMergeMissingAttendanceMap(ensureRoot('periodRecords'), out.teacherPeriodRecords);
+        }
+        return out;
+    }
+
+    global.emsNormalizeAttendanceCloudDocument = attNormalizeAttendanceCloudDocument;
+
+    function attParseSheet(raw) {
+        return attNormalizeAttendanceCloudDocument(raw);
     }
 
     function attHelperHasMeaningfulSheet(sheet) {
@@ -214,6 +310,7 @@
                 : (typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null);
             sync = attParseSheet(raw);
         }
+        sync = attNormalizeAttendanceCloudDocument(sync);
         if (sync && attHelperHasMeaningfulSheet(sync)) return Promise.resolve(sync);
         if (typeof global.emsIdbKvGet === 'function') {
             return global.emsIdbKvGet(key).then(function (raw) {
@@ -326,6 +423,9 @@
     }
 
     function countDayMarksFromDoc(data, dayNum, sets) {
+        if (typeof attNormalizeAttendanceCloudDocument === 'function') {
+            data = attNormalizeAttendanceCloudDocument(data);
+        }
         if (!data) return;
         sets.best = sets.best || Object.create(null);
         var ts = 0;
@@ -375,6 +475,196 @@
             .where(firebase.firestore.FieldPath.documentId(), '<=', prefix + '\uf8ff')
             .get();
     }
+
+    var _attMonthCloudRefresh = Object.create(null);
+    var ATT_MONTH_CLOUD_REFRESH_TTL_MS = 10000;
+
+    function attHelperParseSheetIdentity(key, monthStr) {
+        if (!key || key.indexOf('att_rec_') !== 0 || !monthStr) return null;
+        var directHead = 'att_rec_' + monthStr + '_';
+        var tail = '';
+        if (key.indexOf(directHead) === 0) {
+            tail = key.slice(directHead.length);
+        } else {
+            var marker = '_' + monthStr + '_';
+            var idx = key.indexOf(marker);
+            if (idx < 0) return null;
+            tail = key.slice(idx + marker.length);
+        }
+        var segs = tail.split('_');
+        if (!segs.length) return null;
+        var type = segs[0] || 'students';
+        if (segs.length === 1) return { type: type, classId: '', period: 'all' };
+        if (segs.length === 2) return { type: type, classId: segs[1], period: 'all' };
+        return {
+            type: type,
+            classId: segs.slice(1, -1).join('_'),
+            period: segs[segs.length - 1] || 'all'
+        };
+    }
+
+    function attHasPendingCloudMutation(tenantId, cloudDocId) {
+        try {
+            if (typeof global.attHasPendingCloudPersistForDoc === 'function'
+                && global.attHasPendingCloudPersistForDoc(cloudDocId)) {
+                return Promise.resolve(true);
+            }
+        } catch (ePendingUi) { /* continue to durable outbox */ }
+        if (typeof global.emsOfflineHasPendingAttendanceMutation !== 'function') {
+            return Promise.resolve(false);
+        }
+        return global.emsOfflineHasPendingAttendanceMutation(tenantId, cloudDocId)
+            .catch(function () { return true; });
+    }
+
+    /**
+     * Refresh one attendance month from Firestore into the tenant-scoped durable cache.
+     * Equal timestamps accept the complete cloud document: it is the acknowledgement
+     * of the same granular mutation and can safely repair an incomplete local snapshot.
+     */
+    global.emsAttEnsureMonthFresh = function (monthStr, opts) {
+        opts = opts || {};
+        monthStr = String(monthStr || '').slice(0, 7);
+        var tenantId = getTenantId();
+        if (!monthStr || !tenantId || !shouldUseFirestore()) {
+            return Promise.resolve({ ok: false, offline: true, month: monthStr, count: 0 });
+        }
+        var cacheKey = tenantId + '|' + monthStr;
+        var cachedState = _attMonthCloudRefresh[cacheKey];
+        if (cachedState && cachedState.promise) return cachedState.promise;
+        if (!opts.force && cachedState && cachedState.at
+            && Date.now() - cachedState.at < ATT_MONTH_CLOUD_REFRESH_TTL_MS) {
+            return Promise.resolve(cachedState.result || { ok: true, cached: true, month: monthStr });
+        }
+
+        var db = getDb();
+        var promise = fetchAttendanceDocsForMonth(db, tenantId, monthStr).then(function (snap) {
+            var docs = [];
+            snap.forEach(function (doc) {
+                if (!doc.id || doc.id.indexOf('att_rec_') !== 0) return;
+                docs.push({ id: doc.id, data: attNormalizeAttendanceCloudDocument(doc.data() || {}) });
+            });
+            var updated = 0;
+            var keptLocal = 0;
+            var pendingLocalKept = 0;
+            return Promise.all(docs.map(function (item) {
+                var localKey = attLocalKeyFromCloudDocId(tenantId, item.id);
+                var localPromise = typeof global.emsOfflineGetCachedAttendance === 'function'
+                    ? global.emsOfflineGetCachedAttendance(item.id, { localKey: localKey })
+                    : Promise.resolve(null);
+                return localPromise.then(function (local) {
+                    return attHasPendingCloudMutation(tenantId, item.id).then(function (hasPending) {
+                    // A local mark/delete waiting in memory or the durable outbox
+                    // is newer user intent. Automatic refresh must not revive the
+                    // currently older Firestore copy over it.
+                    if (hasPending) {
+                        keptLocal += 1;
+                        pendingLocalKept += 1;
+                        return null;
+                    }
+                    var remoteWins = !local || attSheetTimestamp(item.data) >= attSheetTimestamp(local);
+                    if (!remoteWins) {
+                        keptLocal += 1;
+                        return null;
+                    }
+                    updated += 1;
+                    if (typeof global.emsOfflineCacheAttendanceFromRemote !== 'function') return null;
+                    return global.emsOfflineCacheAttendanceFromRemote(item.id, item.data, {
+                        localKey: localKey
+                    });
+                    });
+                });
+            })).then(function () {
+                if (typeof global.emsAttOfflineKeyIndexInvalidate === 'function') {
+                    global.emsAttOfflineKeyIndexInvalidate();
+                }
+                if (typeof global.emsInvalidateAttDashboardCache === 'function') {
+                    global.emsInvalidateAttDashboardCache();
+                }
+                return {
+                    ok: true,
+                    month: monthStr,
+                    count: docs.length,
+                    updated: updated,
+                    keptLocal: keptLocal,
+                    pendingLocalKept: pendingLocalKept,
+                    source: 'firestore_month'
+                };
+            });
+        }).catch(function (err) {
+            return {
+                ok: false,
+                month: monthStr,
+                count: 0,
+                error: err && err.message ? err.message : String(err),
+                source: 'local_fallback'
+            };
+        });
+
+        _attMonthCloudRefresh[cacheKey] = { promise: promise, at: 0, result: null };
+        return promise.then(function (result) {
+            _attMonthCloudRefresh[cacheKey] = { promise: null, at: Date.now(), result: result };
+            return result;
+        });
+    };
+
+    /**
+     * Once a canonical `all` sheet exists, it is the only daily source for that
+     * register. Historic class/hour sheets remain safely cached for recovery,
+     * but must not re-create a day that was deliberately cleared in canonical.
+     */
+    function attHelperCanonicalMonthRows(rows) {
+        rows = (rows || []).filter(Boolean);
+        var canonical = Object.create(null);
+        rows.forEach(function (row) {
+            if (!row || row.period !== 'all') return;
+            if (row.type === 'students' && row.classId) {
+                canonical['students|' + row.classId] = true;
+            } else if ((row.type === 'teachers' || row.type === 'staff') && !row.classId) {
+                canonical[row.type + '|'] = true;
+            }
+        });
+        return rows.filter(function (row) {
+            if (!row) return false;
+            var group = row.type === 'students'
+                ? ('students|' + (row.classId || ''))
+                : (row.type + '|');
+            if (!canonical[group]) return true;
+            if (row.type === 'students') return row.period === 'all';
+            return row.period === 'all' && !row.classId;
+        });
+    }
+
+    global.emsAttCanonicalMonthRows = attHelperCanonicalMonthRows;
+
+    /** One shared source for Smart/Collective, dashboard, and reports. */
+    global.emsAttCollectMonthSheetsAsync = function (monthStr, opts) {
+        opts = opts || {};
+        monthStr = String(monthStr || '').slice(0, 7);
+        var fresh = opts.cloud === false
+            ? Promise.resolve({ ok: true, localOnly: true })
+            : global.emsAttEnsureMonthFresh(monthStr, { force: !!opts.force });
+        return fresh.then(function () {
+            return global.emsOfflineListAttendanceKeysAsync(monthStr);
+        }).then(function (keys) {
+            return Promise.all((keys || []).map(function (key) {
+                return attReadSheetByKeyAsync(key).then(function (data) {
+                    var parsed = attHelperParseSheetIdentity(key, monthStr);
+                    if (!parsed || !attHelperHasMeaningfulSheet(data)) return null;
+                    return {
+                        key: key,
+                        month: monthStr,
+                        type: parsed.type,
+                        classId: parsed.classId,
+                        period: parsed.period,
+                        data: data
+                    };
+                });
+            }));
+        }).then(function (rows) {
+            return attHelperCanonicalMonthRows(rows);
+        });
+    };
 
     /** Prefer AttendanceSummary doc when available (E8) */
     global.emsFetchTodayAttendanceStats = function () {
@@ -579,7 +869,10 @@
                         var docs = [];
                         snap.forEach(function (doc) {
                             if (doc.id.indexOf('att_rec_') !== 0) return;
-                            docs.push({ month: doc.id.substring(8, 15), data: doc.data() });
+                            docs.push({
+                                month: doc.id.substring(8, 15),
+                                data: attNormalizeAttendanceCloudDocument(doc.data())
+                            });
                         });
                         return docs;
                     });
@@ -626,21 +919,20 @@
             if (typeof global.emsArchiveMonthInWindow === 'function' && !global.emsArchiveMonthInWindow(monthStr)) {
                 return Promise.resolve([]);
             }
-            return global.emsOfflineListAttendanceKeysAsync(monthStr).then(function (keys) {
-                if (!keys || !keys.length) return [];
-                return Promise.all(keys.map(function (key) {
-                    return attReadSheetByKeyAsync(key).then(function (sheet) {
-                        if (!attHelperHasMeaningfulSheet(sheet)) return null;
-                        return {
-                            month: monthStr,
-                            records: sheet.records,
-                            remarks: sheet.remarks || {},
-                            periodRecords: sheet.periodRecords || {},
-                            timestamp: attSheetTimestamp(sheet)
-                        };
-                    });
-                })).then(function (rows) {
-                    return rows.filter(Boolean);
+            return global.emsAttCollectMonthSheetsAsync(monthStr).then(function (sheets) {
+                return (sheets || []).map(function (entry) {
+                    var sheet = entry.data || {};
+                    return {
+                        key: entry.key,
+                        month: monthStr,
+                        type: entry.type,
+                        classId: entry.classId,
+                        period: entry.period,
+                        records: sheet.records || {},
+                        remarks: sheet.remarks || {},
+                        periodRecords: sheet.periodRecords || {},
+                        timestamp: attSheetTimestamp(sheet)
+                    };
                 });
             });
         })).then(function (nested) {
@@ -761,7 +1053,7 @@
     function attReconcileLocalRemote(localRec, remoteRec) {
         if (!remoteRec) return localRec || null;
         if (!localRec) return remoteRec;
-        return attSheetTimestamp(remoteRec) > attSheetTimestamp(localRec) ? remoteRec : localRec;
+        return attSheetTimestamp(remoteRec) >= attSheetTimestamp(localRec) ? remoteRec : localRec;
     }
 
     /** Cloud doc id → tenant-scoped durable key (att_rec_{tid}_…). */
@@ -775,6 +1067,10 @@
         return 'att_rec_' + tid + '_' + rest;
     }
 
+    function attIsRecognizedCloudSheetDocId(cloudDocId) {
+        return /^att_rec_\d{4}-\d{2}_(students|teachers|staff)_/.test(String(cloudDocId || ''));
+    }
+
     /**
      * Manual cloud pull for Attendance department only.
      * Pulls ModuleData settings group + all Attendance sheet docs into local SSOT.
@@ -782,9 +1078,20 @@
      */
     global.emsPullAttendanceFromCloud = function (tenantId, opts) {
         opts = opts || {};
-        tenantId = tenantId || getTenantId();
-        if (!tenantId) {
+        var verifiedTenantId = getTenantId();
+        tenantId = tenantId || verifiedTenantId;
+        if (!tenantId || !verifiedTenantId) {
             return Promise.resolve({ ok: false, reason: 'no_tenant', count: 0, source: 'attendance_cloud_pull' });
+        }
+        if (String(tenantId) !== String(verifiedTenantId)) {
+            return Promise.resolve({
+                ok: false,
+                reason: 'tenant_mismatch',
+                count: 0,
+                source: 'attendance_cloud_pull',
+                tenantId: tenantId,
+                verifiedTenantId: verifiedTenantId
+            });
         }
 
         var db = getDb();
@@ -798,9 +1105,15 @@
             });
         }
 
+        // `ems_att_periods` must never arrive through the generic settings
+        // pull.  The specialised reader below verifies the active tenant and
+        // teacher roster before applying a timetable.
         var settingsP = Promise.resolve({ pulled: 0 });
         if (typeof global.emsPullModuleGroup === 'function') {
-            settingsP = global.emsPullModuleGroup('Attendance').catch(function () {
+            settingsP = global.emsPullModuleGroup('Attendance', {
+                excludeKeys: ['ems_att_periods'],
+                attendanceSafeSettingsOnly: true
+            }).catch(function () {
                 return { pulled: 0 };
             });
         }
@@ -825,15 +1138,21 @@
             return timetableP.then(function (timetableRes) {
             return col.get().then(function (snap) {
                 var docs = [];
+                var invalidDocsSkipped = 0;
                 snap.forEach(function (doc) {
                     var id = doc.id;
                     if (!id || id.indexOf('att_rec_') !== 0) return;
-                    docs.push({ id: id, data: doc.data() || {} });
+                    if (!attIsRecognizedCloudSheetDocId(id)) {
+                        invalidDocsSkipped++;
+                        return;
+                    }
+                    docs.push({ id: id, data: attNormalizeAttendanceCloudDocument(doc.data() || {}) });
                 });
 
                 var cached = 0;
                 var updated = 0;
                 var keptLocal = 0;
+                var pendingLocalKept = 0;
                 var chain = Promise.resolve();
 
                 docs.forEach(function (item) {
@@ -844,12 +1163,36 @@
                             : Promise.resolve(null);
 
                         return getLocal.then(function (local) {
-                            var remoteWins = !local || attSheetTimestamp(item.data) > attSheetTimestamp(local);
+                            return attHasPendingCloudMutation(tenantId, item.id).then(function (hasPending) {
+                            // A local save/clear that has not reached Firebase is
+                            // newer user intent. The recovery button must never
+                            // replace it with the currently older cloud copy.
+                            if (hasPending) {
+                                keptLocal++;
+                                pendingLocalKept++;
+                                return null;
+                            }
+                            // This is the explicit, confirmed recovery button. Its
+                            // dialog says the local attendance cache will be replaced,
+                            // so the verified tenant's normalized Firestore document
+                            // must win even when a stale/empty local copy has a newer
+                            // client timestamp.
+                            var forceVerifiedCloud = opts.preferCloud !== false;
+                            var remoteWins = forceVerifiedCloud
+                                || !local
+                                || attSheetTimestamp(item.data) >= attSheetTimestamp(local);
                             if (!remoteWins) {
                                 keptLocal++;
                                 return null;
                             }
-                            var merged = attReconcileLocalRemote(local, item.data);
+                            // The confirmed cloud button promises to replace the
+                            // local attendance cache. Do not run that choice back
+                            // through timestamp reconciliation: a newer but empty
+                            // stale cache would otherwise win again and Smart
+                            // Register would show its lock without its marks.
+                            var merged = forceVerifiedCloud
+                                ? item.data
+                                : attReconcileLocalRemote(local, item.data);
                             if (typeof global.emsOfflineCacheAttendanceFromRemote !== 'function') {
                                 cached++;
                                 updated++;
@@ -860,6 +1203,7 @@
                             }).then(function () {
                                 cached++;
                                 updated++;
+                            });
                             });
                         });
                     });
@@ -876,6 +1220,8 @@
                         cached: cached,
                         updated: updated,
                         keptLocal: keptLocal,
+                        pendingLocalKept: pendingLocalKept,
+                        invalidDocsSkipped: invalidDocsSkipped,
                         settingsPulled: (settingsRes && settingsRes.pulled) || 0,
                         timetablePulled: !!(timetableRes && timetableRes.ok),
                         timetableCount: (timetableRes && timetableRes.count) || 0,

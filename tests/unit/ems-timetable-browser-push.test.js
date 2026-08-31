@@ -5,30 +5,27 @@ import { fileURLToPath } from 'url';
 
 var ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
-describe('Timetable browser → Firebase push', function () {
-    it('adds push button in timetable toolbar', function () {
+describe('Timetable browser → Firebase push removal', function () {
+    it('removes the browser-to-cloud button from the timetable toolbar', function () {
         var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-        expect(html).toContain('id="btn-att-tt-push-browser"');
-        expect(html).toContain('attPushBrowserTimetableToFirebase()');
-        expect(html).toContain('براؤزر سے Firebase');
-        expect(html.indexOf('att-timetable')).toBeLessThan(html.indexOf('btn-att-tt-push-browser'));
+        expect(html).not.toContain('id="btn-att-tt-push-browser"');
+        expect(html).not.toContain('attPushBrowserTimetableToFirebase()');
+        expect(html).not.toContain('براؤزر سے Firebase');
     });
 
-    it('implements attPushBrowserTimetableToFirebase with tenant-safe persist + cloud push', function () {
+    it('removes the browser-push runtime and exported globals', function () {
         var att = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
-        expect(att).toContain('function attPushBrowserTimetableToFirebase');
-        expect(att).toContain('window.attPushBrowserTimetableToFirebase = attPushBrowserTimetableToFirebase');
-        expect(att).toContain('function attUpdateTimetablePushBtnState');
-        expect(att).toContain('attRecoverLegacyTimetablePeriods(tenantId)');
-        expect(att).toContain('attPersistConfigBlob(ATT_PERIODS_KEY, list)');
-        expect(att).toContain('attRememberTrustedTimetable(tenantId, list, \'browser_push\')');
-        expect(att).toContain('emsCloudPushNow()');
-        expect(att).toContain('ATT_PERIODS_CANONICAL_CLOUD_DOC');
+        expect(att).not.toContain('function attPushBrowserTimetableToFirebase');
+        expect(att).not.toContain('window.attPushBrowserTimetableToFirebase');
+        expect(att).not.toContain('function attUpdateTimetablePushBtnState');
+        expect(att).not.toContain('btn-att-tt-push-browser');
+        expect(att).not.toContain("'browser_push'");
     });
 
-    it('updates push button state when timetable renders', function () {
+    it('keeps ordinary timetable edit/save and verified cloud restore paths', function () {
         var att = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
-        expect(att).toContain('attUpdateTimetablePushBtnState()');
-        expect(att).toMatch(/window\.renderTimetable[\s\S]*attUpdateTimetablePushBtnState/);
+        expect(att).toContain('attSavePeriodFromModal');
+        expect(att).toContain('attPersistConfigBlob(ATT_PERIODS_KEY');
+        expect(att).toContain('window.emsPullAttendanceTimetableFromCloud');
     });
 });

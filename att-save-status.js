@@ -10,6 +10,7 @@
   var _collectiveDocIds = [];
   var _bound = false;
   var _queueRefreshTimer = null;
+  var _retryInflight = null;
   var _lastQueueSummary = { pending: 0, failed: 0, deadLetter: 0, rows: [] };
 
   function now() { return Date.now(); }
@@ -323,37 +324,96 @@
 
   global.attSaveStatusRefreshQueue = refreshQueueSummary;
 
-  global.attSaveStatusRetryPending = function (opts) {
-    opts = opts || {};
-    log('retry', '', opts.forceLocal ? 'force-local' : 'normal', opts);
-    var chain;
-    if (opts.forceLocal && typeof global.emsOfflineListQueue === 'function') {
-      chain = global.emsOfflineListQueue().then(function (rows) {
-        var attRows = (rows || []).filter(function (r) { return r && isAttQueueType(r.type); });
-        return Promise.all(attRows.map(function (row) {
-          row.meta = Object.assign({}, row.meta || {}, { forceLocal: true });
+  function setRetryButtonsBusy(busy) {
+    if (!global.document) return;
+    ['att-save-queue-retry', 'att-save-queue-force'].forEach(function (id) {
+      var btn = global.document.getElementById(id);
+      if (!btn) return;
+      if (busy) {
+        if (!btn._attSavePrevHtml) btn._attSavePrevHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.setAttribute('aria-busy', 'true');
+      } else {
+        btn.disabled = false;
+        btn.setAttribute('aria-busy', 'false');
+        if (btn._attSavePrevHtml) {
+          btn.innerHTML = btn._attSavePrevHtml;
+          delete btn._attSavePrevHtml;
+        }
+      }
+    });
+  }
+
+  function retryAttendanceRows(opts) {
+    if (typeof global.emsOfflineListQueue !== 'function'
+        || typeof global.emsOfflineFlushMutationRow !== 'function') {
+      return Promise.resolve({ ok: false, reason: 'attendance_flush_unavailable', retried: 0 });
+    }
+    return global.emsOfflineListQueue().then(function (rows) {
+      var attRows = (rows || []).filter(function (row) {
+        return row && isAttQueueType(row.type) && row.docId;
+      });
+      var retried = 0;
+      var synced = 0;
+      var stillPending = 0;
+      var chain = Promise.resolve();
+      attRows.forEach(function (row) {
+        chain = chain.then(function () {
+          row.meta = Object.assign({}, row.meta || {}, { forceLocal: !!opts.forceLocal });
           row.failed = false;
           row.retryCount = 0;
-          if (typeof global.emsOfflineFlushMutationRow === 'function') {
-            return global.emsOfflineFlushMutationRow(row);
-          }
-          return Promise.resolve({ ok: false });
-        }));
+          delete row.lastError;
+          delete row.lastErrorCode;
+          delete row.failedAt;
+          delete row.nextRetryAt;
+          return global.emsOfflineFlushMutationRow(row).then(function (res) {
+            retried++;
+            if (res && res.synced) synced++;
+            else stillPending++;
+          });
+        });
       });
-    } else if (typeof global.emsOfflineRetryFailedSync === 'function') {
-      chain = global.emsOfflineRetryFailedSync();
-    } else if (typeof global.emsCloudFlushPendingMutations === 'function') {
-      chain = global.emsCloudFlushPendingMutations();
-    } else {
-      chain = Promise.resolve({ ok: false, reason: 'no_flush' });
+      return chain.then(function () {
+        return { ok: true, retried: retried, synced: synced, stillPending: stillPending };
+      });
+    });
+  }
+
+  global.attSaveStatusRetryPending = function (opts) {
+    opts = opts || {};
+    if (_retryInflight) return _retryInflight;
+    if (opts.forceLocal && typeof global.confirm === 'function') {
+      var confirmed = global.confirm(
+        'صرف کلاؤڈ تنازعہ کی صورت میں مقامی حاضری غالب کریں۔\n\n' +
+        'اس عمل سے دوسرے آلے کی نئی تبدیلی بدل سکتی ہے۔ کیا آپ جاری رکھنا چاہتے ہیں؟'
+      );
+      if (!confirmed) return Promise.resolve({ ok: false, reason: 'cancelled', retried: 0 });
     }
-    return chain.then(function (res) {
+    log('retry', '', opts.forceLocal ? 'force-local' : 'normal', opts);
+    setRetryButtonsBusy(true);
+    _retryInflight = retryAttendanceRows(opts).then(function (res) {
       scheduleQueueRefresh();
       if (typeof global.showToast === 'function') {
-        global.showToast('حاضری سنک دوبارہ کوشش — پس منظر میں', 'info');
+        if (!res || res.ok === false) {
+          global.showToast('حاضری سنک دوبارہ نہیں چل سکا', 'error');
+        } else if (!res.retried) {
+          global.showToast('حاضری کی کوئی زیرِ التوا سنک موجود نہیں', 'info');
+        } else if (res.stillPending) {
+          global.showToast(res.retried + ' حاضری سنک آزمائی گئیں؛ ' + res.stillPending + ' ابھی زیرِ التوا', 'warning');
+        } else {
+          global.showToast(res.synced + ' حاضری سنک Firebase پر پہنچ گئیں', 'success');
+        }
       }
       return res;
+    }).catch(function (err) {
+      if (typeof global.showToast === 'function') global.showToast('حاضری سنک دوبارہ نہیں چل سکا', 'error');
+      return { ok: false, error: err && err.message ? err.message : String(err), retried: 0 };
+    }).finally(function () {
+      _retryInflight = null;
+      setRetryButtonsBusy(false);
+      refreshQueueSummary();
     });
+    return _retryInflight;
   };
 
   function bindUi() {

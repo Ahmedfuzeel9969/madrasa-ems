@@ -253,12 +253,18 @@
     return parts.join(' · ');
   }
 
-  function studentPeriods(className, weekday) {
+  function studentPeriods(className, day, weekday, savedPeriodMap) {
+    if (typeof global.attStudentPeriodsForRegisterDay === 'function') {
+      return global.attStudentPeriodsForRegisterDay(className, day, weekday, savedPeriodMap) || [];
+    }
     if (typeof global.attStudentPeriodsForWeekday !== 'function') return [];
     return global.attStudentPeriodsForWeekday(className, weekday) || [];
   }
 
-  function teacherPeriods(uid, name, weekday) {
+  function teacherPeriods(uid, name, day, weekday, savedPeriodMap) {
+    if (typeof global.attTeacherPeriodsForRegisterDay === 'function') {
+      return global.attTeacherPeriodsForRegisterDay(uid, name, day, weekday, savedPeriodMap) || [];
+    }
     if (typeof global.attTeacherPeriodsForWeekday !== 'function') return [];
     return global.attTeacherPeriodsForWeekday(uid, name, weekday) || [];
   }
@@ -338,7 +344,9 @@
   function persistSheet(sheet, opts) {
     if (!sheet || typeof global.attPersistSheetPayload !== 'function') return false;
     var data = sheet.data;
-    data.timestamp = Date.now();
+    data.timestamp = typeof global.attNextLocalWriteTimestamp === 'function'
+      ? global.attNextLocalWriteTimestamp()
+      : Date.now();
     data.records = typeof global.attPruneDayStatusMap === 'function'
       ? global.attPruneDayStatusMap(data.records || {}) : (data.records || {});
     data.periodRecords = typeof global.attPrunePeriodRecordsMap === 'function'
@@ -358,11 +366,14 @@
     return ok;
   }
 
-  function writeMark(row, period, status) {
+  function writeMark(row, period, status, wholeDay) {
     if (!_state || !row) return false;
     var sheet = rowSheet(row);
     if (!sheet) return false;
     if (sheetLocked(sheet, _state.day)) return false;
+    if (wholeDay && !status && typeof global.attClearDayOnSheetData === 'function') {
+      return global.attClearDayOnSheetData(sheet.data, row.uid, _state.day);
+    }
     if (_state.registerType === 'staff') {
       if (typeof global.attWriteDayMarkOnSheetData === 'function') {
         global.attWriteDayMarkOnSheetData(sheet.data, row.uid, _state.day, status || '');
@@ -405,15 +416,49 @@
     return filled.every(function (k) { return k === first; }) ? first : '';
   }
 
+  function rowHasSavedDay(row) {
+    var sheet = rowSheet(row);
+    var data = sheet && sheet.data;
+    if (!data) return false;
+    return ['records', 'remarks', 'late', 'periodRecords'].some(function (field) {
+      var rowMap = data[field] && data[field][row.uid];
+      return !!(rowMap && Object.prototype.hasOwnProperty.call(rowMap, _state.day));
+    });
+  }
+
+  function rowSavedDayCellCount(row) {
+    var sheet = rowSheet(row);
+    var pmap = sheet && sheet.data && sheet.data.periodRecords
+      && sheet.data.periodRecords[row.uid] && sheet.data.periodRecords[row.uid][_state.day];
+    var count = Object.keys(pmap || {}).filter(function (pid) {
+      return pmap[pid] != null && pmap[pid] !== '';
+    }).length;
+    return Math.max(1, count);
+  }
+
   function collectTargets(status, uid, periodId) {
     if (!_state) return [];
     var symStatus = status ? symForKind(statusKind(status) || status) : '';
     if (status && !symStatus) symStatus = status;
+    var clearWholeDay = !symStatus && !periodId;
     var out = [];
     _state.rows.forEach(function (row) {
       if (uid && row.uid !== uid) return;
       var sheet = rowSheet(row);
       if (sheetLocked(sheet, _state.day)) return;
+      if (clearWholeDay) {
+        if (rowHasSavedDay(row)) {
+          out.push({
+            row: row,
+            period: null,
+            from: '*',
+            to: '',
+            wholeDay: true,
+            affectedCount: rowSavedDayCellCount(row)
+          });
+        }
+        return;
+      }
       if (_state.registerType === 'staff') {
         var curStaff = currentStatus(row, null);
         var nextStaff = symStatus || '';
@@ -471,26 +516,52 @@
     var stuSet = {};
     targets.forEach(function (t) { stuSet[t.row.uid] = true; });
     var studentCount = Object.keys(stuSet).length;
-    var periodCount = targets.length;
+    var periodCount = targets.reduce(function (sum, t) {
+      return sum + (Number(t.affectedCount) || 1);
+    }, 0);
     var symStatus = status ? symForKind(statusKind(status) || status) : '';
     if (status && !symStatus) symStatus = status;
     var kindVal = statusKind(symStatus);
 
     setSaving(true);
-    pushUndo(snapshotSheets(Object.keys(classSet)), undoLabel);
+    var beforeSnapshots = snapshotSheets(Object.keys(classSet));
+    var previousUndo = _undo;
+    var clearCellsBySheet = Object.create(null);
     targets.forEach(function (t) {
-      writeMark(t.row, t.period, symStatus || '');
+      writeMark(t.row, t.period, symStatus || '', !!t.wholeDay);
+      if (t.wholeDay) {
+        var clearSheetId = (_state.registerType === 'teachers' || _state.registerType === 'staff')
+          ? COL_SHEET_SHARED : t.row.className;
+        if (!clearCellsBySheet[clearSheetId]) clearCellsBySheet[clearSheetId] = [];
+        clearCellsBySheet[clearSheetId].push({ uid: t.row.uid, day: _state.day });
+      }
     });
+    var allPersisted = true;
     Object.keys(classSet).forEach(function (cid) {
       var sheet = _state.sheets[cid];
       if (!sheet) return;
       var persistOpts = { quiet: true, deferCloud: true, flushDeferred: false };
+      if (clearCellsBySheet[cid] && clearCellsBySheet[cid].length) {
+        persistOpts.clearCells = clearCellsBySheet[cid];
+        persistOpts.immediateCloud = true;
+      }
       if (cid !== COL_SHEET_SHARED) {
         persistOpts.classId = sheet.classId;
         persistOpts.month = _state.month;
       }
-      persistSheet(sheet, persistOpts);
+      if (!persistSheet(sheet, persistOpts)) allPersisted = false;
     });
+    if (!allPersisted) {
+      Object.keys(beforeSnapshots).forEach(function (cid) {
+        if (_state.sheets[cid]) _state.sheets[cid].data = cloneData(beforeSnapshots[cid]);
+      });
+      _undo = previousUndo;
+      renderTable();
+      setSaving(false);
+      toast('حاضری اس آلے پر محفوظ نہیں ہو سکی — تبدیلی واپس کر دی گئی', 'error');
+      return;
+    }
+    pushUndo(beforeSnapshots, undoLabel);
     if (typeof global.attFlushAllDeferredCloud === 'function') {
       global.attFlushAllDeferredCloud();
     }
@@ -509,7 +580,9 @@
     var stuSet = {};
     targets.forEach(function (t) { stuSet[t.row.uid] = true; });
     var studentCount = Object.keys(stuSet).length;
-    var periodCount = targets.length;
+    var periodCount = targets.reduce(function (sum, t) {
+      return sum + (Number(t.affectedCount) || 1);
+    }, 0);
     var isBulkAll = scope === 'all' && periodCount > 1;
     if (isBulkAll) {
       if (!confirmBulk(studentCount, periodCount, actionLabel || 'اجتماعی حاضری', _state.registerType)) return;
@@ -706,6 +779,23 @@
 
   var _opening = false;
 
+  function setOpening(on) {
+    _opening = !!on;
+    var btn = document.getElementById('btn-att-col-open');
+    if (!btn) return;
+    if (on) {
+      if (!btn._attColPrevHtml) btn._attColPrevHtml = btn.innerHTML;
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> رجسٹر تیار ہو رہا ہے…';
+    } else {
+      btn.disabled = false;
+      btn.setAttribute('aria-busy', 'false');
+      btn.innerHTML = btn._attColPrevHtml || '<i class="fas fa-folder-open"></i> رجسٹر کھولیں';
+      delete btn._attColPrevHtml;
+    }
+  }
+
   function openRegister() {
     if (_opening) return;
     var dateEl = document.getElementById('att-col-date');
@@ -732,7 +822,7 @@
     var block = isBlockedDate(dateStr);
 
     toast('رجسٹر تیار ہو رہا ہے…', 'info');
-    _opening = true;
+    setOpening(true);
 
     function finish(rows, sheets, scopeClassIds) {
       rows.sort(function (a, b) {
@@ -799,7 +889,7 @@
       }).catch(function (err) {
         console.error('[EMS] collective staff register', err);
         toast('رجسٹر کھولنے میں مسئلہ', 'error');
-      }).finally(function () { _opening = false; });
+      }).finally(function () { setOpening(false); });
       return;
     }
 
@@ -824,7 +914,10 @@
         };
         var rows = users.map(function (u) {
           var uid = typeof global.attGetUserId === 'function' ? global.attGetUserId(u) : String(u.id || '');
-          var periods = teacherPeriods(uid, u.name || '', weekday);
+          var savedPeriodMap = sheetPack.data && sheetPack.data.periodRecords
+            && sheetPack.data.periodRecords[uid]
+            && sheetPack.data.periodRecords[uid][day];
+          var periods = teacherPeriods(uid, u.name || '', day, weekday, savedPeriodMap || {});
           return {
             uid: uid,
             name: u.name || '',
@@ -837,7 +930,7 @@
       }).catch(function (err) {
         console.error('[EMS] collective teacher register', err);
         toast('رجسٹر کھولنے میں مسئلہ', 'error');
-      }).finally(function () { _opening = false; });
+      }).finally(function () { setOpening(false); });
       return;
     }
 
@@ -880,7 +973,14 @@
             uid: uid,
             name: u.name || '',
             className: cls || pack.classId,
-            periods: studentPeriods(cls || pack.classId, weekday)
+            periods: studentPeriods(
+              cls || pack.classId,
+              day,
+              weekday,
+              pack.sheet && pack.sheet.data && pack.sheet.data.periodRecords
+                && pack.sheet.data.periodRecords[uid]
+                && pack.sheet.data.periodRecords[uid][day]
+            )
           });
         });
       });
@@ -889,7 +989,7 @@
       console.error('[EMS] collective register', err);
       toast('رجسٹر کھولنے میں مسئلہ', 'error');
     }).finally(function () {
-      _opening = false;
+      setOpening(false);
     });
   }
 
@@ -897,14 +997,27 @@
     if (!_state || _saving) return;
     if (!_undo) return toast('واپس کرنے کے لیے کوئی تبدیلی نہیں', 'info');
     setSaving(true);
-    Object.keys(_undo.snapshots).forEach(function (cid) {
+    var undoEntry = _undo;
+    var currentSnapshots = snapshotSheets(Object.keys(undoEntry.snapshots));
+    var allPersisted = true;
+    Object.keys(undoEntry.snapshots).forEach(function (cid) {
       if (!_state.sheets[cid]) return;
-      _state.sheets[cid].data = cloneData(_undo.snapshots[cid]);
+      _state.sheets[cid].data = cloneData(undoEntry.snapshots[cid]);
       var persistOpts = { quiet: true, deferCloud: true, flushDeferred: false, clearCells: [] };
       if (cid !== COL_SHEET_SHARED) persistOpts.classId = _state.sheets[cid].classId;
       persistOpts.month = _state.month;
-      persistSheet(_state.sheets[cid], persistOpts);
+      if (!persistSheet(_state.sheets[cid], persistOpts)) allPersisted = false;
     });
+    if (!allPersisted) {
+      Object.keys(currentSnapshots).forEach(function (cid) {
+        if (_state.sheets[cid]) _state.sheets[cid].data = cloneData(currentSnapshots[cid]);
+      });
+      _undo = undoEntry;
+      renderTable();
+      setSaving(false);
+      toast('آخری تبدیلی واپس محفوظ نہیں ہو سکی؛ موجودہ حاضری برقرار ہے', 'error');
+      return;
+    }
     if (typeof global.attFlushAllDeferredCloud === 'function') {
       global.attFlushAllDeferredCloud();
     }

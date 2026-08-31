@@ -144,6 +144,7 @@ function loadEnv() {
         + '\nthis.getAttendanceTenantId = getAttendanceTenantId;'
         + '\nthis.emsStartAttendanceSync = emsStartAttendanceSync;'
         + '\nthis.attMigrateLegacyCloudTimetablePeriods = attMigrateLegacyCloudTimetablePeriods;'
+        + '\nthis.emsPullAttendanceTimetableFromCloud = window.emsPullAttendanceTimetableFromCloud;'
         + '\nthis.attTimetableListFromCloudSnapshot = attTimetableListFromCloudSnapshot;'
         + '\nthis.stopAttendanceFirestoreSync = stopAttendanceFirestoreSync;',
         sb
@@ -218,9 +219,59 @@ describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
         env.setBoth(TENANT_A);
     });
 
+    function setTeacherRoster() {
+        env.attGetUsers = function () {
+            var users = [];
+            for (var i = 1; i <= 47; i++) {
+                users.push({ id: 'TCH-' + i, name: 'Teacher ' + i, type: 'teacher' });
+            }
+            return users;
+        };
+        env.attUserMatchesType = function (u, type) { return !!u && u.type === type; };
+    }
+
+    it('explicit cloud restore accepts the verified 102-period/47-teacher canonical document despite stale foreign local overlap', async function () {
+        setTeacherRoster();
+        var periods = [];
+        for (var i = 1; i <= 102; i++) {
+            periods.push({
+                id: 'OWAIS-PRD-' + i,
+                name: 'Period ' + i,
+                teacherId: 'TCH-' + (((i - 1) % 47) + 1),
+                teacherName: 'Teacher ' + (((i - 1) % 47) + 1),
+                days: [1]
+            });
+        }
+        env.setCloudGet(TENANT_A, 'ModuleData', CANONICAL_DOC, moduleDataSnapshot(periods));
+
+        // Simulate historical contamination: the same ids also remain in a
+        // different tenant's browser partition. Explicit verified restore must
+        // not let that stale local cache overrule Tenant A's server document.
+        env._emsOriginalSetItem(scopedKey(TENANT_B), JSON.stringify(periods));
+
+        var res = await env.emsPullAttendanceTimetableFromCloud(TENANT_A);
+        expect(res.ok).toBe(true);
+        expect(res.count).toBe(102);
+        expect(res.teacherCount).toBe(47);
+        expect(res.source).toBe('manual_verified_canonical');
+        expect(res.cloudPath).toBe('All_Madrasas/' + TENANT_A + '/ModuleData/' + CANONICAL_DOC);
+        expect(JSON.parse(env.physical[scopedKey(TENANT_A)])).toHaveLength(102);
+    });
+
+    it('explicit cloud restore fails closed when requested tenant differs from verified tenant', async function () {
+        env.setCloudGet(TENANT_B, 'ModuleData', CANONICAL_DOC, moduleDataSnapshot([{ id: 'B1' }]));
+        var res = await env.emsPullAttendanceTimetableFromCloud(TENANT_B);
+        expect(res.ok).toBe(false);
+        expect(res.reason).toBe('tenant_guard');
+        expect(env.physical[scopedKey(TENANT_B)]).toBeFalsy();
+    });
+
     it('live listener writes canonical ModuleData snapshot to tenant partition', async function () {
+        setTeacherRoster();
         await env.emsStartAttendanceSync();
-        expect(env.deliverCanonicalSnapshot(TENANT_A, [{ id: 'P1', name: 'Period 1', days: [1] }])).toBe(1);
+        expect(env.deliverCanonicalSnapshot(TENANT_A, [{
+            id: 'P1', name: 'Period 1', teacherId: 'TCH-1', teacherName: 'Teacher 1', days: [1]
+        }])).toBe(1);
         expect(env.physical[scopedKey(TENANT_A)]).toBeTruthy();
         expect(JSON.parse(env.physical[scopedKey(TENANT_A)])[0].id).toBe('P1');
     });

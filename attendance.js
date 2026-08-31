@@ -130,12 +130,56 @@ function attEnsureAttStateShape() {
   if (!window.currentAttState.periodRecords) window.currentAttState.periodRecords = {};
 }
 
-function attGetAttSymbols() {
+function attReadConfigJson(key, fallback) {
   try {
-    return JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+    var raw = typeof window.emsSafeLocalGet === 'function'
+      ? window.emsSafeLocalGet(key)
+      : localStorage.getItem(key);
+    if (raw == null || raw === '') return fallback;
+    return typeof raw === 'string' ? JSON.parse(raw) : raw;
   } catch (e) {
-    return { P: 'P', A: 'A', L: 'L' };
+    return fallback;
   }
+}
+
+function attGetAttSymbols() {
+  return attReadConfigJson('ems_att_symbols', null) || { P: 'P', A: 'A', L: 'L' };
+}
+
+/**
+ * Read both current symbols and historical attendance symbols by meaning.
+ * A madrasa may have saved ح/غ/ر and later opened on a device whose local
+ * symbols are P/A/L (or the reverse). Dashboard readers already understand
+ * both forms; Smart Register must do the same without rewriting saved data.
+ */
+function attStatusKind(status, symbols) {
+  symbols = symbols || attGetAttSymbols();
+  var st = String(status == null ? '' : status).trim();
+  if (!st) return '';
+  if (st === 'جزوی حاضری') return 'partial';
+  if (st === 'نامکمل') return 'incomplete';
+  if (typeof window !== 'undefined' && typeof window.attMetricsClassifyStatus === 'function') {
+    var metricKind = window.attMetricsClassifyStatus(st, symbols);
+    if (metricKind === 'P' || metricKind === 'A' || metricKind === 'L') return metricKind;
+  }
+  if (st === String(symbols.P || '') || st === 'P' || st === 'حاضر' || st === 'ح') return 'P';
+  if (st === String(symbols.A || '') || st === 'A' || st === 'غائب' || st === 'غ'
+      || st === 'غیر حاضر' || st === 'غیرحاضر') return 'A';
+  if (st === String(symbols.L || '') || st === 'L' || st === 'رخصت' || st === 'ر'
+      || st.toLowerCase() === 'leave') return 'L';
+  return 'other';
+}
+
+/** Display a saved mark using this device's selected symbols. */
+function attDisplayStatus(status, symbols) {
+  symbols = symbols || attGetAttSymbols();
+  var kind = attStatusKind(status, symbols);
+  if (kind === 'P') return symbols.P || 'P';
+  if (kind === 'A') return symbols.A || 'A';
+  if (kind === 'L') return symbols.L || 'L';
+  if (kind === 'partial') return 'جزوی حاضری';
+  if (kind === 'incomplete') return 'نامکمل';
+  return status == null ? '' : String(status);
 }
 
 function attReadTimetablePeriods() {
@@ -144,8 +188,10 @@ function attReadTimetablePeriods() {
 
 function attReadAllTimetablePeriodsRaw() {
   try {
-    var raw = localStorage.getItem('ems_att_periods');
-    var list = raw ? JSON.parse(raw) : [];
+    var raw = typeof window.emsSafeLocalGet === 'function'
+      ? window.emsSafeLocalGet('ems_att_periods')
+      : localStorage.getItem('ems_att_periods');
+    var list = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
     return Array.isArray(list) ? list : [];
   } catch (e) {
     return [];
@@ -155,12 +201,15 @@ function attReadAllTimetablePeriodsRaw() {
 function attSaveTimetablePeriodsSync(periods) {
   var list = Array.isArray(periods) ? periods : [];
   if (typeof attPersistConfigBlob === 'function') {
-    attPersistConfigBlob(ATT_PERIODS_KEY, list).catch(function () { /* offline */ });
-    return;
+    var op = attPersistConfigBlob(ATT_PERIODS_KEY, list);
+    op.catch(function () { /* caller/UI reports when applicable */ });
+    return op;
   }
   try {
     localStorage.setItem('ems_att_periods', JSON.stringify(list));
+    return Promise.resolve({ ok: true, local: true, offline: true });
   } catch (eSave) { /* quota */ }
+  return Promise.resolve({ ok: false, reason: 'local_write_failed' });
 }
 
 function attNormalizeTeacherDisplayName(name) {
@@ -198,7 +247,11 @@ function attMigrateLegacyPeriodTeacherIds(periods) {
   var roster = attCollectRegisteredTeachers();
   var custom = [];
   try {
-    custom = JSON.parse(localStorage.getItem('ems_att_custom_teachers') || '[]') || [];
+    var customRaw = typeof window.emsSafeLocalGet === 'function'
+      ? window.emsSafeLocalGet('ems_att_custom_teachers')
+      : localStorage.getItem('ems_att_custom_teachers');
+    custom = customRaw ? (typeof customRaw === 'string' ? JSON.parse(customRaw) : customRaw) : [];
+    if (!Array.isArray(custom)) custom = [];
   } catch (eCustom) { custom = []; }
   var customRoster = custom.map(function (c) {
     return { id: c.id, name: c.name, type: 'teacher' };
@@ -255,7 +308,10 @@ function attTeacherPeriodsForWeekday(teacherUid, teacherName, weekday) {
   return attReadTimetablePeriods().filter(function (p) {
     if (!p || !p.id) return false;
     var days = Array.isArray(p.days) ? p.days : [];
-    var onDay = days.some(function (d) { return Number(d) === wd; });
+    // The timetable UI has always labelled an empty day list as "روزانہ".
+    // Honour that same meaning in Smart Register; previously such a lesson was
+    // visible in the timetable but disappeared from attendance on every day.
+    var onDay = !days.length || days.some(function (d) { return Number(d) === wd; });
     if (!onDay) return false;
     return attPeriodTeacherIdMatches(p, uid);
   }).slice().sort(function (a, b) {
@@ -264,12 +320,12 @@ function attTeacherPeriodsForWeekday(teacherUid, teacherName, weekday) {
 }
 
 /** Active timetable periods plus archived/orphan periods that still have saved marks. */
-function attTeacherPeriodsForRegisterDay(teacherUid, teacherName, day, weekday) {
+function attTeacherPeriodsForRegisterDay(teacherUid, teacherName, day, weekday, savedPeriodMap) {
   var uid = String(teacherUid || '').trim();
   var periods = attTeacherPeriodsForWeekday(uid, teacherName, weekday);
   var seen = Object.create(null);
   periods.forEach(function (p) { if (p && p.id) seen[p.id] = true; });
-  var pmap = (window.currentAttState
+  var pmap = savedPeriodMap || (window.currentAttState
     && window.currentAttState.periodRecords
     && window.currentAttState.periodRecords[uid]
     && window.currentAttState.periodRecords[uid][day]) || {};
@@ -303,11 +359,35 @@ function attStudentPeriodsForWeekday(className, weekday) {
   return attReadTimetablePeriods().filter(function (p) {
     if (!p || !p.id) return false;
     var days = Array.isArray(p.days) ? p.days : [];
-    var onDay = days.some(function (d) { return Number(d) === wd; });
+    var onDay = !days.length || days.some(function (d) { return Number(d) === wd; });
     if (!onDay) return false;
     return String(p.className || '').trim() === cls;
   }).slice().sort(function (a, b) {
     return String(a.start || '').localeCompare(String(b.start || ''));
+  });
+}
+
+/** Active class periods plus archived/orphan periods that still contain saved marks. */
+function attStudentPeriodsForRegisterDay(className, day, weekday, savedPeriodMap) {
+  var periods = attStudentPeriodsForWeekday(className, weekday);
+  var seen = Object.create(null);
+  periods.forEach(function (p) { if (p && p.id) seen[p.id] = true; });
+  var pmap = savedPeriodMap || {};
+  Object.keys(pmap).forEach(function (pid) {
+    if (seen[pid] || pmap[pid] == null || pmap[pid] === '') return;
+    var meta = attResolvePeriodById(pid);
+    periods.push(meta || {
+      id: pid,
+      name: 'محفوظ گھنٹہ',
+      className: className || '-',
+      bookName: '',
+      start: '',
+      archived: true
+    });
+    seen[pid] = true;
+  });
+  return periods.slice().sort(function (a, b) {
+    return String(a.start || a.id || '').localeCompare(String(b.start || b.id || ''));
   });
 }
 
@@ -354,35 +434,60 @@ function attRollupPeriodDayStatus(periodMap, symbols, expectedPeriodIds) {
   ids.forEach(function (pid) {
     var v = periodMap && periodMap[pid];
     if (v == null || v === '') empty += 1;
-    else filled.push(v);
+    else {
+      // Keep this rollup usable by older/lightweight callers that load only
+      // the period helper (Collective Register and isolated tests).
+      var kind = typeof attStatusKind === 'function' ? attStatusKind(v, symbols) : '';
+      if (!kind) {
+        var text = String(v).trim();
+        if (text === symbols.P || text === 'P' || text === 'حاضر' || text === 'ح') kind = 'P';
+        else if (text === symbols.A || text === 'A' || text === 'غائب' || text === 'غ'
+            || text === 'غیر حاضر' || text === 'غیرحاضر') kind = 'A';
+        else if (text === symbols.L || text === 'L' || text === 'رخصت' || text === 'ر'
+            || text.toLowerCase() === 'leave') kind = 'L';
+      }
+      filled.push(kind === 'P' || kind === 'A' || kind === 'L' ? kind : String(v));
+    }
   });
   if (!filled.length) return '';
   if (empty > 0) return INCOMPLETE;
   var first = filled[0];
-  if (filled.every(function (v) { return v === first; })) return first;
+  if (filled.every(function (v) { return v === first; })) {
+    if (first === 'P') return symbols.P || 'P';
+    if (first === 'A') return symbols.A || 'A';
+    if (first === 'L') return symbols.L || 'L';
+    return first;
+  }
   return PARTIAL;
 }
 
 function attDisplayDayMark(uid, day, weekday, opts) {
   opts = opts || {};
   var fallback = opts.fallback || '';
-  if (!window.currentAttState) return fallback;
+  var symbols = attGetAttSymbols();
+  if (!window.currentAttState) return attDisplayStatus(fallback, symbols);
   var pmap = (window.currentAttState.periodRecords[uid]
     && window.currentAttState.periodRecords[uid][day]) || {};
   var curPeriod = window.currentAttState.period || 'all';
   if (curPeriod && curPeriod !== 'all') {
     var one = pmap[curPeriod];
-    return (one != null && one !== '') ? one : fallback;
+    // A period-filtered register must show that exact hour, matching the
+    // dashboard's period filter; a daily mark is not evidence for this hour.
+    return attDisplayStatus((one != null && one !== '') ? one : '', symbols);
   }
+  // Daily records are the canonical dashboard/report state. Prefer the saved
+  // rollup so Smart Register cannot display a different result after timetable
+  // periods are renamed, archived, or moved to another weekday.
+  if (fallback != null && fallback !== '') return attDisplayStatus(fallback, symbols);
   var periods = [];
   if (attIsTeacherRegister()) {
-    periods = attTeacherPeriodsForWeekday(uid, opts.name || '', weekday);
+    periods = attTeacherPeriodsForRegisterDay(uid, opts.name || '', day, weekday, pmap);
   } else if (!attIsStaffAttendanceRegister()) {
-    periods = attStudentPeriodsForWeekday(opts.className || '', weekday);
+    periods = attStudentPeriodsForRegisterDay(opts.className || '', day, weekday, pmap);
   }
-  if (!periods.length) return fallback;
+  if (!periods.length) return attDisplayStatus(fallback, symbols);
   var ids = periods.map(function (p) { return p.id; });
-  return attRollupPeriodDayStatus(pmap, attGetAttSymbols(), ids) || fallback;
+  return attDisplayStatus(attRollupPeriodDayStatus(pmap, symbols, ids) || fallback, symbols);
 }
 
 function attEnsurePeriodDayMap(uid, day) {
@@ -446,11 +551,13 @@ function attBuildTeacherPeriodBoxesHtml(uid, teacherName, day, weekday, symbols,
   if (!periods.length) return '';
   var pmap = (window.currentAttState.periodRecords[uid] && window.currentAttState.periodRecords[uid][day]) || {};
   var boxes = periods.map(function (p, idx) {
-    var st = pmap[p.id] || '';
+    var rawStatus = pmap[p.id] || '';
+    var statusKind = attStatusKind(rawStatus, symbols);
+    var st = attDisplayStatus(rawStatus, symbols);
     var cls = 'att-period-box';
-    if (st === symbols.P) cls += ' is-p';
-    else if (st === symbols.A) cls += ' is-a';
-    else if (st === symbols.L) cls += ' is-l';
+    if (statusKind === 'P') cls += ' is-p';
+    else if (statusKind === 'A') cls += ' is-a';
+    else if (statusKind === 'L') cls += ' is-l';
     var title = (p.name || ('گھنٹہ ' + (idx + 1)))
       + (p.className && p.className !== '-' ? ' · ' + p.className : '')
       + (p.bookName ? ' · ' + p.bookName : '')
@@ -485,19 +592,23 @@ function attBuildTeacherPeriodBoxesHtml(uid, teacherName, day, weekday, symbols,
 
 
 function attMarkLocalWrite() {
-  var now = Date.now();
+  // Multiple cells can be changed within the same millisecond. A strictly
+  // increasing edit time prevents an older in-flight cloud acknowledgement
+  // from being mistaken for the newest local attendance state.
+  var now = Math.max(Date.now(), Number(_attLastLocalWriteTs || 0) + 1);
   _attLastLocalWriteTs = now;
   if (window.currentAttState) window.currentAttState._localWriteTs = now;
   return now;
 }
 
-/** Ignore stale Firestore snapshots that would revive cleared cells. */
+/** Ignore stale Firestore snapshots; equal timestamp is the full cloud acknowledgement. */
 function attShouldApplyRemoteSnapshot(remoteData) {
   var localTs = (window.currentAttState && window.currentAttState._localWriteTs) || _attLastLocalWriteTs || 0;
   if (!localTs) return true;
   if (Date.now() - localTs < ATT_REMOTE_GRACE_MS) return false;
-  // Strictly newer only — equal timestamps must not revive locally cleared marks.
-  return attRecordTimestamp(remoteData) > localTs;
+  // The write patch and resulting complete Firestore document carry the same timestamp.
+  // Accepting equality repairs a partial local snapshot without losing a successful clear.
+  return attRecordTimestamp(remoteData) >= localTs;
 }
 
 function attGetRegisterUsers() {
@@ -768,7 +879,8 @@ function attIsOfflineMode() {
 function attPersistSheetLocal(cloudDocId, localKey, data) {
   if (!localKey) localKey = cloudDocId;
   if (typeof window.emsOfflineWriteLocalSync === 'function') {
-    window.emsOfflineWriteLocalSync(localKey, data);
+    // Never report a blocked tenant partition or a storage failure as saved.
+    return window.emsOfflineWriteLocalSync(localKey, data) !== false;
   } else {
     try {
       var str = JSON.stringify(data);
@@ -789,7 +901,16 @@ function attPersistSheetLocal(cloudDocId, localKey, data) {
 
 var _attCloudPersistTimer = null;
 var _attCloudPersistPending = null;
+var _attCloudPersistInflight = Object.create(null);
 var _attSaveToastShown = false;
+
+window.attHasPendingCloudPersistForDoc = function (cloudDocId) {
+  if (!cloudDocId) return false;
+  return !!(
+    (_attCloudPersistPending && _attCloudPersistPending.cloudDocId === cloudDocId)
+    || _attCloudPersistInflight[cloudDocId]
+  );
+};
 
 function attScheduleCloudPersist(cloudDocId, localKey, dataToSave, showToast, cloudPatch, opts) {
   opts = opts || {};
@@ -815,11 +936,28 @@ function attScheduleCloudPersist(cloudDocId, localKey, dataToSave, showToast, cl
     )
   };
   if (_attCloudPersistTimer) clearTimeout(_attCloudPersistTimer);
-  var delay = opts.immediate ? 0 : 450;
+  // The outbox is durable and coalesces document updates itself. Queue now so
+  // an app/tab close cannot occur during a debounce window.
+  var delay = 0;
   _attCloudPersistTimer = setTimeout(function () {
     _attCloudPersistTimer = null;
     attRunPendingCloudPersist();
   }, delay);
+}
+
+function attFlushPendingCloudPersist() {
+    if (_attCloudPersistTimer) {
+      clearTimeout(_attCloudPersistTimer);
+      _attCloudPersistTimer = null;
+    }
+    if (_attCloudPersistPending) attRunPendingCloudPersist();
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('pagehide', attFlushPendingCloudPersist);
+  window.addEventListener('visibilitychange', function () {
+    if (document && document.visibilityState === 'hidden') attFlushPendingCloudPersist();
+  });
 }
 
 function attRunPendingCloudPersist() {
@@ -838,7 +976,11 @@ function attRunPendingCloudPersist() {
       }
       return;
     }
-    var persistOpts = { localKey: p.localKey, skipLocalSync: true };
+    var persistOpts = {
+      localKey: p.localKey,
+      skipLocalSync: true,
+      tenantId: getAttendanceTenantId()
+    };
     if (p.cloudPatch && Object.keys(p.cloudPatch).length) {
       persistOpts.patch = p.cloudPatch;
     }
@@ -846,6 +988,7 @@ function attRunPendingCloudPersist() {
     if (typeof window.attSaveStatusMarkCloud === 'function') {
       window.attSaveStatusMarkCloud(p.cloudDocId, 'syncing');
     }
+    _attCloudPersistInflight[p.cloudDocId] = Number(_attCloudPersistInflight[p.cloudDocId] || 0) + 1;
     window.emsOfflinePersistAttendance(p.cloudDocId, p.dataToSave, persistOpts).then(function (res) {
       if (typeof window.attSaveStatusOnCloudResult === 'function') {
         window.attSaveStatusOnCloudResult(p.cloudDocId, res || { ok: false, error: 'empty cloud result' });
@@ -870,6 +1013,10 @@ function attRunPendingCloudPersist() {
           error: err && err.message ? err.message : String(err)
         });
       }
+    }).then(function () {
+      var left = Number(_attCloudPersistInflight[p.cloudDocId] || 0) - 1;
+      if (left > 0) _attCloudPersistInflight[p.cloudDocId] = left;
+      else delete _attCloudPersistInflight[p.cloudDocId];
     });
 }
 
@@ -1045,15 +1192,18 @@ function attAppendForcedClearPatch(patch, clearCells, newData) {
   if (!clearCells.length && !attPatchHasClears(patch)) return patch;
 
   if (clearCells.length) {
+    // Clear each field's previous diff only once. Clearing it inside the loop
+    // silently discarded every collective delete except the final person.
+    ['records', 'remarks', 'late', 'periodRecords'].forEach(function (field) {
+      attStripPatchFieldPrefix(patch, field);
+    });
     clearCells.forEach(function (c) {
       var uid = c && c.uid;
       var day = c && c.day;
       if (!uid || day == null) return;
       ['records', 'remarks', 'late'].forEach(function (field) {
-        attStripPatchFieldPrefix(patch, field);
         patch[field + '.' + uid + '.' + day] = null;
       });
-      attStripPatchFieldPrefix(patch, 'periodRecords');
       patch['periodRecords.' + uid + '.' + day] = null;
     });
   } else {
@@ -1101,6 +1251,7 @@ function attRefreshCellUI(uid, day) {
     name: u ? (u.name || '') : '',
     className: attGetUserClass(u)
   });
+  var statusKind = attStatusKind(st, symbols);
   var printEl = document.getElementById('print-txt-' + uid + '-' + day);
   if (printEl) printEl.textContent = st;
   if (!printEl) return;
@@ -1108,19 +1259,19 @@ function attRefreshCellUI(uid, day) {
   if (!cell) return;
   cell.classList.remove('att-cell-empty', 'att-cell-p', 'att-cell-a', 'att-cell-l', 'att-cell-partial', 'att-cell-incomplete');
   if (!st) cell.classList.add('att-cell-empty');
-  else if (st === symbols.P) cell.classList.add('att-cell-p');
-  else if (st === symbols.A) cell.classList.add('att-cell-a');
-  else if (st === symbols.L) cell.classList.add('att-cell-l');
-  else if (st === ATT_ROLLUP_PARTIAL) cell.classList.add('att-cell-partial');
-  else if (st === ATT_ROLLUP_INCOMPLETE) cell.classList.add('att-cell-incomplete');
+  else if (statusKind === 'P') cell.classList.add('att-cell-p');
+  else if (statusKind === 'A') cell.classList.add('att-cell-a');
+  else if (statusKind === 'L') cell.classList.add('att-cell-l');
+  else if (statusKind === 'partial') cell.classList.add('att-cell-partial');
+  else if (statusKind === 'incomplete') cell.classList.add('att-cell-incomplete');
   cell.querySelectorAll('.att-cell-btn.status-p').forEach(function (btn) {
-    btn.classList.toggle('active', st === symbols.P);
+    btn.classList.toggle('active', statusKind === 'P');
   });
   cell.querySelectorAll('.att-cell-btn.status-a').forEach(function (btn) {
-    btn.classList.toggle('active', st === symbols.A);
+    btn.classList.toggle('active', statusKind === 'A');
   });
   cell.querySelectorAll('.att-cell-btn.status-l').forEach(function (btn) {
-    btn.classList.toggle('active', st === symbols.L);
+    btn.classList.toggle('active', statusKind === 'L');
   });
   cell.querySelectorAll('.att-cell-btn.status-clear').forEach(function (btn) {
     btn.classList.toggle('active', !st);
@@ -1151,6 +1302,36 @@ function attRefreshCellUI(uid, day) {
 
 var attConfigUnsub = null;
 let currentAttListener = null;
+var _attRegisterLoadSeq = 0;
+
+function attRegisterLoadIsCurrent(ctx) {
+  if (!ctx) return true;
+  if (ctx.requestId !== _attRegisterLoadSeq) return false;
+  var activeTenant = getAttendanceTenantId();
+  if (!activeTenant || String(activeTenant) !== String(ctx.tenantId || '')) return false;
+  if (ctx.generation != null && typeof window.emsGetTenantGeneration === 'function'
+      && window.emsGetTenantGeneration() !== ctx.generation) return false;
+  return true;
+}
+
+function attSetRegisterLoadBusy(ctx, busy) {
+  var btn = document.getElementById('btn-load-smart-register');
+  if (!btn) return;
+  if (!busy && btn._attLoadRequestId !== (ctx && ctx.requestId)) return;
+  if (busy) {
+    if (!btn._attLoadPrevHtml) btn._attLoadPrevHtml = btn.innerHTML;
+    btn._attLoadRequestId = ctx && ctx.requestId;
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> رجسٹر لوڈ ہو رہا ہے…';
+  } else {
+    btn.disabled = false;
+    btn.setAttribute('aria-busy', 'false');
+    btn.innerHTML = btn._attLoadPrevHtml || '<i class="fas fa-sync-alt"></i> رجسٹر لوڈ کریں';
+    delete btn._attLoadPrevHtml;
+    delete btn._attLoadRequestId;
+  }
+}
 
 function stopAttendanceFirestoreSync() {
   if (attConfigUnsub) {
@@ -1203,6 +1384,11 @@ window.emsStartAttendanceSync = function () {
       if (!attSnapshotMayMutateTenantState(listenerTenantId, listenerGeneration)) return;
       var list = attTimetableListFromCloudSnapshot(doc);
       if (list == null) return;
+      var ownership = list.length ? attVerifyRemoteTimetableOwnership(list) : { ok: true };
+      if (list.length && !ownership.ok) {
+        console.warn('[EMS attendance] ignoring ModuleData timetable snapshot — teacher roster mismatch', ownership);
+        return;
+      }
       if (!attShouldAcceptRemoteTimetable(list, listenerTenantId)) {
         console.warn('[EMS attendance] ignoring ModuleData timetable snapshot — does not match this madrasa');
         return;
@@ -1293,6 +1479,10 @@ function attPruneDayStatusMap(map) {
 function attNormalizeRecord(data) {
   var base = attEmptyAttendanceRecord();
   if (!data || typeof data !== 'object') return base;
+  if (typeof window !== 'undefined'
+      && typeof window.emsNormalizeAttendanceCloudDocument === 'function') {
+    data = window.emsNormalizeAttendanceCloudDocument(data) || base;
+  }
   return {
     locked: !!data.locked,
     records: attPruneDayStatusMap(data.records || {}),
@@ -1322,8 +1512,8 @@ function attReconcileAttendanceRecord(localRec, remoteRec) {
   if (!localRec) return attNormalizeRecord(remoteRec);
   var localTs = attRecordTimestamp(localRec);
   var remoteTs = attRecordTimestamp(remoteRec);
-  if (remoteTs > localTs) return attNormalizeRecord(remoteRec);
-  // Local SSOT wins on equal/older remote — prevents × clears from bouncing back.
+  if (remoteTs >= localTs) return attNormalizeRecord(remoteRec);
+  // A genuinely newer offline/local mutation stays authoritative until cloud catches up.
   return attNormalizeRecord(localRec);
 }
 
@@ -1406,7 +1596,7 @@ function attBackgroundReconcile(uid, keys, localRec) {
       if (!attHasMeaningfulAttendanceData(remote)) return;
       var localTs = attRecordTimestamp(localRec);
       var remoteTs = attRecordTimestamp(remote);
-      if (remoteTs <= localTs) return;
+      if (remoteTs < localTs) return;
       var merged = attReconcileAttendanceRecord(localRec, remote);
       attCacheAttendanceFromRemote(cloudDocId, merged, localKey);
       attApplyAttendanceState(
@@ -1539,8 +1729,15 @@ function attAdoptLegacyPeriodSheets(keys, month, type, classId) {
     var canon = attNormalizeRecord(
       attReadSheetLocal(keys.localKey || keys.cloudDocId) || attEmptyAttendanceRecord()
     );
+    var canonicalHadMeaningfulData = attHasMeaningfulAttendanceData(canon);
+    var canonicalHadPeriodCoverage = Object.keys(canon.periodRecords || {}).length > 0;
     var symbols = attGetAttSymbols();
     var adoptedCounter = { count: 0 };
+
+    // When two historical sheets cover the same cell, adopt the newest source first.
+    legacySheets.sort(function (a, b) {
+      return attRecordTimestamp(b && b.sheet) - attRecordTimestamp(a && a.sheet);
+    });
 
     legacySheets.forEach(function (entry) {
       var key = entry.key;
@@ -1549,13 +1746,21 @@ function attAdoptLegacyPeriodSheets(keys, month, type, classId) {
       if (!periodId) return;
 
       if (periodId === 'all') {
-        attMergeLegacyFieldMaps(canon, legacy, 'records', adoptedCounter);
-        attMergeLegacyPeriodRecords(canon, legacy, adoptedCounter);
-        ['remarks', 'late'].forEach(function (field) {
-          attMergeLegacyFieldMaps(canon, legacy, field, adoptedCounter);
-        });
+        if (!canonicalHadMeaningfulData) {
+          attMergeLegacyFieldMaps(canon, legacy, 'records', adoptedCounter);
+          ['remarks', 'late'].forEach(function (field) {
+            attMergeLegacyFieldMaps(canon, legacy, field, adoptedCounter);
+          });
+        }
+        if (!canonicalHadPeriodCoverage) {
+          attMergeLegacyPeriodRecords(canon, legacy, adoptedCounter);
+        }
         return;
       }
+
+      // Once a canonical sheet has period coverage, absent cells are intentional
+      // clears/not-marked values; old per-period documents must never revive them.
+      if (canonicalHadPeriodCoverage) return;
 
       Object.keys(legacy.records || {}).forEach(function (rowUid) {
         Object.keys(legacy.records[rowUid] || {}).forEach(function (day) {
@@ -1626,12 +1831,13 @@ function attAdoptLegacyPeriodSheets(keys, month, type, classId) {
   }).catch(function () { return null; });
 }
 
-function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period) {
+function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period, loadCtx) {
   var scope = attNormalizeStorageScope(month, type, classId, period);
   var keys = attResolveSheetKeys(scope.month, scope.type, scope.classId, scope.period);
   attSaveLastSession(scope.month, scope.type, scope.classId, scope.period);
 
   function openRegister(savedRecord, toastMsg, toastType) {
+    if (!attRegisterLoadIsCurrent(loadCtx)) return false;
     var rec = attNormalizeRecord(savedRecord);
     if (!attIsCanonicalUnified() && type === 'students' && period && period !== 'all') {
       rec = attOverlayCanonicalPeriodMarks(month, classId, period, rec);
@@ -1644,24 +1850,27 @@ function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period) {
     if (toastMsg && typeof window.showToast === 'function') {
       window.showToast(toastMsg, toastType || 'success');
     }
+    return true;
   }
 
   function fetchFromCloud(localRec) {
+    if (!attRegisterLoadIsCurrent(loadCtx)) return Promise.resolve({ ok: false, stale: true });
     var fsDb = attGetFirestoreDb();
     if (attIsOfflineMode() || !fsDb) {
       if (localRec) {
         openRegister(localRec, '📴 آف لائن — لوکل ڈیٹا', 'warning');
-        return;
+        return Promise.resolve({ ok: true, local: true });
       }
       openRegister(attEmptyAttendanceRecord(), 'آف لائن — خالی رجسٹر', 'warning');
-      return;
+      return Promise.resolve({ ok: true, local: true, empty: true });
     }
     if (!localRec) {
       window.showToast('حاضری کا رجسٹر کلاؤڈ سے لوڈ ہو رہا ہے...', 'warning');
     }
-    attTenantSubCol(fsDb, uid, 'Attendance').doc(keys.cloudDocId)
+    return attTenantSubCol(fsDb, uid, 'Attendance').doc(keys.cloudDocId)
       .get({ source: 'default' })
       .then(function (doc) {
+        if (!attRegisterLoadIsCurrent(loadCtx)) return { ok: false, stale: true };
         var remote = doc.exists ? doc.data() : null;
         var merged = attReconcileAttendanceRecord(localRec, remote);
         attCacheAttendanceFromRemote(keys.cloudDocId, merged, keys.localKey);
@@ -1669,33 +1878,47 @@ function attLoadRegisterLocalFirst(uid, targets, month, type, classId, period) {
           ? (attRecordTimestamp(remote) > attRecordTimestamp(localRec) ? 'لوکل + کلاؤڈ ہم آہنگ' : 'لوکل کیش سے لوڈ')
           : (remote ? 'کلاؤڈ سے لوڈ ہو گیا' : 'نیا خالی رجسٹر');
         var typ = localRec ? 'success' : (remote ? 'info' : 'warning');
-        openRegister(merged, msg, typ);
+        return { ok: openRegister(merged, msg, typ), cloud: !!remote };
       })
       .catch(function (err) {
+        if (!attRegisterLoadIsCurrent(loadCtx)) return { ok: false, stale: true };
         if (localRec) {
           openRegister(localRec, '📴 آف لائن — لوکل ڈیٹا', 'warning');
+          return { ok: true, local: true };
         } else {
           window.showToast('ڈیٹا لوڈ کرنے میں مسئلہ: ' + err.message, 'error');
+          return { ok: false, error: err && err.message ? err.message : String(err) };
         }
       });
   }
 
-  var cachePromise = attAdoptLegacyPeriodSheets(keys, scope.month, scope.type, scope.classId).then(function (adopted) {
+  var monthFresh = typeof window.emsAttEnsureMonthFresh === 'function'
+    ? window.emsAttEnsureMonthFresh(scope.month)
+    : Promise.resolve({ ok: false, localOnly: true });
+  var cachePromise = monthFresh.then(function () {
+    return attAdoptLegacyPeriodSheets(keys, scope.month, scope.type, scope.classId);
+  }).then(function (adopted) {
     if (adopted) return adopted;
     return typeof window.emsOfflineGetCachedAttendance === 'function'
       ? window.emsOfflineGetCachedAttendance(keys.cloudDocId, { localKey: keys.localKey })
       : null;
   });
 
-  cachePromise.then(function (localData) {
+  return cachePromise.then(function (localData) {
+    if (!attRegisterLoadIsCurrent(loadCtx)) return { ok: false, stale: true };
     var localRec = localData ? attNormalizeRecord(localData) : null;
     // Local sheet with meaningful data (incl. fully cleared w/ timestamp) is SSOT.
     if (localRec && attHasMeaningfulAttendanceData(localRec)) {
       openRegister(localRec, 'حاضری کا رجسٹر لوکل کیش سے لوڈ ہو گیا', 'success');
       attBackgroundReconcile(uid, keys, localRec);
-      return;
+      return { ok: true, local: true };
     }
-    fetchFromCloud(localRec);
+    return fetchFromCloud(localRec);
+  }).catch(function (err) {
+    if (attRegisterLoadIsCurrent(loadCtx) && typeof window.showToast === 'function') {
+      window.showToast('رجسٹر لوڈ ناکام — دوبارہ کوشش کریں', 'error');
+    }
+    return { ok: false, error: err && err.message ? err.message : String(err) };
   });
 }
 
@@ -1920,7 +2143,6 @@ function attRegisterTabBootHandlers() {
         .catch(function () { /* ignore */ })
         .then(function () {
           if (typeof window.renderTimetable === 'function') window.renderTimetable();
-          if (typeof attUpdateTimetablePushBtnState === 'function') attUpdateTimetablePushBtnState();
         });
     }
     if (typeof window.curEnsureLibraryReady === 'function') {
@@ -2162,38 +2384,86 @@ function attBindSmartRegisterSearch() {
 }
 
 // ================== 2. ماسٹر سیٹنگز (ادارہ اور پیریڈز) ==================
+function attSetActionButtonBusy(btn, busy, busyLabel) {
+  if (!btn) return;
+  if (busy) {
+    if (!btn._attPrevHtml) btn._attPrevHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.setAttribute('aria-busy', 'true');
+    if (busyLabel) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ' + busyLabel;
+  } else {
+    btn.disabled = false;
+    btn.setAttribute('aria-busy', 'false');
+    if (btn._attPrevHtml) {
+      btn.innerHTML = btn._attPrevHtml;
+      delete btn._attPrevHtml;
+    }
+  }
+}
+
+function attRequirePersistSuccess(res) {
+  if (!res || res.ok === false) {
+    var err = new Error((res && (res.reason || res.error)) || 'local_write_failed');
+    err.result = res || null;
+    throw err;
+  }
+  return res;
+}
+
 document
   .getElementById('btn-save-basic-settings')
   ?.addEventListener('click', () => {
+    var btn = document.getElementById('btn-save-basic-settings');
+    if (btn && btn._attActionInflight) return btn._attActionInflight;
     const settings = {
       name: document.getElementById('set-madrasa-name').value,
       branch: document.getElementById('set-branch-name').value,
       year: document.getElementById('set-academic-year').value,
       footer: document.getElementById('set-print-footer').value,
     };
-    attPersistConfigBlob(ATT_SETTINGS_KEY, settings).then(function () {
-      window.showToast('بنیادی معلومات محفوظ کر لی گئیں!', 'success');
+    attSetActionButtonBusy(btn, true, 'محفوظ ہو رہا ہے…');
+    var op = attPersistConfigBlob(ATT_SETTINGS_KEY, settings).then(attRequirePersistSuccess).then(function () {
+      window.showToast('بنیادی معلومات اس مدرسے میں محفوظ ہو گئیں!', 'success');
       logAttAudit('سیٹنگز اپڈیٹ', 'مدرسہ کی بنیادی معلومات تبدیل کی گئیں');
-    }).catch(function () {
-      window.showToast('بنیادی معلومات محفوظ (آف لائن)', 'warning');
+      return true;
+    }).catch(function (err) {
+      console.error('[EMS] attendance settings save', err);
+      window.showToast('بنیادی معلومات محفوظ نہیں ہو سکیں', 'error');
+      return false;
+    }).finally(function () {
+      if (btn) btn._attActionInflight = null;
+      attSetActionButtonBusy(btn, false);
     });
+    if (btn) btn._attActionInflight = op;
+    return op;
   });
 
 window.saveSymbols = function () {
+  var btn = document.getElementById('btn-save-att-symbols');
+  if (btn && btn._attActionInflight) return btn._attActionInflight;
   const symbols = {
     P: document.getElementById('sym-p').value || 'P',
     A: document.getElementById('sym-a').value || 'A',
     L: document.getElementById('sym-l').value || 'L',
   };
-  attPersistConfigBlob('ems_att_symbols', symbols).then(function () {
+  attSetActionButtonBusy(btn, true, 'محفوظ…');
+  var op = attPersistConfigBlob('ems_att_symbols', symbols).then(attRequirePersistSuccess).then(function () {
     window.showToast('حاضری کی علامات محفوظ ہو گئیں!', 'success');
-  }).catch(function () {
-    window.showToast('علامات محفوظ ہو گئیں (آف لائن)', 'warning');
+    return true;
+  }).catch(function (err) {
+    console.error('[EMS] attendance symbols save', err);
+    window.showToast('حاضری کی علامات محفوظ نہیں ہو سکیں', 'error');
+    return false;
+  }).finally(function () {
+    if (btn) btn._attActionInflight = null;
+    attSetActionButtonBusy(btn, false);
   });
+  if (btn) btn._attActionInflight = op;
+  return op;
 };
 
 function loadSettingsData() {
-  const settings = JSON.parse(localStorage.getItem('ems_att_settings')) || {};
+  const settings = attReadConfigJson('ems_att_settings', {}) || {};
   if (settings.name)
     document.getElementById('set-madrasa-name').value = settings.name;
   if (settings.branch)
@@ -2203,7 +2473,7 @@ function loadSettingsData() {
   if (settings.footer)
     document.getElementById('set-print-footer').value = settings.footer;
 
-  const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || {
+  const symbols = attReadConfigJson('ems_att_symbols', null) || {
     P: 'P',
     A: 'A',
     L: 'L',
@@ -2556,10 +2826,16 @@ function attResolvePeriodBookName() {
 }
 
 function attResetPeriodForm() {
-  ['new-period-name', 'new-period-location', 'custom-teacher-name'].forEach(function (id) {
+  ['new-period-name', 'new-period-location', 'new-period-recovery-id', 'custom-teacher-name'].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.value = '';
   });
+  var recoveryId = document.getElementById('new-period-recovery-id');
+  if (recoveryId) recoveryId.readOnly = false;
+  var recoveryHelp = document.getElementById('new-period-recovery-id-help');
+  if (recoveryHelp) {
+    recoveryHelp.textContent = 'اگر اس گھنٹے کی پہلے سے حاضری لگی ہوئی ہے تو اس کا پرانا شناختی نمبر یہاں درج کریں۔ اسے صرف بحالی کی فہرست سے کاپی کریں؛ دہرے یا غیر محفوظ نمبر قبول نہیں ہوں گے۔';
+  }
   attFillPeriodBookSelect('');
   var cls = document.getElementById('new-period-class');
   if (cls) cls.value = '';
@@ -2597,6 +2873,13 @@ function attFillPeriodForm(p) {
     if (el) el.value = val || '';
   };
   setVal('new-period-name', p.name);
+  setVal('new-period-recovery-id', p.id);
+  var recoveryId = document.getElementById('new-period-recovery-id');
+  if (recoveryId) recoveryId.readOnly = true;
+  var recoveryHelp = document.getElementById('new-period-recovery-id-help');
+  if (recoveryHelp) {
+    recoveryHelp.textContent = 'موجودہ گھنٹہ شناختی نمبر لاک ہے، کیونکہ اسے تبدیل کرنے سے سابقہ حاضری کا ربط ٹوٹ سکتا ہے۔';
+  }
   setVal('new-period-class', p.className && p.className !== '-' ? p.className : '');
   attFillPeriodBookSelect(attFormatBookName(p.bookName));
   setVal('new-period-location', p.location || '');
@@ -2637,6 +2920,8 @@ function attSavePeriodFromModal(opts) {
   var tSelect = document.getElementById('new-period-teacher');
   var teacherId = tSelect ? tSelect.value : '';
   var teacherName = tSelect && tSelect.selectedIndex >= 0 ? tSelect.options[tSelect.selectedIndex].text : '-';
+  var requestedRecoveryId = String(document.getElementById('new-period-recovery-id')?.value || '').trim();
+  var customTeachersToSave = null;
 
   if (!name) {
     if (typeof window.showToast === 'function') window.showToast('گھنٹے کا نام درج کرنا لازمی ہے!', 'error');
@@ -2653,6 +2938,11 @@ function attSavePeriodFromModal(opts) {
     attEnsureLibraryBook(bookName);
   }
 
+  if (!teacherId) {
+    if (typeof window.showToast === 'function') window.showToast('استاد منتخب کرنا لازمی ہے؛ بغیر استاد کے گھنٹہ حاضری میں ظاہر نہیں ہوگا۔', 'error');
+    return false;
+  }
+
   if (teacherId === 'ADD_NEW') {
     var customName = document.getElementById('custom-teacher-name')?.value.trim();
     if (!customName) {
@@ -2661,9 +2951,9 @@ function attSavePeriodFromModal(opts) {
     }
     teacherId = window.generateID ? window.generateID('CTCH') : 'CTCH-' + Math.floor(Math.random() * 90000);
     teacherName = customName;
-    var customTeachers = JSON.parse(localStorage.getItem('ems_att_custom_teachers')) || [];
+    var customTeachers = attReadConfigJson(ATT_CUSTOM_TEACHERS_KEY, []) || [];
     customTeachers.push({ id: teacherId, name: teacherName });
-    localStorage.setItem('ems_att_custom_teachers', JSON.stringify(customTeachers));
+    customTeachersToSave = customTeachers;
   } else if (teacherId && teacherId !== '') {
     var regUser = attFindRegisterUser(teacherId);
     if (regUser) teacherId = attGetUserId(regUser) || teacherId;
@@ -2685,6 +2975,13 @@ function attSavePeriodFromModal(opts) {
   var editedId = window._attEditingPeriodId;
   var isEdit = !!editedId;
 
+  if (requestedRecoveryId && !/^[A-Za-z0-9_-]+$/.test(requestedRecoveryId)) {
+    if (typeof window.showToast === 'function') {
+      window.showToast('پرانا گھنٹہ شناختی نمبر صرف انگریزی حروف، اعداد، _ یا - پر مشتمل ہو سکتا ہے۔', 'error');
+    }
+    return false;
+  }
+
   if (isEdit) {
     var idx = periods.findIndex(function (p) { return p.id === editedId; });
     if (idx < 0) {
@@ -2694,45 +2991,84 @@ function attSavePeriodFromModal(opts) {
     periodObj.id = editedId;
     periods[idx] = Object.assign({}, periods[idx], periodObj);
   } else {
-    periodObj.id = window.generateID ? window.generateID('PRD') : 'PRD-' + Math.floor(Math.random() * 90000);
+    if (requestedRecoveryId) {
+      var duplicate = periods.some(function (p) {
+        return p && String(p.id || '').trim() === requestedRecoveryId;
+      });
+      if (duplicate) {
+        if (typeof window.showToast === 'function') {
+          window.showToast('یہ پرانا گھنٹہ شناختی نمبر پہلے سے موجود ہے؛ محفوظ شدہ حاضری کے لیے اسے دوسرے گھنٹے میں استعمال نہیں کیا جا سکتا۔', 'error');
+        }
+        return false;
+      }
+      periodObj.id = requestedRecoveryId;
+    } else {
+      periodObj.id = window.generateID ? window.generateID('PRD') : 'PRD-' + Math.floor(Math.random() * 90000);
+    }
     periods.push(periodObj);
   }
 
-  attSaveTimetablePeriodsSync(periods);
-  attRefreshPeriodUiAfterSave(isEdit ? editedId : null);
+  // Both local writes execute synchronously before their promises resolve, so
+  // an immediate reload cannot miss the newly saved timetable.
+  var customSave = customTeachersToSave
+    ? attPersistConfigBlob(ATT_CUSTOM_TEACHERS_KEY, customTeachersToSave)
+    : Promise.resolve({ ok: true });
+  var periodSave = attSaveTimetablePeriodsSync(periods);
+  return Promise.all([customSave, periodSave]).then(function (results) {
+    results.forEach(function (res) {
+      if (!res || res.ok === false) throw new Error((res && (res.reason || res.error)) || 'local_write_failed');
+    });
+  }).then(function () {
+    attRefreshPeriodUiAfterSave(isEdit ? editedId : null);
 
-  if (typeof window.showToast === 'function') {
-    window.showToast(
-      isEdit ? 'گھنٹہ (' + name + ') کامیابی سے اپڈیٹ ہو گیا!' : 'گھنٹہ (' + name + ') کامیابی سے محفوظ کر لیا گیا!',
-      'success'
-    );
-  }
-  if (typeof logAttAudit === 'function') {
-    logAttAudit(isEdit ? 'گھنٹہ ترمیم' : 'نیا گھنٹہ', (isEdit ? 'ترمیم: ' : '') + name);
-  }
+    if (typeof window.showToast === 'function') {
+      window.showToast(
+        isEdit ? 'گھنٹہ (' + name + ') کامیابی سے اپڈیٹ ہو گیا!' : 'گھنٹہ (' + name + ') کامیابی سے محفوظ کر لیا گیا!',
+        'success'
+      );
+    }
+    if (typeof logAttAudit === 'function') {
+      logAttAudit(isEdit ? 'گھنٹہ ترمیم' : 'نیا گھنٹہ', (isEdit ? 'ترمیم: ' : '') + name);
+    }
 
-  if (typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
-    try { window.exmSyncTimetableBooksToMasterSheet({ silent: true }); } catch (eExmSync) { /* ignore */ }
-  }
+    if (typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
+      try { window.exmSyncTimetableBooksToMasterSheet({ silent: true }); } catch (eExmSync) { /* ignore */ }
+    }
 
-  if (addMore) {
-    document.getElementById('new-period-name').value = '';
-    attFillPeriodBookSelect('');
-    document.getElementById('new-period-class').value = '';
-    if (document.getElementById('new-period-location')) document.getElementById('new-period-location').value = '';
-    window._attEditingPeriodId = null;
-    attUpdatePeriodModalChrome();
-  } else if (closeAfter) {
-    attResetPeriodForm();
-    window._attEditingPeriodId = null;
-    attUpdatePeriodModalChrome();
-    if (typeof window.closeModal === 'function') window.closeModal('add-period-modal');
-  }
+    if (addMore) {
+      document.getElementById('new-period-name').value = '';
+      attFillPeriodBookSelect('');
+      document.getElementById('new-period-class').value = '';
+      if (document.getElementById('new-period-location')) document.getElementById('new-period-location').value = '';
+      var recoveryIdAfterSave = document.getElementById('new-period-recovery-id');
+      if (recoveryIdAfterSave) {
+        recoveryIdAfterSave.value = '';
+        recoveryIdAfterSave.readOnly = false;
+      }
+      var recoveryHelpAfterSave = document.getElementById('new-period-recovery-id-help');
+      if (recoveryHelpAfterSave) {
+        recoveryHelpAfterSave.textContent = 'اگر اس گھنٹے کی پہلے سے حاضری لگی ہوئی ہے تو اس کا پرانا شناختی نمبر یہاں درج کریں۔ اسے صرف بحالی کی فہرست سے کاپی کریں؛ دہرے یا غیر محفوظ نمبر قبول نہیں ہوں گے۔';
+      }
+      window._attEditingPeriodId = null;
+      attUpdatePeriodModalChrome();
+    } else if (closeAfter) {
+      attResetPeriodForm();
+      window._attEditingPeriodId = null;
+      attUpdatePeriodModalChrome();
+      if (typeof window.closeModal === 'function') window.closeModal('add-period-modal');
+    }
 
-  return true;
+    return true;
+  }).catch(function (err) {
+    console.error('[EMS] timetable period save', err);
+    if (typeof window.showToast === 'function') window.showToast('گھنٹہ محفوظ نہیں ہو سکا؛ موجودہ نظام الاوقات برقرار ہے۔', 'error');
+    return false;
+  });
 }
 
+var _attPeriodDeleteInflight = Object.create(null);
 function attRemovePeriodById(periodId) {
+  if (_attPeriodDeleteInflight[periodId]) return _attPeriodDeleteInflight[periodId];
   var periods = attReadAllTimetablePeriodsRaw();
   var idx = periods.findIndex(function (p) { return p.id === periodId; });
   if (idx < 0) {
@@ -2746,19 +3082,32 @@ function attRemovePeriodById(periodId) {
   }
   var label = toDelete.name || periodId;
   if (!confirm('کیا آپ واقعی "' + label + '" حذف کرنا چاہتے ہیں؟')) return false;
-  moveToRecycleBin('Period', toDelete);
   periods[idx] = Object.assign({}, toDelete, {
     archived: true,
     archivedAt: Date.now()
   });
-  attSaveTimetablePeriodsSync(periods);
-  var perSel = document.getElementById('att-reg-period');
-  if (perSel && perSel.value === periodId) perSel.value = 'all';
-  attRefreshPeriodUiAfterSave(null);
-  if (typeof window.setupPrintHeader === 'function') window.setupPrintHeader();
-  if (typeof logAttAudit === 'function') logAttAudit('گھنٹہ حذف', label);
-  if (typeof window.showToast === 'function') window.showToast('گھنٹہ حذف کر دیا گیا', 'success');
-  return true;
+  _attPeriodDeleteInflight[periodId] = attSaveTimetablePeriodsSync(periods)
+    .then(function (res) {
+      if (!res || res.ok === false) throw new Error((res && (res.reason || res.error)) || 'local_write_failed');
+      return res;
+    }).then(function () {
+      // The period is archived, not destroyed: old attendance keeps its hour id.
+      moveToRecycleBin('Period', toDelete);
+      var perSel = document.getElementById('att-reg-period');
+      if (perSel && perSel.value === periodId) perSel.value = 'all';
+      attRefreshPeriodUiAfterSave(null);
+      if (typeof window.setupPrintHeader === 'function') window.setupPrintHeader();
+      if (typeof logAttAudit === 'function') logAttAudit('گھنٹہ حذف', label);
+      if (typeof window.showToast === 'function') window.showToast('گھنٹہ محفوظ طریقے سے آرکائیو کر دیا گیا؛ پرانی حاضری برقرار ہے۔', 'success');
+      return true;
+    }).catch(function (err) {
+      console.error('[EMS] timetable period delete', err);
+      if (typeof window.showToast === 'function') window.showToast('گھنٹہ حذف نہیں ہو سکا؛ نظام الاوقات برقرار ہے۔', 'error');
+      return false;
+    }).finally(function () {
+      delete _attPeriodDeleteInflight[periodId];
+    });
+  return _attPeriodDeleteInflight[periodId];
 }
 
 window.attOpenNewPeriodModal = function () {
@@ -2877,7 +3226,6 @@ window.renderTimetable = function () {
 
   if (!periods.length) {
     box.innerHTML = '<div class="tt-empty"><i class="fas fa-table"></i><p>کوئی سبق موجود نہیں۔ "نیا سبق" سے اساتذہ کے اوقات درج کریں۔</p></div>';
-    if (typeof attUpdateTimetablePushBtnState === 'function') attUpdateTimetablePushBtnState();
     return;
   }
 
@@ -2901,7 +3249,6 @@ window.renderTimetable = function () {
         <div class="tt-group-body">${items.map(ttPeriodCard).join('')}</div>
       </div>`;
   }).join('');
-  if (typeof attUpdateTimetablePushBtnState === 'function') attUpdateTimetablePushBtnState();
 };
 
 // نظام الاوقات سے براہِ راست حاضری لینا — اسمارٹ رجسٹر پر منتقلی
@@ -2944,25 +3291,42 @@ document.getElementById('btn-load-smart-register')?.addEventListener('click', ()
     if (!month) return window.showToast('مہینہ منتخب کریں!', 'error');
     if (type === 'students' && !classId) return window.showToast('درجہ منتخب کرنا لازمی ہے!', 'error');
 
+    var loadCtx = {
+      requestId: ++_attRegisterLoadSeq,
+      tenantId: uid,
+      generation: typeof window.emsGetTenantGeneration === 'function'
+        ? window.emsGetTenantGeneration() : null
+    };
+    attSetRegisterLoadBusy(loadCtx, true);
+
     var loadRegister = function () {
-      attResolveTargetUsers(type, classId).then(function (targets) {
+      return attResolveTargetUsers(type, classId).then(function (targets) {
+        if (!attRegisterLoadIsCurrent(loadCtx)) return { ok: false, stale: true };
         targets = attFilterEligibleUsers(attMergeUniqueById(targets));
         if (targets.length === 0) {
           var repoCount = typeof window.emsRegRepoGetCount === 'function' ? window.emsRegRepoGetCount() : 0;
           console.warn('[EMS attendance] zero roster targets', { type: type, classId: classId, repoCount: repoCount });
-          return window.showToast('اس کرائیٹیریا کے مطابق کوئی ریکارڈ نہیں ملا!', 'error');
+          window.showToast('اس کرائیٹیریا کے مطابق کوئی ریکارڈ نہیں ملا!', 'error');
+          return { ok: false, reason: 'empty_roster' };
         }
-        attLoadRegisterLocalFirst(uid, targets, month, type, classId, period);
+        return attLoadRegisterLocalFirst(uid, targets, month, type, classId, period, loadCtx);
       }).catch(function (err) {
         console.error('[EMS attendance] load register failed', err);
-        window.showToast('رجسٹر لوڈ ناکام — دوبارہ کوشش کریں', 'error');
+        if (attRegisterLoadIsCurrent(loadCtx)) {
+          window.showToast('رجسٹر لوڈ ناکام — دوبارہ کوشش کریں', 'error');
+        }
+        return { ok: false, error: err && err.message ? err.message : String(err) };
       });
     };
+    var ready;
     if (typeof window.emsEnsureRepositoryReady === 'function') {
-      window.emsEnsureRepositoryReady().then(loadRegister).catch(loadRegister);
+      ready = Promise.resolve(window.emsEnsureRepositoryReady()).catch(function () { return null; });
     } else {
-      loadRegister();
+      ready = Promise.resolve();
     }
+    ready.then(loadRegister).finally(function () {
+      attSetRegisterLoadBusy(loadCtx, false);
+    });
 });
 
 window.toggleAttViewMode = function () {
@@ -3127,6 +3491,7 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
           name: u.name || '',
           className: attGetUserClass(u)
         });
+        let statusKind = attStatusKind(st, symbols);
         let remark = uRemarks[d] || '';
         let lateTime = uLate[d] || '';
         let isGlobalLocked = window.currentAttState.locked;
@@ -3142,11 +3507,11 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
         if (remark !== '') cellClass += ' has-hidden-remark';
         if (!isFriday && !isHoliday && !cellLocked) {
           if (!st) cellClass += ' att-cell-empty';
-          else if (st === symbols.P) cellClass += ' att-cell-p';
-          else if (st === symbols.A) cellClass += ' att-cell-a';
-          else if (st === symbols.L) cellClass += ' att-cell-l';
-          else if (st === ATT_ROLLUP_PARTIAL) cellClass += ' att-cell-partial';
-          else if (st === ATT_ROLLUP_INCOMPLETE) cellClass += ' att-cell-incomplete';
+          else if (statusKind === 'P') cellClass += ' att-cell-p';
+          else if (statusKind === 'A') cellClass += ' att-cell-a';
+          else if (statusKind === 'L') cellClass += ' att-cell-l';
+          else if (statusKind === 'partial') cellClass += ' att-cell-partial';
+          else if (statusKind === 'incomplete') cellClass += ' att-cell-incomplete';
         }
         if (teacherMode) cellClass += ' att-cell-teacher';
 
@@ -3164,9 +3529,9 @@ function buildSmartRegisterImmediate(monthStr, usersList) {
                         ${periodHtml}
                     </div>
                     <div class="att-cell-controls" title="یومیہ حاضری (پرانا سسٹم)">
-                        <button class="att-cell-btn status-p ${st === symbols.P ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.P}')">${symbols.P}</button>
-                        <button class="att-cell-btn status-a ${st === symbols.A ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.A}')">${symbols.A}</button>
-                        <button class="att-cell-btn status-l ${st === symbols.L ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.L}')">${symbols.L}</button>
+                        <button class="att-cell-btn status-p ${statusKind === 'P' ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.P}')">${symbols.P}</button>
+                        <button class="att-cell-btn status-a ${statusKind === 'A' ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.A}')">${symbols.A}</button>
+                        <button class="att-cell-btn status-l ${statusKind === 'L' ? 'active' : ''}" onclick="event.stopPropagation(); setCellStatus('${uid}', ${d}, '${symbols.L}')">${symbols.L}</button>
                         <button class="att-cell-btn status-clear ${!st ? 'active' : ''}" onclick="event.stopPropagation(); clearCellStatus('${uid}', ${d})" title="صاف / خالی">×</button>
                         <button class="att-cell-btn status-custom ${lateTime || remark ? 'active' : ''}" onclick="event.stopPropagation(); openCustomStatusModal('${uid}', '${(u.name || '').replace(/'/g, "\\'")}', ${d})" title="تفصیل / تاخیر">+</button>
                     </div>
@@ -3279,7 +3644,14 @@ function attStudentPeriodsForDayNum(uid, day) {
   var full = year + '-' + month + '-' + (Number(day) < 10 ? '0' + Number(day) : String(Number(day)));
   var wd = new Date(full).getDay();
   var u = attFindRegisterUser(uid);
-  return attStudentPeriodsForWeekday(attGetUserClass(u) || window.currentAttState.classId || '', wd);
+  var pmap = window.currentAttState.periodRecords && window.currentAttState.periodRecords[uid]
+    && window.currentAttState.periodRecords[uid][day];
+  return attStudentPeriodsForRegisterDay(
+    attGetUserClass(u) || window.currentAttState.classId || '',
+    day,
+    wd,
+    pmap
+  );
 }
 
 function attApplyRosterPeriodStatus(uid, day, status) {
@@ -3618,11 +3990,21 @@ function attPersistSheetPayload(keys, dataToSave, opts) {
 function attLoadCanonicalClassSheet(month, classId) {
   var keys = attCanonicalStudentKeys(month, classId);
   var tenant = getAttendanceTenantId() || 'local';
-  var local = attReadSheetLocal(keys.localKey || keys.cloudDocId);
-  if (local && attHasMeaningfulAttendanceData(local)) {
-    return Promise.resolve({ keys: keys, classId: classId, data: attNormalizeRecord(local) });
-  }
-  return attFetchAttendanceSheet(tenant, keys).then(function (data) {
+  var fresh = typeof window.emsAttEnsureMonthFresh === 'function'
+    ? window.emsAttEnsureMonthFresh(month)
+    : Promise.resolve({ ok: false, localOnly: true });
+  return fresh.then(function () {
+    return attAdoptLegacyPeriodSheets(keys, month, 'students', classId);
+  }).then(function (adopted) {
+    if (adopted) return adopted;
+    if (typeof window.emsOfflineGetCachedAttendance === 'function') {
+      return window.emsOfflineGetCachedAttendance(keys.cloudDocId, { localKey: keys.localKey });
+    }
+    return attReadSheetLocal(keys.localKey || keys.cloudDocId);
+  }).then(function (local) {
+    if (local && attHasMeaningfulAttendanceData(local)) return local;
+    return attFetchAttendanceSheet(tenant, keys);
+  }).then(function (data) {
     return { keys: keys, classId: classId, data: attNormalizeRecord(data || attEmptyAttendanceRecord()) };
   });
 }
@@ -3631,11 +4013,21 @@ function attLoadCanonicalClassSheet(month, classId) {
 function attLoadStaffTypeSheet(month, type) {
   var keys = attSheetKeys(month, type, '', 'all');
   var tenant = getAttendanceTenantId() || 'local';
-  var local = attReadSheetLocal(keys.localKey || keys.cloudDocId);
-  if (local && attHasMeaningfulAttendanceData(local)) {
-    return Promise.resolve({ keys: keys, sheetType: type, data: attNormalizeRecord(local) });
-  }
-  return attFetchAttendanceSheet(tenant, keys).then(function (data) {
+  var fresh = typeof window.emsAttEnsureMonthFresh === 'function'
+    ? window.emsAttEnsureMonthFresh(month)
+    : Promise.resolve({ ok: false, localOnly: true });
+  return fresh.then(function () {
+    return attAdoptLegacyPeriodSheets(keys, month, type, '');
+  }).then(function (adopted) {
+    if (adopted) return adopted;
+    if (typeof window.emsOfflineGetCachedAttendance === 'function') {
+      return window.emsOfflineGetCachedAttendance(keys.cloudDocId, { localKey: keys.localKey });
+    }
+    return attReadSheetLocal(keys.localKey || keys.cloudDocId);
+  }).then(function (local) {
+    if (local && attHasMeaningfulAttendanceData(local)) return local;
+    return attFetchAttendanceSheet(tenant, keys);
+  }).then(function (data) {
     return { keys: keys, sheetType: type, data: attNormalizeRecord(data || attEmptyAttendanceRecord()) };
   });
 }
@@ -3738,7 +4130,22 @@ function attWritePeriodOnSheetData(data, uid, day, periodId, status, expectedIds
   else delete data.records[uid][day];
 }
 
+/** Clear one person's complete day, including hidden/archived hour marks. */
+function attClearDayOnSheetData(data, uid, day) {
+  if (!data || !uid || day == null) return false;
+  data.records = data.records || {};
+  data.remarks = data.remarks || {};
+  data.late = data.late || {};
+  data.periodRecords = data.periodRecords || {};
+  attDeleteDayEntry(data.records, uid, day);
+  attDeleteDayEntry(data.remarks, uid, day);
+  attDeleteDayEntry(data.late, uid, day);
+  attDeleteDayEntry(data.periodRecords, uid, day);
+  return true;
+}
+
 window.attStudentPeriodsForWeekday = attStudentPeriodsForWeekday;
+window.attStudentPeriodsForRegisterDay = attStudentPeriodsForRegisterDay;
 window.attTeacherPeriodsForWeekday = attTeacherPeriodsForWeekday;
 window.attTeacherPeriodsForRegisterDay = attTeacherPeriodsForRegisterDay;
 window.attPeriodTeacherIdMatches = attPeriodTeacherIdMatches;
@@ -3777,19 +4184,25 @@ function attWriteDayMarkOnSheetData(data, uid, day, status) {
 
 window.attWritePeriodOnSheetData = attWritePeriodOnSheetData;
 window.attWriteDayMarkOnSheetData = attWriteDayMarkOnSheetData;
+window.attClearDayOnSheetData = attClearDayOnSheetData;
+window.attNextLocalWriteTimestamp = attMarkLocalWrite;
 window.attGetAttSymbols = attGetAttSymbols;
+window.attStatusKind = attStatusKind;
+window.attDisplayStatus = attDisplayStatus;
 window.attGetUserId = attGetUserId;
 window.attGetUserClass = attGetUserClass;
 window.attCollectTargetsFromRepo = attCollectTargetsFromRepo;
 window.attResolveTargetUsers = attResolveTargetUsers;
 window.attEscJsStr = attEscJsStr;
 window.attPruneDayStatusMap = attPruneDayStatusMap;
+window.attPrunePeriodRecordsMap = attPrunePeriodRecordsMap;
 window.attMergeCloudPatches = attMergeCloudPatches;
 window.attComputeSheetCloudPatch = attComputeSheetCloudPatch;
 window.attAppendForcedClearPatch = attAppendForcedClearPatch;
 window.attDiffPeriodRecordsPatch = attDiffPeriodRecordsPatch;
 window.ATT_ROLLUP_PARTIAL = ATT_ROLLUP_PARTIAL;
 window.ATT_ROLLUP_INCOMPLETE = ATT_ROLLUP_INCOMPLETE;
+window.attFlushAllDeferredCloud = attFlushPendingCloudPersist;
 
 function saveAttState(isLocked, opts) {
     opts = opts || {};
@@ -3893,7 +4306,7 @@ function saveAttState(isLocked, opts) {
 
 document.getElementById('btn-att-save-lock')?.addEventListener('click', () => {
   if (!saveAttState(true)) return;
-  window.showToast('رجسٹر محفوظ کر کے لاک کر دیا گیا ہے!', 'success');
+  window.showToast('رجسٹر اس آلے پر محفوظ اور لاک ہو گیا؛ کلاؤڈ حالت اوپر دکھائی جائے گی۔', 'success');
   logAttAudit(
     'رجسٹر لاک',
     `مہینہ: ${window.currentAttState.month}, کلاس: ${window.currentAttState.classId}`
@@ -3904,7 +4317,7 @@ document.getElementById('btn-att-save-lock')?.addEventListener('click', () => {
 document.getElementById('btn-att-edit-mode')?.addEventListener('click', () => {
   if (!saveAttState(false)) return;
   window.showToast(
-    'ایڈٹ موڈ آن کر دیا گیا ہے۔ اب آپ ترمیم کر سکتے ہیں۔',
+    'لاک اس آلے پر کھل گیا؛ ترمیم محفوظ ہونے کے بعد کلاؤڈ حالت اوپر دکھائی جائے گی۔',
     'warning'
   );
   logAttAudit(
@@ -4241,6 +4654,7 @@ var ATT_SYMBOLS_KEY = 'ems_att_symbols';
 var ATT_HOLIDAYS_KEY = 'ems_att_holidays';
 var ATT_SETTINGS_KEY = 'ems_att_settings';
 var ATT_PERIODS_KEY = 'ems_att_periods';
+var ATT_CUSTOM_TEACHERS_KEY = 'ems_att_custom_teachers';
 /** Canonical cloud doc: ModuleData/Attendance__ems_att_periods (sync-engine write path). */
 var ATT_PERIODS_CANONICAL_CLOUD_DOC = 'Attendance__ems_att_periods';
 /** Legacy cloud doc: Attendance_Config/periods (read-only migration source). */
@@ -4363,7 +4777,7 @@ function attTimetableRosterTeacherIdSet() {
     });
   } catch (eTeachers) { /* ignore */ }
   try {
-    var custom = JSON.parse(localStorage.getItem('ems_att_custom_teachers') || '[]') || [];
+    var custom = attReadConfigJson(ATT_CUSTOM_TEACHERS_KEY, []) || [];
     custom.forEach(function (c) {
       if (c && c.id) set[String(c.id)] = true;
     });
@@ -4385,7 +4799,7 @@ function attTimetableRosterTeacherNameSet() {
     });
   } catch (eTeachers) { /* ignore */ }
   try {
-    var custom = JSON.parse(localStorage.getItem('ems_att_custom_teachers') || '[]') || [];
+    var custom = attReadConfigJson(ATT_CUSTOM_TEACHERS_KEY, []) || [];
     custom.forEach(function (c) {
       add(c && c.name);
     });
@@ -4425,6 +4839,44 @@ function attTimetableFailsRosterTeacherBinding(list) {
   if (!list.length || !attTimetableListHasTeacherFields(list)) return false;
   if (!attTimetableRosterHasTeachers()) return false;
   return attTimetableTeacherRosterScore(list) === 0;
+}
+
+/**
+ * A cloud timetable is allowed into a tenant only when every lesson can be
+ * tied to that tenant's active teacher roster. A teacher id takes precedence
+ * over a display name, so a matching name cannot mask a conflicting id.
+ */
+function attVerifyRemoteTimetableOwnership(list) {
+  list = Array.isArray(list) ? list : [];
+  if (!list.length) return { ok: false, reason: 'empty_timetable', matched: 0, unmatched: 0 };
+
+  var teacherIds = attTimetableRosterTeacherIdSet();
+  var teacherNames = attTimetableRosterTeacherNameSet();
+  if (!Object.keys(teacherIds).length && !Object.keys(teacherNames).length) {
+    return { ok: false, reason: 'teacher_roster_unavailable', matched: 0, unmatched: list.length };
+  }
+
+  var matched = 0;
+  var unmatched = [];
+  list.forEach(function (period) {
+    if (!period) {
+      unmatched.push('');
+      return;
+    }
+    var teacherId = String(period.teacherId || '').trim();
+    var teacherName = String(period.teacherName || '').trim();
+    var owned = teacherId ? !!teacherIds[teacherId] : !!(teacherName && teacherNames[teacherName]);
+    if (owned) matched++;
+    else unmatched.push(String(period.id || teacherId || teacherName || 'unknown'));
+  });
+
+  return {
+    ok: matched > 0 && unmatched.length === 0,
+    reason: unmatched.length ? 'teacher_roster_mismatch' : (matched ? 'ok' : 'no_teacher_binding'),
+    matched: matched,
+    unmatched: unmatched.length,
+    unmatchedPeriodIds: unmatched
+  };
 }
 
 function attTimetableRosterHasMembers() {
@@ -4533,6 +4985,25 @@ function attShouldAcceptRemoteTimetable(incoming, tenantId) {
     && attTimetableLooksLikeForeignCopy(incoming, tenantId)) {
     return false;
   }
+
+  // Do not let a short, unrelated cloud list erase a timetable that is already
+  // present in this madrasa's partition.  `_attTrustedTimetable` is empty on a
+  // fresh page load, so it cannot be the only guard here.  A cloud list may
+  // replace a disjoint local list only when its teacher/class evidence is
+  // strictly stronger; equal/unknown scores must keep the local timetable.
+  var local = typeof attReadAllTimetablePeriodsRaw === 'function'
+    ? attReadAllTimetablePeriodsRaw() : [];
+  if (local.length) {
+    if (!incoming.length) return false;
+    if (attTimetableListsAreDifferentTimetables(incoming, local)) {
+      return attTimetableRosterScore(incoming) > attTimetableRosterScore(local);
+    }
+    if (incoming.length < local.length
+      && attTimetableRosterScore(incoming) <= attTimetableRosterScore(local)) {
+      return false;
+    }
+  }
+
   var trusted = _attTrustedTimetable;
   if (!trusted || trusted.tenantId !== tenantId || !trusted.list.length) return true;
   if (!attTimetableListsAreDifferentTimetables(incoming, trusted.list)) return true;
@@ -4613,7 +5084,10 @@ function attApplyTimetableHealChoice(choice, tenantId, generation) {
       count: (choice.list || []).length
     });
   }
-  return attPersistConfigBlob(ATT_PERIODS_KEY, choice.list).then(function () {
+  return attPersistConfigBlob(ATT_PERIODS_KEY, choice.list).then(function (res) {
+    if (!res || res.ok === false) throw new Error((res && (res.reason || res.error)) || 'local_write_failed');
+    return res;
+  }).then(function () {
     attMarkTimetableCloudLegacyMigrated(tenantId);
     attRefreshTimetableUi();
     console.info('[EMS attendance] restored this madrasa timetable', {
@@ -4642,47 +5116,76 @@ window.attShouldAcceptRemoteTimetable = attShouldAcceptRemoteTimetable;
 window.attTimetableListsAreDifferentTimetables = attTimetableListsAreDifferentTimetables;
 window.attTimetableFailsRosterTeacherBinding = attTimetableFailsRosterTeacherBinding;
 window.attTimetableTeacherRosterScore = attTimetableTeacherRosterScore;
+window.attVerifyRemoteTimetableOwnership = attVerifyRemoteTimetableOwnership;
 
 /**
  * Manual, read-from-cloud timetable recovery used by Attendance cloud pull.
- * It never uploads the browser copy and never replaces local data with an empty
- * or provably foreign cloud list.
+ * The tenant id is verified by ems-cloud-pull, but tenant verification alone
+ * does not prove that a historic canonical timetable belongs to this madrasa.
+ * Keep a non-empty local timetable when the cloud candidate has weaker or
+ * equal evidence; this prevents an explicit cloud pull from reviving a known
+ * foreign/short list. A new device with no local timetable can still restore
+ * a verified canonical document.
  */
 window.emsPullAttendanceTimetableFromCloud = function (tenantId) {
   tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
   if (!tenantId) return Promise.resolve({ ok: false, reason: 'no_tenant', count: 0 });
+  var verifiedTenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
+  if (!verifiedTenantId || String(verifiedTenantId) !== String(tenantId)) {
+    return Promise.resolve({ ok: false, reason: 'tenant_guard', count: 0 });
+  }
   var fsDb = typeof db !== 'undefined' ? db : null;
   if (!fsDb && typeof window.emsFirestoreGetDb === 'function') fsDb = window.emsFirestoreGetDb();
-  var ref = attTimetableCanonicalCloudRef(fsDb, tenantId);
-  if (!ref) return Promise.resolve({ ok: false, reason: 'firestore_unavailable', count: 0 });
+  var canonRef = attTimetableCanonicalCloudRef(fsDb, tenantId);
+  if (!canonRef) {
+    return Promise.resolve({ ok: false, reason: 'firestore_unavailable', count: 0 });
+  }
   var generation = typeof window.emsGetTenantGeneration === 'function'
     ? window.emsGetTenantGeneration() : 0;
-  return ref.get({ source: 'server' }).then(function (snap) {
+  return canonRef.get({ source: 'server' }).then(function (snap) {
     if (!snap.exists) return { ok: false, reason: 'timetable_not_found', count: 0 };
     var list = attTimetableListFromCloudSnapshot(snap) || [];
     if (!list.length) return { ok: false, reason: 'empty_cloud_timetable', count: 0 };
+    var ownership = attVerifyRemoteTimetableOwnership(list);
+    if (!ownership.ok) {
+      return {
+        ok: false,
+        reason: 'cloud_timetable_rejected',
+        count: 0,
+        ownership: ownership,
+        message: 'کلاؤڈ نظام الاوقات موجودہ مدرسہ کے رجسٹرڈ اساتذہ سے ثابت نہیں ہوا، اس لیے اسے لاگو نہیں کیا گیا۔'
+      };
+    }
+    if (!attShouldAcceptRemoteTimetable(list, tenantId)) {
+      return {
+        ok: false,
+        reason: 'cloud_timetable_rejected',
+        count: 0,
+        message: 'کلاؤڈ نظام الاوقات مقامی محفوظ فہرست سے کمزور یا غیر متعلق معلوم ہوا، اس لیے اسے لاگو نہیں کیا گیا۔'
+      };
+    }
     if (!attSnapshotMayMutateTenantState(tenantId, generation)) {
       return { ok: false, reason: 'tenant_guard', count: 0 };
     }
-    if (attTimetableRosterHasMembers() && attTimetableLooksLikeForeignCopy(list, tenantId)) {
-      return { ok: false, reason: 'foreign_cloud_timetable', count: list.length };
-    }
     return attApplyTimetableHealChoice({
       list: list,
-      source: 'manual_cloud_canonical',
+      source: 'manual_verified_canonical',
       persistCanonical: false,
       score: attTimetableRosterScore(list)
     }, tenantId, generation).then(function (result) {
       var teachers = Object.create(null);
       list.forEach(function (period) {
-        if (period && period.teacherId) teachers[String(period.teacherId)] = true;
+        if (!period) return;
+        var teacherKey = String(period.teacherId || period.teacherName || '').trim();
+        if (teacherKey) teachers[teacherKey] = true;
       });
       attRefreshTimetableUi();
       return Object.assign({}, result || {}, {
         ok: true,
         count: list.length,
         teacherCount: Object.keys(teachers).length,
-        source: 'manual_cloud_canonical'
+        source: 'manual_verified_canonical',
+        cloudPath: 'All_Madrasas/' + tenantId + '/ModuleData/' + ATT_PERIODS_CANONICAL_CLOUD_DOC
       });
     });
   }).catch(function (err) {
@@ -4741,10 +5244,12 @@ function attMigrateLegacyCloudTimetablePeriods(tenantId, sourceTenantId, generat
     return Promise.resolve({ ok: false, reason: 'no_cloud_ref' });
   }
 
-  return Promise.all([
-    canonRef.get({ source: 'server' }).catch(function () { return { exists: false, _readError: true }; }),
-    legacyRef.get({ source: 'server' }).catch(function () { return { exists: false, _readError: true }; })
-  ]).then(function (results) {
+  return attRecoverStrongLocalLegacyTimetable(tenantId).then(function () {
+    return Promise.all([
+      canonRef.get({ source: 'server' }).catch(function () { return { exists: false, _readError: true }; }),
+      legacyRef.get({ source: 'server' }).catch(function () { return { exists: false, _readError: true }; })
+    ]);
+  }).then(function (results) {
     var canonDoc = results[0];
     var legacyDoc = results[1];
     if (legacyDoc && legacyDoc._readError) {
@@ -4853,6 +5358,104 @@ function attRawLocalGetPhysical(key) {
     }
     return localStorage.getItem(key);
   } catch (eRaw) { return null; }
+}
+
+/**
+ * Rescue a former browser-global timetable only when its teacher binding is
+ * decisively stronger than the current tenant list. This is deliberately
+ * local-only: it never queues a cloud write and never deletes the source.
+ */
+function attRecoverStrongLocalLegacyTimetable(tenantId) {
+  tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
+  if (!tenantId) return Promise.resolve({ ok: false, reason: 'NO_TENANT', restored: 0 });
+
+  var current = attReadAllTimetablePeriodsRaw();
+  var idbRead = typeof window.emsIdbKvGet === 'function'
+    ? window.emsIdbKvGet(ATT_PERIODS_KEY).catch(function () { return null; })
+    : Promise.resolve(null);
+
+  return idbRead.then(function (idbRaw) {
+    var byId = Object.create(null);
+    [attParseTimetablePeriodList(attRawLocalGetPhysical(ATT_PERIODS_KEY)), attParseTimetablePeriodList(idbRaw)]
+      .forEach(function (list) {
+        list.forEach(function (period) {
+          if (!period || !period.id) return;
+          var id = String(period.id);
+          var previous = byId[id];
+          if (!previous || attPeriodRecoveryRecency(period) >= attPeriodRecoveryRecency(previous)) byId[id] = period;
+        });
+      });
+    var candidate = Object.keys(byId).map(function (id) { return byId[id]; });
+    if (!candidate.length || !attTimetableListHasTeacherFields(candidate)) {
+      return { ok: true, skipped: true, reason: 'NO_STRONG_LEGACY', restored: 0 };
+    }
+
+    var rosterIds = attTimetableRosterTeacherIdSet();
+    var rosterNames = attTimetableRosterTeacherNameSet();
+    function boundTeacherCount(list) {
+      var bound = Object.create(null);
+      (list || []).forEach(function (period) {
+        if (!period) return;
+        var id = String(period.teacherId || '').trim();
+        var name = String(period.teacherName || '').trim();
+        if (id && rosterIds[id]) bound['id:' + id] = true;
+        else if (name && rosterNames[name]) bound['name:' + name] = true;
+      });
+      return Object.keys(bound).length;
+    }
+
+    var candidateScore = attTimetableRosterScore(candidate);
+    var currentScore = attTimetableRosterScore(current);
+    var candidateTeachers = boundTeacherCount(candidate);
+    var currentTeachers = boundTeacherCount(current);
+    var isStrong = candidateTeachers >= 3
+      && candidateTeachers > currentTeachers
+      && candidateScore > currentScore
+      && candidate.length > current.length;
+    if (!isStrong) {
+      return {
+        ok: true,
+        skipped: true,
+        reason: 'LEGACY_NOT_STRONGER',
+        restored: 0,
+        candidateCount: candidate.length,
+        candidateTeachers: candidateTeachers,
+        currentCount: current.length,
+        currentTeachers: currentTeachers
+      };
+    }
+
+    var wrote = false;
+    if (typeof window.emsOfflineWriteLocalSync === 'function') {
+      wrote = window.emsOfflineWriteLocalSync(ATT_PERIODS_KEY, candidate, { tenantId: tenantId }) !== false;
+    } else {
+      try {
+        localStorage.setItem(ATT_PERIODS_KEY, JSON.stringify(candidate));
+        wrote = true;
+      } catch (eWrite) { wrote = false; }
+    }
+    if (!wrote) return { ok: false, reason: 'LOCAL_WRITE_FAILED', restored: 0 };
+
+    attRememberTrustedTimetable(tenantId, candidate, 'strong_local_legacy');
+    attRefreshTimetableUi();
+    try {
+      var auditKey = typeof window.emsScopedKey === 'function'
+        ? window.emsScopedKey('ems_timetable_strong_legacy_recovery_v1', tenantId)
+        : ('ems_timetable_strong_legacy_recovery_v1__' + tenantId);
+      if (window._emsOriginalSetItem) {
+        window._emsOriginalSetItem.call(localStorage, auditKey, JSON.stringify({
+          at: Date.now(), source: ATT_PERIODS_KEY, count: candidate.length, teachers: candidateTeachers
+        }));
+      }
+    } catch (eAudit) { /* local audit only */ }
+    return {
+      ok: true,
+      restored: candidate.length,
+      teachers: candidateTeachers,
+      source: 'strong_local_legacy',
+      cloudWritten: false
+    };
+  });
 }
 
 /**
@@ -4993,6 +5596,7 @@ function attRecoverLegacyTimetablePeriods(tenantId) {
 }
 
 window.attRecoverLegacyTimetablePeriods = attRecoverLegacyTimetablePeriods;
+window.attRecoverStrongLocalLegacyTimetable = attRecoverStrongLocalLegacyTimetable;
 
 var ATT_PERIODS_QUARANTINE_SUFFIX = '_quarantine_v1';
 var ATT_TIMETABLE_CONTAMINATION_AUDIT_KEY = 'ems_timetable_contamination_audit_v1';
@@ -5438,112 +6042,6 @@ window.attRunTimetableContaminationPass = attRunTimetableContaminationPass;
 window.attTimetableLooksLikeForeignCopy = attTimetableLooksLikeForeignCopy;
 window.attHealTimetableLocally = attHealTimetableLocally;
 
-function attCountActiveTimetablePeriods(list) {
-  return (list || []).filter(function (p) { return p && !p.archived; }).length;
-}
-
-function attUpdateTimetablePushBtnState() {
-  var btn = typeof document !== 'undefined' ? document.getElementById('btn-att-tt-push-browser') : null;
-  if (!btn) return;
-  var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
-  var active = attCountActiveTimetablePeriods(attReadAllTimetablePeriodsRaw());
-  btn.disabled = !tenantId || !active;
-  btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> براؤزر سے Firebase';
-  btn.title = active
-    ? ('اس براؤزر میں ' + active + ' فعال سبق — Firebase میں محفوظ کریں')
-    : 'اس براؤزر میں کوئی فعال سبق نہیں';
-}
-
-/**
- * Push this browser's timetable (localStorage/IDB) to Firebase canonical ModuleData doc.
- * Use on the device that still has the old timetable after a cloud-side loss.
- */
-function attPushBrowserTimetableToFirebase() {
-  var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
-  if (!tenantId) {
-    if (typeof showToast === 'function') showToast('پہلے لاگ اِن کریں / ادارہ منتخب کریں', 'error');
-    return Promise.resolve({ ok: false, reason: 'no_tenant' });
-  }
-  if (typeof attIsOfflineMode === 'function' && attIsOfflineMode()) {
-    if (typeof showToast === 'function') showToast('پہلے آن لائن موڈ آن کریں', 'error');
-    return Promise.resolve({ ok: false, reason: 'offline_mode' });
-  }
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    if (typeof showToast === 'function') showToast('انٹرنیٹ دستیاب نہیں', 'error');
-    return Promise.resolve({ ok: false, reason: 'no_network' });
-  }
-
-  var btn = typeof document !== 'undefined' ? document.getElementById('btn-att-tt-push-browser') : null;
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> تیاری…';
-  }
-
-  var recoverChain = typeof attRecoverLegacyTimetablePeriods === 'function'
-    ? attRecoverLegacyTimetablePeriods(tenantId)
-    : Promise.resolve({ ok: true });
-
-  return recoverChain.then(function () {
-    var list = attReadAllTimetablePeriodsRaw();
-    var active = attCountActiveTimetablePeriods(list);
-    if (!active) {
-      if (typeof showToast === 'function') showToast('اس براؤزر میں کوئی فعال نظام الاوقات نہیں ملا', 'warning');
-      return { ok: false, reason: 'empty_local' };
-    }
-
-    var path = 'All_Madrasas/' + tenantId + '/ModuleData/' + ATT_PERIODS_CANONICAL_CLOUD_DOC;
-    if (typeof window !== 'undefined' && window.EmsSyncEngine
-      && typeof window.EmsSyncEngine.getFirestorePath === 'function') {
-      try { path = window.EmsSyncEngine.getFirestorePath(ATT_PERIODS_KEY); } catch (ePath) { /* keep default */ }
-    }
-
-    var msg = 'اس براؤزر میں ' + active + ' فعال سبق ہیں (کل ' + list.length + ')۔\n\n'
-      + 'یہ Firebase میں محفوظ ہو جائیں گے:\n' + path
-      + '\n\nدوسرے آلات پر بھی یہی نظام الاوقات آ جائے گا۔'
-      + '\nموجودہ Firebase کا خالی/غلط ڈیٹا اس سے بدل دیا جائے گا۔'
-      + '\n\nجاری رکھیں؟';
-
-    if (!confirm(msg)) return { ok: false, reason: 'cancelled' };
-
-    if (btn) btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> اپ لوڈ…';
-    if (typeof showToast === 'function') showToast('براؤزر کا نظام الاوقات Firebase میں بھیجا جا رہا ہے…', 'info');
-
-    attRememberTrustedTimetable(tenantId, list, 'browser_push');
-    return attPersistConfigBlob(ATT_PERIODS_KEY, list).then(function (persistRes) {
-      if (persistRes && persistRes.ok === false) {
-        if (typeof showToast === 'function') showToast('محفوظ ناکام: ' + (persistRes.reason || ''), 'error');
-        return { ok: false, reason: persistRes.reason || 'persist_failed' };
-      }
-      attMarkTimetableCloudLegacyMigrated(tenantId);
-      var pushFn = typeof window !== 'undefined' && typeof window.emsCloudPushNow === 'function'
-        ? window.emsCloudPushNow()
-        : Promise.resolve({ ok: false, reason: 'no_push' });
-      return pushFn.then(function (pushRes) {
-        if (pushRes && pushRes.ok) {
-          attRefreshTimetableUi();
-          if (typeof showToast === 'function') {
-            showToast(active + ' سبق Firebase میں محفوظ — دوسرے آلات پر ڈاؤن لوڈ کریں', 'success');
-          }
-          return { ok: true, count: active, total: list.length, path: path };
-        }
-        if (typeof showToast === 'function') {
-          showToast('محلی محفوظ ہو گیا — کلاؤڈ اپ لوڈ ناکام، دوبارہ کوشش کریں', 'warning');
-        }
-        return { ok: false, reason: (pushRes && pushRes.reason) || 'push_failed', localSaved: true };
-      });
-    });
-  }).catch(function (err) {
-    console.error('[EMS] attPushBrowserTimetableToFirebase', err);
-    if (typeof showToast === 'function') showToast('اپ لوڈ میں مسئلہ — دوبارہ کوشش کریں', 'error');
-    return { ok: false, reason: 'error', error: err && err.message };
-  }).finally(function () {
-    attUpdateTimetablePushBtnState();
-  });
-}
-
-window.attPushBrowserTimetableToFirebase = attPushBrowserTimetableToFirebase;
-window.attUpdateTimetablePushBtnState = attUpdateTimetablePushBtnState;
-
 window.attDebugTimetableHeal = function (tenantId) {
   tenantId = tenantId || (typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null);
   if (!tenantId) return Promise.resolve({ ok: false, reason: 'no_tenant' });
@@ -5624,24 +6122,35 @@ function attReadHolidaysDb() {
 }
 
 document.getElementById('btn-add-holiday')?.addEventListener('click', () => {
+  var btn = document.getElementById('btn-add-holiday');
+  if (btn && btn._attActionInflight) return btn._attActionInflight;
   const title = document.getElementById('hol-title').value.trim();
   const start = document.getElementById('hol-start-date').value;
   const end = document.getElementById('hol-end-date').value;
 
   if (!title || !start || !end)
     return window.showToast('تمام خانے پُر کریں!', 'error');
+  if (end < start) return window.showToast('اختتامی تاریخ شروع کی تاریخ سے پہلے نہیں ہو سکتی!', 'error');
 
   let holidays = attReadHolidaysDb();
   holidays.push({ id: window.generateID ? window.generateID('HOL') : 'HOL-'+Math.floor(Math.random()*9000), title, start, end });
-  attPersistConfigBlob(ATT_HOLIDAYS_KEY, holidays).then(function () {
+  attSetActionButtonBusy(btn, true, 'محفوظ ہو رہا ہے…');
+  var op = attPersistConfigBlob(ATT_HOLIDAYS_KEY, holidays).then(attRequirePersistSuccess).then(function () {
     document.getElementById('hol-title').value = '';
     loadHolidays();
     window.showToast('تعطیل محفوظ ہو گئی!', 'success');
     logAttAudit('تعطیل درج', `عنوان: ${title}`);
-  }).catch(function () {
-    window.showToast('تعطیل محفوظ (آف لائن)', 'warning');
-    loadHolidays();
+    return true;
+  }).catch(function (err) {
+    console.error('[EMS] attendance holiday save', err);
+    window.showToast('تعطیل محفوظ نہیں ہو سکی', 'error');
+    return false;
+  }).finally(function () {
+    if (btn) btn._attActionInflight = null;
+    attSetActionButtonBusy(btn, false);
   });
+  if (btn) btn._attActionInflight = op;
+  return op;
 });
 
 function loadHolidays() {
@@ -5659,15 +6168,28 @@ function loadHolidays() {
     .join('');
 }
 
+var _attHolidayDeleteInflight = Object.create(null);
 window.deleteHoliday = function (id) {
+  if (_attHolidayDeleteInflight[id]) return _attHolidayDeleteInflight[id];
   if (!confirm('حذف کریں؟')) return;
   let holidays = attReadHolidaysDb();
   let toDelete = holidays.find((h) => h.id === id);
-  if (toDelete) moveToRecycleBin('Holiday', toDelete);
+  if (!toDelete) return window.showToast('تعطیل کا ریکارڈ نہیں ملا', 'error');
   holidays = holidays.filter((h) => h.id !== id);
-  attPersistConfigBlob(ATT_HOLIDAYS_KEY, holidays).then(function () {
+  _attHolidayDeleteInflight[id] = attPersistConfigBlob(ATT_HOLIDAYS_KEY, holidays)
+    .then(attRequirePersistSuccess).then(function () {
+    moveToRecycleBin('Holiday', toDelete);
     loadHolidays();
+    window.showToast('تعطیل حذف کر دی گئی', 'success');
+    return true;
+  }).catch(function (err) {
+    console.error('[EMS] attendance holiday delete', err);
+    window.showToast('تعطیل حذف نہیں ہو سکی', 'error');
+    return false;
+  }).finally(function () {
+    delete _attHolidayDeleteInflight[id];
   });
+  return _attHolidayDeleteInflight[id];
 };
 
 // ================== 5. آڈٹ لاگ اور ریسائیکل بن ==================
@@ -5716,27 +6238,52 @@ function loadRecycleBin() {
       .join('');
 }
 
+var _attRecycleRestoreInflight = Object.create(null);
 window.restoreRecycle = function (id) {
+  if (_attRecycleRestoreInflight[id]) return _attRecycleRestoreInflight[id];
   let bin = JSON.parse(localStorage.getItem('ems_att_recycle')) || [];
   let item = bin.find((b) => b.id === id);
   if (!item) return;
 
+  var persist;
   if (item.type === 'Holiday') {
     let hols = attReadHolidaysDb();
-    hols.push(item.data);
-    attPersistConfigBlob(ATT_HOLIDAYS_KEY, hols);
+    var holIdx = hols.findIndex(function (h) { return h && item.data && h.id === item.data.id; });
+    if (holIdx >= 0) hols[holIdx] = item.data;
+    else hols.push(item.data);
+    persist = attPersistConfigBlob(ATT_HOLIDAYS_KEY, hols);
   } else if (item.type === 'Period') {
-    let per = JSON.parse(localStorage.getItem(ATT_PERIODS_KEY)) || [];
-    per.push(item.data);
-    attPersistConfigBlob(ATT_PERIODS_KEY, per);
+    let per = attReadAllTimetablePeriodsRaw();
+    var perIdx = per.findIndex(function (p) { return p && item.data && p.id === item.data.id; });
+    var restoredPeriod = Object.assign({}, item.data || {});
+    delete restoredPeriod.archived;
+    delete restoredPeriod.archivedAt;
+    delete restoredPeriod.deleted;
+    if (perIdx >= 0) per[perIdx] = restoredPeriod;
+    else per.push(restoredPeriod);
+    persist = attSaveTimetablePeriodsSync(per);
+  } else {
+    window.showToast('یہ ریکارڈ خودکار بحالی کے لیے معاون نہیں', 'error');
+    return Promise.resolve(false);
   }
 
-  localStorage.setItem(
-    'ems_att_recycle',
-    JSON.stringify(bin.filter((b) => b.id !== id))
-  );
-  loadRecycleBin();
-  window.showToast('ریکارڈ کامیابی سے بحال کر دیا گیا!', 'success');
+  _attRecycleRestoreInflight[id] = Promise.resolve(persist).then(attRequirePersistSuccess).then(function () {
+    localStorage.setItem(
+      'ems_att_recycle',
+      JSON.stringify(bin.filter((b) => b.id !== id))
+    );
+    loadRecycleBin();
+    if (item.type === 'Period') attRefreshPeriodUiAfterSave(item.data && item.data.id);
+    window.showToast('ریکارڈ کامیابی سے بحال کر دیا گیا!', 'success');
+    return true;
+  }).catch(function (err) {
+    console.error('[EMS] attendance recycle restore', err);
+    window.showToast('ریکارڈ بحال نہیں ہو سکا؛ ریسائیکل بن میں محفوظ ہے۔', 'error');
+    return false;
+  }).finally(function () {
+    delete _attRecycleRestoreInflight[id];
+  });
+  return _attRecycleRestoreInflight[id];
 };
 
 window.emptyRecycleBin = function () {
@@ -5826,8 +6373,8 @@ function evtReadEventsDb() {
 function evtWriteEventsDbLocal(events) {
   events = Array.isArray(events) ? events : [];
   if (typeof window.emsOfflineWriteLocalSync === 'function') {
-    window.emsOfflineWriteLocalSync(EVT_EVENTS_DB_KEY, events);
-    return true;
+    var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
+    return window.emsOfflineWriteLocalSync(EVT_EVENTS_DB_KEY, events, { tenantId: tenantId }) === true;
   }
   try {
     localStorage.setItem(EVT_EVENTS_DB_KEY, JSON.stringify(events));
@@ -6193,10 +6740,16 @@ document.getElementById('btn-save-event-att')?.addEventListener('click', () => {
 
   evtSyncStatusesFromUI();
 
+  var eventName = document.getElementById('evt-name').value.trim();
+  var eventDate = document.getElementById('evt-date').value;
+  if (!eventName || !eventDate) {
+    return window.showToast('تقریب کا نام اور تاریخ لازمی ہیں!', 'error');
+  }
+
   const payload = {
-    name: document.getElementById('evt-name').value.trim(),
+    name: eventName,
     type: document.getElementById('evt-type').value,
-    date: document.getElementById('evt-date').value,
+    date: eventDate,
     time: document.getElementById('evt-time').value,
     participants: window.currentEventParticipants,
     timestamp: new Date().getTime(),
@@ -6882,7 +7435,7 @@ document.getElementById('btn-generate-att-report')?.addEventListener('click', fu
 window.loadPeriodTeachers = function () {
   const users = attGetUsers();
   const registeredTeachers = users.filter(function (u) { return attUserMatchesType(u, 'teacher'); });
-  const customTeachers = JSON.parse(localStorage.getItem('ems_att_custom_teachers')) || [];
+  const customTeachers = attReadConfigJson(ATT_CUSTOM_TEACHERS_KEY, []) || [];
 
   const tSelect = document.getElementById('new-period-teacher');
   if (!tSelect) return;
@@ -6924,13 +7477,39 @@ window.deleteCustomTeacher = function () {
   const idToDelete = tSelect.value;
   if (!idToDelete || !confirm('کیا آپ واقعی اس کسٹم استاد کو مستقل حذف کرنا چاہتے ہیں؟')) return;
 
-  let customTeachers = JSON.parse(localStorage.getItem('ems_att_custom_teachers')) || [];
-  customTeachers = customTeachers.filter((t) => t.id !== idToDelete);
-  localStorage.setItem('ems_att_custom_teachers', JSON.stringify(customTeachers));
+  var referenced = attReadAllTimetablePeriodsRaw().some(function (p) {
+    return p && String(p.teacherId || '') === String(idToDelete);
+  });
+  if (referenced) {
+    window.showToast('یہ استاد نظام الاوقات کے گھنٹوں سے منسلک ہے؛ پرانی حاضری کے تحفظ کے لیے پہلے گھنٹے کسی دوسرے استاد کو منتقل کریں۔', 'error');
+    return Promise.resolve(false);
+  }
 
-  window.showToast('کسٹم استاد حذف کر دیا گیا', 'success');
-  loadPeriodTeachers();
-  checkCustomTeacherSelect();
+  let customTeachers = attReadConfigJson(ATT_CUSTOM_TEACHERS_KEY, []) || [];
+  var nextTeachers = customTeachers.filter((t) => t.id !== idToDelete);
+  if (nextTeachers.length === customTeachers.length) {
+    window.showToast('کسٹم استاد نہیں ملا', 'error');
+    return Promise.resolve(false);
+  }
+  var delBtn = document.getElementById('btn-del-custom-teacher');
+  if (delBtn && delBtn._attActionInflight) return delBtn._attActionInflight;
+  attSetActionButtonBusy(delBtn, true, 'حذف…');
+  var op = attPersistConfigBlob(ATT_CUSTOM_TEACHERS_KEY, nextTeachers)
+    .then(attRequirePersistSuccess).then(function () {
+      window.showToast('کسٹم استاد حذف کر دیا گیا', 'success');
+      loadPeriodTeachers();
+      checkCustomTeacherSelect();
+      return true;
+    }).catch(function (err) {
+      console.error('[EMS] custom attendance teacher delete', err);
+      window.showToast('کسٹم استاد حذف نہیں ہو سکا', 'error');
+      return false;
+    }).finally(function () {
+      if (delBtn) delBtn._attActionInflight = null;
+      attSetActionButtonBusy(delBtn, false);
+    });
+  if (delBtn) delBtn._attActionInflight = op;
+  return op;
 };
 
 document.querySelector('[onclick="switchAttTab(\'att-master-settings\', this)"]')?.addEventListener('click', loadPeriodTeachers);
@@ -6946,7 +7525,15 @@ document.addEventListener('click', function (e) {
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
-    attSavePeriodFromModal({ closeAfter: !!btnSaveClose, addMore: !!btnSaveMore });
+    if (window._attPeriodSaveInflight) return;
+    var activeBtn = btnSaveClose || btnSaveMore;
+    var result = attSavePeriodFromModal({ closeAfter: !!btnSaveClose, addMore: !!btnSaveMore });
+    if (result === false) return;
+    attSetActionButtonBusy(activeBtn, true, 'محفوظ ہو رہا ہے…');
+    window._attPeriodSaveInflight = Promise.resolve(result).finally(function () {
+      window._attPeriodSaveInflight = null;
+      attSetActionButtonBusy(activeBtn, false);
+    });
   }
 }, true);
 
