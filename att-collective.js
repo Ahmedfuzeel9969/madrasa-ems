@@ -1085,6 +1085,7 @@
     ensureBound();
     refreshFilters();
     if (typeof global.attSaveStatusBoot === 'function') global.attSaveStatusBoot();
+    if (typeof global.attCollectiveViewBoot === 'function') global.attCollectiveViewBoot();
   };
   global.attColSetAll = function (status) {
     var labels = { P: 'سب حاضر', A: 'سب غیر حاضر', L: 'سب رخصت' };

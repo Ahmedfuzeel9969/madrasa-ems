@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260831_smart_register_colors_v11';
+  var CACHE_BUST = '20260901_collective_month_view_v12';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,

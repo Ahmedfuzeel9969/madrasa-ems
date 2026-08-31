@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260831_smart_register_colors_v11';
+var EMS_SW_BUILD_TAG = '20260901_collective_month_view_v12';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',
@@ -58,7 +58,8 @@ function isMutableAppScript(url) {
         || url.pathname.indexOf('attendance.js') >= 0
         || url.pathname.indexOf('att-dashboard.js') >= 0
         || url.pathname.indexOf('att-save-status.js') >= 0
-        || url.pathname.indexOf('att-collective.js') >= 0;
+        || url.pathname.indexOf('att-collective.js') >= 0
+        || url.pathname.indexOf('att-collective-view.js') >= 0;
 }
 
 self.addEventListener('fetch', function (event) {

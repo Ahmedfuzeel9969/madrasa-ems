@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260831_smart_register_colors_v11">
+    <link rel="stylesheet" href="style.css?v=20260901_collective_month_view_v12">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -1551,6 +1551,13 @@
                     <h3 style="margin-top:0; color:var(--primary);"><i class="fas fa-users"></i> اجتماعی حاضری</h3>
                     <p class="att-col-lead">ایک دن کا رجسٹر — طلباء، اساتذہ، اور عملہ۔ طلباء و اساتذہ کے لیے گھنٹہ وار (نظام الاوقات)؛ عملہ کے لیے روزانہ حاضری۔</p>
 
+                    <div class="att-col-mode-switch" role="tablist" aria-label="اجتماعی حاضری موڈ">
+                        <button type="button" class="btn btn-primary active" id="btn-att-col-mode-entry" data-att-col-mode="entry" role="tab" aria-selected="true"><i class="fas fa-edit"></i> حاضری اندراج</button>
+                        <button type="button" class="btn btn-outline" id="btn-att-col-mode-view" data-att-col-mode="view" role="tab" aria-selected="false"><i class="fas fa-calendar-alt"></i> ماہانہ صرف دیکھیں</button>
+                    </div>
+
+                    <div id="att-col-entry-mode">
+
                     <div class="att-col-type-bar">
                         <span class="att-col-scope-label">رجسٹر:</span>
                         <label class="checkbox-label"><input type="radio" name="att_col_register_type" value="students" checked> طلباء</label>
@@ -1619,6 +1626,68 @@
                         <p class="att-col-placeholder">اوپر انتخاب کر کے «رجسٹر کھولیں» دبائیں — صرف منتخب تاریخ کا ایک روزہ رجسٹر کھلے گا۔</p>
                     </div>
                     <div id="att-col-pager" class="att-col-pager att-col-hidden"></div>
+                    </div>
+
+                    <div id="att-col-view-mode" class="att-col-hidden" aria-live="polite">
+                        <div class="att-col-view-note"><i class="fas fa-eye"></i> یہ موڈ صرف محفوظ حاضری دکھاتا ہے؛ یہاں سے کوئی حاضری تبدیل یا حذف نہیں ہو سکتی۔</div>
+
+                        <div class="att-col-view-filter-card">
+                            <div class="form-grid att-col-view-filters">
+                                <div class="input-group">
+                                    <label>مہینہ</label>
+                                    <input type="month" id="att-col-view-month" class="input-control">
+                                </div>
+                                <div class="input-group att-col-view-role-group">
+                                    <label>کس کی حاضری دیکھنی ہے؟</label>
+                                    <div class="att-col-view-checks">
+                                        <label class="checkbox-label"><input type="checkbox" name="att_col_view_role" value="students" checked> طلباء</label>
+                                        <label class="checkbox-label"><input type="checkbox" name="att_col_view_role" value="teachers"> اساتذہ</label>
+                                        <label class="checkbox-label"><input type="checkbox" name="att_col_view_role" value="staff"> عملہ</label>
+                                    </div>
+                                </div>
+                                <div class="input-group att-col-view-role-group">
+                                    <label>افراد</label>
+                                    <div class="att-col-view-checks">
+                                        <label class="checkbox-label"><input type="radio" name="att_col_view_people" value="all" checked> منتخب اقسام کے سب</label>
+                                        <label class="checkbox-label"><input type="radio" name="att_col_view_people" value="selected"> صرف منتخب افراد</label>
+                                    </div>
+                                </div>
+                                <div class="input-group att-col-view-open-wrap">
+                                    <button type="button" class="btn btn-primary" id="btn-att-col-view-open"><i class="fas fa-eye"></i> ماہانہ حاضری دکھائیں</button>
+                                </div>
+                            </div>
+
+                            <div id="att-col-view-picker" class="att-col-view-picker att-col-hidden">
+                                <div class="att-col-view-picker-head">
+                                    <div class="input-group">
+                                        <label>نام، شناختی نمبر یا درجہ تلاش کریں</label>
+                                        <input type="search" id="att-col-view-search" class="input-control" placeholder="تلاش...">
+                                    </div>
+                                    <div class="att-col-view-picker-actions">
+                                        <button type="button" class="btn btn-outline btn-sm" id="btn-att-col-view-select-all">نظر آنے والے سب منتخب</button>
+                                        <button type="button" class="btn btn-outline btn-sm" id="btn-att-col-view-clear">انتخاب صاف</button>
+                                    </div>
+                                </div>
+                                <div id="att-col-view-people-list" class="att-col-view-people-list"><span class="att-col-placeholder">افراد لوڈ ہو رہے ہیں…</span></div>
+                                <p id="att-col-view-selected-count" class="att-col-view-selected-count">منتخب افراد: 0</p>
+                            </div>
+                        </div>
+
+                        <div id="att-col-view-actions" class="att-col-view-actions att-col-hidden">
+                            <div>
+                                <strong id="att-col-view-title">ماہانہ اجتماعی حاضری</strong>
+                                <span id="att-col-view-summary" class="evt-count-badge">افراد: 0</span>
+                            </div>
+                            <div class="att-col-view-export-actions">
+                                <button type="button" class="btn btn-outline" id="btn-att-col-view-print"><i class="fas fa-print"></i> پرنٹ</button>
+                                <button type="button" class="btn btn-danger" id="btn-att-col-view-pdf"><i class="fas fa-file-pdf"></i> PDF ڈاؤنلوڈ</button>
+                            </div>
+                        </div>
+
+                        <div id="att-col-view-table-wrap" class="att-col-view-table-wrap">
+                            <p class="att-col-placeholder">مہینہ اور مطلوبہ افراد منتخب کر کے «ماہانہ حاضری دکھائیں» دبائیں۔</p>
+                        </div>
+                    </div>
                 </div>
             </div>
         
@@ -6664,20 +6733,20 @@
     <script defer src="tenant-context.js?v=20260705sync1"></script>
     <script defer src="ems-tenant-storage.js?v=20260704pull3"></script>
     <script defer src="ems-firestore-paths.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-cloud-pull.js?v=20260831_smart_register_colors_v11"></script>
+    <script defer src="ems-cloud-pull.js?v=20260901_collective_month_view_v12"></script>
     <script defer src="ems-tenant-resolver.js?v=20260809_tenant_loop"></script>
     <script defer src="department-context.js?v=20260620dept4"></script>
-    <script defer src="ems-sw-update.js?v=20260831_smart_register_colors_v11"></script>
-    <script defer src="core.js?v=20260831_smart_register_colors_v11"></script>
+    <script defer src="ems-sw-update.js?v=20260901_collective_month_view_v12"></script>
+    <script defer src="core.js?v=20260901_collective_month_view_v12"></script>
     <script defer src="portal-access.js?v=20260809_tenant_loop"></script>
     <script defer src="landing.js?v=20260710_remove_guest_portal"></script>
     <script defer src="ems-offline-session-cache.js?v=20260705desktopfix6"></script>
     <script defer src="ems-offline-policy.js?v=20260707_sync_hardening_v1"></script>
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
-    <script defer src="auth.js?v=20260831_smart_register_colors_v11"></script>
+    <script defer src="auth.js?v=20260901_collective_month_view_v12"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260831_smart_register_colors_v11"></script>
-    <script defer src="ems-lazy-loader.js?v=20260831_smart_register_colors_v11"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260901_collective_month_view_v12"></script>
+    <script defer src="ems-lazy-loader.js?v=20260901_collective_month_view_v12"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>
