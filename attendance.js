@@ -1384,6 +1384,8 @@ window.emsStartAttendanceSync = function () {
       if (!attSnapshotMayMutateTenantState(listenerTenantId, listenerGeneration)) return;
       var list = attTimetableListFromCloudSnapshot(doc);
       if (list == null) return;
+      var bindingRepair = attCanonicalizeRemoteTimetableTeacherBindings(list);
+      list = bindingRepair.list;
       var ownership = list.length ? attVerifyRemoteTimetableOwnership(list) : { ok: true };
       if (list.length && !ownership.ok) {
         console.warn('[EMS attendance] ignoring ModuleData timetable snapshot — teacher roster mismatch', ownership);
@@ -3154,7 +3156,10 @@ function ttPopulateFilters() {
       [...new Set(values.filter(Boolean))].sort().map((v) => `<option value="${v}">${v}</option>`).join('');
     el.value = cur;
   };
-  fill('tt-filter-teacher', periods.map((p) => p.teacherName), 'تمام اساتذہ');
+  var registeredTeacherNames = attCollectRegisteredTeachers().map(function (teacher) {
+    return teacher.name || teacher.fullName || '';
+  });
+  fill('tt-filter-teacher', periods.map((p) => p.teacherName).concat(registeredTeacherNames), 'تمام اساتذہ');
   fill('tt-filter-class', periods.map((p) => p.className).filter((c) => c && c !== '-'), 'تمام درجات');
   var periodBooks = periods.map((p) => p.bookName).filter((b) => b && b !== '-');
   var libBooks = attReadLibraryBooks();
@@ -3223,19 +3228,44 @@ window.renderTimetable = function () {
   if (!box) return;
   ttPopulateFilters();
   const periods = ttFilteredPeriods();
+  var teacherFilter = document.getElementById('tt-filter-teacher')?.value || '';
+  var hasOtherFilter = ['tt-filter-class', 'tt-filter-book', 'tt-filter-day', 'tt-filter-search'].some(function (id) {
+    var el = document.getElementById(id);
+    return !!(el && String(el.value || '').trim());
+  });
+  const registeredTeachers = window._ttView === 'teacher' && !hasOtherFilter
+    ? attCollectRegisteredTeachers().filter(function (teacher) {
+      var label = teacher.name || teacher.fullName || '';
+      return !teacherFilter || label === teacherFilter;
+    })
+    : [];
 
-  if (!periods.length) {
+  if (!periods.length && !registeredTeachers.length) {
     box.innerHTML = '<div class="tt-empty"><i class="fas fa-table"></i><p>کوئی سبق موجود نہیں۔ "نیا سبق" سے اساتذہ کے اوقات درج کریں۔</p></div>';
     return;
   }
 
   // گروپ بندی — استاد وار یا درجہ وار
-  const groupKey = window._ttView === 'class' ? 'className' : 'teacherName';
   const groups = {};
   periods.forEach((p) => {
     const k = (window._ttView === 'class' ? (p.className && p.className !== '-' ? p.className : 'متفرق') : (p.teacherName || 'نامعلوم'));
     (groups[k] = groups[k] || []).push(p);
   });
+  // استاد وار منظر میں مکمل رجسٹر دکھائیں، چاہے کسی استاد کا ابھی
+  // کوئی گھنٹہ مقرر نہ ہو۔ اس طرح 47 رجسٹرڈ اساتذہ میں سے بے گھنٹہ
+  // استاد بھی غائب نہیں ہوتا۔
+  if (window._ttView === 'teacher') {
+    registeredTeachers.forEach(function (teacher) {
+      var teacherId = attGetUserId(teacher);
+      var hasPeriod = periods.some(function (period) {
+        return attPeriodTeacherIdMatches(period, teacherId);
+      });
+      if (!hasPeriod) {
+        var label = teacher.name || teacher.fullName || teacherId || 'نامعلوم';
+        if (!groups[label]) groups[label] = [];
+      }
+    });
+  }
 
   const icon = window._ttView === 'class' ? 'fa-layer-group' : 'fa-chalkboard-teacher';
   box.innerHTML = Object.keys(groups).sort().map((g) => {
@@ -3246,7 +3276,9 @@ window.renderTimetable = function () {
     return `
       <div class="tt-group">
         <div class="tt-group-head"><span><i class="fas ${icon}"></i> ${g}</span><small>${sub}</small></div>
-        <div class="tt-group-body">${items.map(ttPeriodCard).join('')}</div>
+        <div class="tt-group-body">${items.length
+          ? items.map(ttPeriodCard).join('')
+          : '<div class="tt-empty" style="padding:14px;"><p style="margin:0;">اس استاد کا کوئی گھنٹہ مقرر نہیں۔</p></div>'}</div>
       </div>`;
   }).join('');
 };
@@ -4813,6 +4845,109 @@ function attTimetableRosterHasTeachers() {
   return Object.keys(ids).length > 0 || Object.keys(names).length > 0;
 }
 
+function attTimetableTeacherNameBindingKey(name) {
+  return String(name || '').replace(/\[.*?\]\s*/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Repair a small number of stale/custom teacher ids in a remote timetable only
+ * when the displayed name maps to exactly one registered teacher and at least
+ * 80% of the timetable is already bound by valid ids. This lets a mostly-valid
+ * tenant timetable heal isolated CTCH ids without weakening the foreign-copy
+ * guard for short or unrelated timetables.
+ */
+function attCanonicalizeRemoteTimetableTeacherBindings(list) {
+  list = Array.isArray(list) ? list : [];
+  var registered = (typeof attGetUsers === 'function' ? attGetUsers() : []).filter(function (teacher) {
+    return teacher && typeof attUserMatchesType === 'function'
+      && attUserMatchesType(teacher, 'teacher');
+  });
+  var registeredIds = Object.create(null);
+  var registeredByName = Object.create(null);
+  registered.forEach(function (teacher) {
+    var id = attGetUserId(teacher);
+    if (!id) return;
+    registeredIds[id] = true;
+    var key = attTimetableTeacherNameBindingKey(teacher.name || teacher.fullName || '');
+    if (!key) return;
+    if (!registeredByName[key]) registeredByName[key] = [];
+    registeredByName[key].push(id);
+  });
+
+  var acceptedIds = attTimetableRosterTeacherIdSet();
+  var matchedById = 0;
+  var repairs = [];
+  var unresolved = [];
+  list.forEach(function (period, index) {
+    if (!period) {
+      unresolved.push({ index: index, periodId: '', reason: 'empty_period' });
+      return;
+    }
+    var teacherId = String(period.teacherId || '').trim();
+    if (teacherId && registeredIds[teacherId]) {
+      matchedById++;
+      return;
+    }
+    var nameKey = attTimetableTeacherNameBindingKey(period.teacherName || '');
+    var matches = nameKey ? (registeredByName[nameKey] || []) : [];
+    if (teacherId && matches.length === 1) {
+      repairs.push({
+        index: index,
+        periodId: String(period.id || ''),
+        previousTeacherId: teacherId,
+        teacherId: matches[0]
+      });
+      return;
+    }
+    if (teacherId && acceptedIds[teacherId]) {
+      matchedById++;
+      return;
+    }
+    // Missing ids remain governed by the existing exact-name ownership rule;
+    // this helper only repairs a conflicting/stale id.
+    if (!teacherId && matches.length === 1) return;
+    unresolved.push({
+      index: index,
+      periodId: String(period.id || ''),
+      teacherId: teacherId,
+      reason: matches.length > 1 ? 'teacher_name_not_unique' : 'teacher_not_registered'
+    });
+  });
+
+  var requiredBound = Math.max(3, Math.ceil(list.length * 0.8));
+  var maxRepairCount = Math.max(2, Math.ceil(list.length * 0.1));
+  var safe = list.length > 0
+    && repairs.length > 0
+    && repairs.length <= maxRepairCount
+    && matchedById >= requiredBound
+    && unresolved.length === 0;
+  if (!safe) {
+    return {
+      list: list,
+      repaired: false,
+      repairCount: 0,
+      proposedRepairs: repairs,
+      unresolved: unresolved,
+      matchedById: matchedById
+    };
+  }
+
+  var repairedList = list.map(function (period) {
+    return period && typeof period === 'object' ? Object.assign({}, period) : period;
+  });
+  repairs.forEach(function (repair) {
+    repairedList[repair.index].teacherId = repair.teacherId;
+  });
+  return {
+    list: repairedList,
+    repaired: true,
+    repairCount: repairs.length,
+    repairs: repairs,
+    unresolved: [],
+    matchedById: matchedById
+  };
+}
+
 function attTimetableListHasTeacherFields(list) {
   return (list || []).some(function (p) {
     if (!p) return false;
@@ -5117,6 +5252,7 @@ window.attTimetableListsAreDifferentTimetables = attTimetableListsAreDifferentTi
 window.attTimetableFailsRosterTeacherBinding = attTimetableFailsRosterTeacherBinding;
 window.attTimetableTeacherRosterScore = attTimetableTeacherRosterScore;
 window.attVerifyRemoteTimetableOwnership = attVerifyRemoteTimetableOwnership;
+window.attCanonicalizeRemoteTimetableTeacherBindings = attCanonicalizeRemoteTimetableTeacherBindings;
 
 /**
  * Manual, read-from-cloud timetable recovery used by Attendance cloud pull.
@@ -5146,6 +5282,8 @@ window.emsPullAttendanceTimetableFromCloud = function (tenantId) {
     if (!snap.exists) return { ok: false, reason: 'timetable_not_found', count: 0 };
     var list = attTimetableListFromCloudSnapshot(snap) || [];
     if (!list.length) return { ok: false, reason: 'empty_cloud_timetable', count: 0 };
+    var bindingRepair = attCanonicalizeRemoteTimetableTeacherBindings(list);
+    list = bindingRepair.list;
     var ownership = attVerifyRemoteTimetableOwnership(list);
     if (!ownership.ok) {
       return {
@@ -5184,6 +5322,7 @@ window.emsPullAttendanceTimetableFromCloud = function (tenantId) {
         ok: true,
         count: list.length,
         teacherCount: Object.keys(teachers).length,
+        repairedTeacherBindingCount: bindingRepair.repairCount || 0,
         source: 'manual_verified_canonical',
         cloudPath: 'All_Madrasas/' + tenantId + '/ModuleData/' + ATT_PERIODS_CANONICAL_CLOUD_DOC
       });
@@ -5264,6 +5403,8 @@ function attMigrateLegacyCloudTimetablePeriods(tenantId, sourceTenantId, generat
       ? (attTimetableListFromCloudSnapshot(canonDoc) || []) : [];
     var legacyList = (legacyDoc && legacyDoc.exists)
       ? (attTimetableListFromCloudSnapshot(legacyDoc) || []) : [];
+    canonList = attCanonicalizeRemoteTimetableTeacherBindings(canonList).list;
+    legacyList = attCanonicalizeRemoteTimetableTeacherBindings(legacyList).list;
     var localList = attReadAllTimetablePeriodsRaw();
     var scopedKey = typeof window.emsScopedKey === 'function'
       ? window.emsScopedKey(ATT_PERIODS_KEY, tenantId)
@@ -6023,6 +6164,8 @@ function attRunTimetableContaminationPass(tenantId) {
     ]).then(function (docs) {
       cloudCanonical = attTimetableListFromCloudSnapshot(docs[0]);
       cloudLegacy = attTimetableListFromCloudSnapshot(docs[1]);
+      cloudCanonical = attCanonicalizeRemoteTimetableTeacherBindings(cloudCanonical || []).list;
+      cloudLegacy = attCanonicalizeRemoteTimetableTeacherBindings(cloudLegacy || []).list;
     });
   }
 

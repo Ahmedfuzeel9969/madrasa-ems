@@ -209,6 +209,17 @@ describe('Phase 4 — TASK 4.1 cloud path audit (source lock)', function () {
         expect(att).toContain('attMigrateLegacyCloudTimetablePeriods');
         expect(att).toContain('ATT_PERIODS_LEGACY_CLOUD_COL');
     });
+
+    it('teacher timetable view includes registered teachers who have no assigned period', function () {
+        var att = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
+        var renderBlock = att.slice(
+            att.indexOf('function ttPopulateFilters'),
+            att.indexOf('// نظام الاوقات سے براہِ راست حاضری')
+        );
+        expect(renderBlock).toContain('registeredTeacherNames');
+        expect(renderBlock).toContain('registeredTeachers.forEach');
+        expect(renderBlock).toContain('اس استاد کا کوئی گھنٹہ مقرر نہیں');
+    });
 });
 
 describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
@@ -256,6 +267,62 @@ describe('Phase 4 — TASK 4.2 controlled canonicalization', function () {
         expect(res.source).toBe('manual_verified_canonical');
         expect(res.cloudPath).toBe('All_Madrasas/' + TENANT_A + '/ModuleData/' + CANONICAL_DOC);
         expect(JSON.parse(env.physical[scopedKey(TENANT_A)])).toHaveLength(102);
+    });
+
+    it('repairs two isolated stale CTCH ids by unique registered name and keeps the newer 103-period cloud timetable', async function () {
+        setTeacherRoster();
+        var periods = [];
+        for (var i = 1; i <= 103; i++) {
+            var teacherNo = ((i - 1) % 47) + 1;
+            periods.push({
+                id: 'OWAIS-NEW-' + i,
+                name: 'Period ' + i,
+                teacherId: 'TCH-' + teacherNo,
+                teacherName: 'Teacher ' + teacherNo,
+                days: [1]
+            });
+        }
+        periods[10].teacherId = 'CTCH-STALE-1';
+        periods[75].teacherId = 'CTCH-STALE-2';
+        env.setCloudGet(TENANT_A, 'ModuleData', CANONICAL_DOC, moduleDataSnapshot(periods));
+
+        // The local device still has the older 102-period arrangement.
+        env._emsOriginalSetItem(scopedKey(TENANT_A), JSON.stringify(periods.slice(0, 102).map(function (period) {
+            var copy = Object.assign({}, period);
+            if (copy.id === periods[10].id) copy.teacherId = 'TCH-11';
+            if (copy.id === periods[75].id) copy.teacherId = 'TCH-29';
+            return copy;
+        })));
+
+        var res = await env.emsPullAttendanceTimetableFromCloud(TENANT_A);
+        var restored = JSON.parse(env.physical[scopedKey(TENANT_A)]);
+
+        expect(res.ok).toBe(true);
+        expect(res.count).toBe(103);
+        expect(res.repairedTeacherBindingCount).toBe(2);
+        expect(restored).toHaveLength(103);
+        expect(restored[10].teacherId).toBe('TCH-11');
+        expect(restored[75].teacherId).toBe('TCH-29');
+    });
+
+    it('does not repair or accept a mostly foreign timetable by coincidental display names', async function () {
+        setTeacherRoster();
+        var foreign = [];
+        for (var i = 1; i <= 20; i++) {
+            foreign.push({
+                id: 'FOREIGN-' + i,
+                teacherId: 'OTHER-' + i,
+                teacherName: 'Teacher ' + (((i - 1) % 47) + 1),
+                days: [1]
+            });
+        }
+        env.setCloudGet(TENANT_A, 'ModuleData', CANONICAL_DOC, moduleDataSnapshot(foreign));
+
+        var res = await env.emsPullAttendanceTimetableFromCloud(TENANT_A);
+
+        expect(res.ok).toBe(false);
+        expect(res.reason).toBe('cloud_timetable_rejected');
+        expect(env.physical[scopedKey(TENANT_A)]).toBeFalsy();
     });
 
     it('explicit cloud restore fails closed when requested tenant differs from verified tenant', async function () {

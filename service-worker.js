@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260901_collective_class_period_view_v13';
+var EMS_SW_BUILD_TAG = '20260901_owais_timetable_103_guard_v14';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

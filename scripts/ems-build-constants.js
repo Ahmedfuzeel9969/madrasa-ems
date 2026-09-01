@@ -12,7 +12,7 @@ module.exports = {
     swUpdate: '20260708_sw_update_v1',
     searchIndex: '20260709_phase_a_drafts',
     offline: '20260628offline5',
-    postAuthLoader: '20260901_collective_class_period_view_v13',
+    postAuthLoader: '20260901_owais_timetable_103_guard_v14',
     core: '20260708_sw_update_v1'
   },
   /** Resolve script path — cloud/ prefix when file lives under cloud/ */

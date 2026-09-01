@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260901_collective_class_period_view_v13';
+  var CACHE_BUST = '20260901_owais_timetable_103_guard_v14';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,
