@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260901_exams_quarterly_dates_v1';
+    var CACHE_BUST = '20260902_exams_audit_hardening_v1';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;

@@ -25,6 +25,13 @@
       }
       return JSON.parse(raw);
     } catch (e) {
+      if (key && typeof window.showToast === 'function') {
+        window._exmJsonWarned = window._exmJsonWarned || Object.create(null);
+        if (!window._exmJsonWarned[key]) {
+          window._exmJsonWarned[key] = true;
+          window.showToast('امتحانات کا ڈیٹا خراب لگ رہا ہے (' + key + ') — کلاؤڈ سے بحالی کریں', 'error');
+        }
+      }
       return fallback !== undefined ? fallback : null;
     }
   }
@@ -49,15 +56,56 @@
     if (typeof window.emsDurableEnsureKey !== 'function') return Promise.resolve();
     return EXM_BLOB_KEYS.reduce(function (chain, key) {
       return chain.then(function () { return window.emsDurableEnsureKey(key); });
-    }, Promise.resolve()).then(function () {
-      if (typeof window.emsCacheInvalidate === 'function') {
-        EXM_BLOB_KEYS.forEach(function (key) {
-          try { window.emsCacheInvalidate(key); } catch (eInv) { /* ignore */ }
-        });
-      }
-    });
+    }, Promise.resolve());
   }
   window.exmEnsureBlobsReady = exmEnsureBlobsReady;
+
+  var _exmExamsPersistChain = Promise.resolve();
+  var _exmMarksSaveBusy = false;
+
+  window.exmRunExamsPersist = function (task) {
+    _exmExamsPersistChain = _exmExamsPersistChain.then(task).catch(function (err) {
+      console.error('exmRunExamsPersist', err);
+      throw err;
+    });
+    return _exmExamsPersistChain;
+  };
+
+  function exmStaffHasExamsEdit() {
+    if (window.exmIsAdminOrOwner()) return true;
+    if (typeof window.emsIsStaffUser === 'function' && !window.emsIsStaffUser()) return true;
+    return typeof window.checkStaffModuleAccess === 'function'
+      && window.checkStaffModuleAccess('exams', 'edit');
+  }
+
+  function exmStaffHasExamsView() {
+    if (window.exmIsAdminOrOwner()) return true;
+    if (typeof window.emsIsStaffUser === 'function' && !window.emsIsStaffUser()) return true;
+    if (typeof window.checkStaffModuleAccess === 'function') {
+      return window.checkStaffModuleAccess('exams', 'view') || window.checkStaffModuleAccess('exams', 'edit');
+    }
+    return true;
+  }
+
+  function exmPurgeUnscopedLegacyKey(baseKey) {
+    if (!baseKey) return;
+    try {
+      if (window._emsOriginalRemoveItem) window._emsOriginalRemoveItem.call(localStorage, baseKey);
+      else localStorage.removeItem(baseKey);
+    } catch (ePur) { /* ignore */ }
+  }
+
+  function exmStampBlobOwner(baseKey) {
+    var tid = typeof window.emsGetCanonicalTenantId === 'function'
+      ? window.emsGetCanonicalTenantId()
+      : (window.EMS_ACTIVE_TENANT_ID || window.CURRENT_MADRASA_TENANT_ID || null);
+    if (!tid || !baseKey) return;
+    try {
+      var ownerKey = 'ems_blob_owner__' + baseKey;
+      if (window._emsOriginalSetItem) window._emsOriginalSetItem.call(localStorage, ownerKey, String(tid));
+      else localStorage.setItem(ownerKey, String(tid));
+    } catch (eOwn) { /* ignore */ }
+  }
 
   function exmEnsureQuarterlyExamType(types) {
     if (!Array.isArray(types)) types = [];
@@ -230,8 +278,11 @@
 
   function exmReadResultDateInput(prefix) {
     var el = document.getElementById(prefix + '-result-date');
-    var v = el && el.value ? String(el.value).trim().slice(0, 10) : '';
-    return v || exmTodayYmd();
+    return el && el.value ? String(el.value).trim().slice(0, 10) : '';
+  }
+
+  function exmResolveResultDateForContext(prefix) {
+    return exmReadResultDateInput(prefix) || exmTodayYmd();
   }
 
   function exmFormatResultDateLabel(ymd) {
@@ -268,10 +319,6 @@
       if (!m.resultDate && (!legacy || Number(m.timestamp || 0) > Number(legacy.timestamp || 0))) legacy = m;
     }
     if (exact) return exact;
-    // صرف اس صورت میں پرانا بلا تاریخ ریکارڈ دیں جب پوچھی گئی تاریخ آج ہو / صرف ایک لیگیسی ہو
-    if (want && legacy && !legacy.resultDate && exmListResultDates(examName, cls).length <= 1) {
-      return legacy;
-    }
     return null;
   }
 
@@ -283,7 +330,6 @@
     var dateEl = document.getElementById(prefix + '-result-date');
     var sessEl = document.getElementById(prefix + '-result-session');
     if (!dateEl) return;
-    if (!dateEl.value) dateEl.value = exmTodayYmd();
     var examName = examEl ? examEl.value : '';
     var cls = classEl ? classEl.value : '';
     var dates = exmListResultDates(examName, cls);
@@ -296,6 +342,7 @@
       });
       sessEl.innerHTML = html;
       if (cur && dates.indexOf(cur) >= 0) sessEl.value = cur;
+      else if (!cur) sessEl.value = '';
     }
   };
 
@@ -305,43 +352,46 @@
     var dateEl = document.getElementById(prefix + '-result-date');
     if (!sessEl || !dateEl) return;
     if (sessEl.value) dateEl.value = sessEl.value;
+    else dateEl.value = '';
   };
 
   window.exmIsExamLocked = function (examName, cls, resultDate) {
     if (!examName || !cls) return false;
     var locks = exmReadLocks();
-    var legacy = locks[exmLockStorageKey(examName, cls)];
-    if (legacy && legacy.locked) return true;
     var d = resultDate ? String(resultDate).slice(0, 10) : '';
     if (d) {
-      var entry = locks[exmLockStorageKey(examName, cls, d)];
-      if (entry && entry.locked) return true;
+      var dated = locks[exmLockStorageKey(examName, cls, d)];
+      if (dated && dated.locked) return true;
+      return false;
     }
-    return false;
+    var legacy = locks[exmLockStorageKey(examName, cls)];
+    return !!(legacy && legacy.locked);
   };
 
   function exmIsMarksContextLocked() {
     var examName = (document.getElementById('mrk-exam-name') || {}).value;
     var cls = (document.getElementById('mrk-class') || {}).value;
-    return window.exmIsExamLocked(examName, cls, exmReadResultDateInput('mrk'));
+    var resultDate = exmReadResultDateInput('mrk') || exmTodayYmd();
+    return window.exmIsExamLocked(examName, cls, resultDate);
   }
 
   window.exmCanEditBookColumn = function (book) {
     if (exmIsMarksContextLocked()) return false;
+    if (!exmStaffHasExamsEdit()) return false;
     if (window.exmIsAdminOrOwner()) return true;
     if (!window.exmIsTeacherOnly()) return true;
     var current = window.exmGetCurrentTeacherName();
-    if (!book || !book.teacher) return false;
+    if (!book || !book.teacher) return true;
     return exmTeacherNamesMatch(book.teacher, current);
   };
 
   window.exmUpdateLockUi = function () {
     var marksExam = (document.getElementById('mrk-exam-name') || {}).value;
     var marksCls = (document.getElementById('mrk-class') || {}).value;
-    var marksDate = exmReadResultDateInput('mrk');
+    var marksDate = exmResolveResultDateForContext('mrk');
     var resExam = (document.getElementById('res-exam-name') || {}).value;
     var resCls = (document.getElementById('res-class') || {}).value;
-    var resDate = exmReadResultDateInput('res');
+    var resDate = exmResolveResultDateForContext('res');
 
     var marksLocked = window.exmIsExamLocked(marksExam, marksCls, marksDate);
     var marksBadge = document.getElementById('exm-marks-lock-badge');
@@ -416,7 +466,7 @@
     }
     var examName = (document.getElementById('res-exam-name') || {}).value;
     var cls = (document.getElementById('res-class') || {}).value;
-    var resultDate = exmReadResultDateInput('res');
+    var resultDate = exmResolveResultDateForContext('res');
     if (!examName || !cls) return showToast('امتحان اور درجہ منتخب کریں!', 'error');
 
     var locks = exmReadLocks();
@@ -560,7 +610,7 @@
           renderSettingsData();
           if (activeTabId === 'exam-win-template' && typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
               try {
-                  window.exmSyncTimetableBooksToMasterSheet({ silent: false });
+                  window.exmSyncTimetableBooksToMasterSheet({ silent: true });
               } catch (eSync) { /* ignore */ }
           }
           renderQuickAccessTabs();
@@ -2255,6 +2305,9 @@
               out[b.name] = exmNormalizeMarkRaw(rowMarks && rowMarks[b.name], b.marks);
           }
       });
+      Object.keys(existingMarks).forEach(function (bookName) {
+          if (out[bookName] === undefined) out[bookName] = existingMarks[bookName];
+      });
       return out;
   }
 
@@ -2608,6 +2661,7 @@
   document.getElementById('btn-save-all-marks')?.addEventListener('click', () => {
 
       if (typeof window.emsRequireStaffAction === 'function' && !window.emsRequireStaffAction('exams', 'edit')) return;
+      if (_exmMarksSaveBusy) return showToast('محفوظ جاری ہے — تھوڑی دیر انتظار کریں', 'warning');
 
       const examName = document.getElementById('mrk-exam-name').value;
 
@@ -2623,10 +2677,16 @@
 
       exmFlushVisibleMarkInputsToGrid();
 
+      var saveBtn = document.getElementById('btn-save-all-marks');
+      _exmMarksSaveBusy = true;
+      if (saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> محفوظ ہو رہا ہے…';
+      }
+
       var finishSave = function () {
+      return window.exmRunExamsPersist(function () {
       let dbMarks = exmReadJson(DB.exams, []);
-
-
 
       currentGridData.forEach(row => {
 
@@ -2663,7 +2723,7 @@
 
       });
 
-      Promise.resolve(emsSaveKey(DB.exams, JSON.stringify(dbMarks))).then(function (res) {
+      return Promise.resolve(emsSaveKey(DB.exams, JSON.stringify(dbMarks))).then(function (res) {
           var status = res && res.status;
           if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions('mrk');
           if (status === 'synced') {
@@ -2676,14 +2736,20 @@
       }).catch(function (err) {
           console.error('Exam marks save failed', err);
           showToast("نمبرات محفوظ نہیں ہو سکے — دوبارہ کوشش کریں", "error");
+      }).finally(function () {
+          _exmMarksSaveBusy = false;
+          if (saveBtn) {
+              saveBtn.disabled = exmIsMarksContextLocked();
+              saveBtn.innerHTML = '<i class="fas fa-save"></i> تمام نمبرات محفوظ کریں';
+          }
+      });
       });
       };
 
-      if (typeof window.emsDurableEnsureKey === 'function') {
-          window.emsDurableEnsureKey(DB.exams).then(finishSave).catch(finishSave);
-      } else {
-          finishSave();
-      }
+      var ensureMarks = typeof window.emsDurableEnsureKey === 'function'
+        ? window.emsDurableEnsureKey(DB.exams)
+        : Promise.resolve();
+      Promise.resolve(ensureMarks).then(finishSave).catch(finishSave);
 
   });
 
@@ -2824,6 +2890,10 @@
   // مرحلہ 3: نمبرات گرڈ برآمد + ذہین درآمد + نتائج برآمد
   // =========================================================
   window.examExportMarksGrid = function () {
+      if (!exmStaffHasExamsView()) {
+          if (typeof window.emsRequireStaffAction === 'function') window.emsRequireStaffAction('exams', 'view');
+          return;
+      }
       if (!currentGridData || !currentGridData.length) return showToast("پہلے گرڈ تیار کریں!", "error");
       var bookNames = currentClassTemplateBooks.map(function (b) { return b.name; });
       var header = ['ID', 'نام'].concat(bookNames).concat(['کل ممکن', 'حاصل کردہ']);
@@ -2842,6 +2912,11 @@
 
   // ذہین CSV درآمد — کالم خودکار شناخت (ID/نام + کتاب کے نام)
   window.examImportMarksCSV = function (input) {
+      if (!exmStaffHasExamsEdit()) {
+          if (typeof window.emsRequireStaffAction === 'function') window.emsRequireStaffAction('exams', 'edit');
+          input.value = '';
+          return;
+      }
       var file = input.files && input.files[0];
       if (!file) return;
       if (exmIsMarksContextLocked()) {
@@ -2912,9 +2987,13 @@
 
   // محفوظ شدہ نتائج برآمد (منتخب امتحان/درجہ)
   window.examExportResults = function () {
+      if (!exmStaffHasExamsView()) {
+          if (typeof window.emsRequireStaffAction === 'function') window.emsRequireStaffAction('exams', 'view');
+          return;
+      }
       var examName = document.getElementById('res-exam-name').value;
       var cls = document.getElementById('res-class').value;
-      var resultDate = exmReadResultDateInput('res');
+      var resultDate = exmResolveResultDateForContext('res');
       var dbMarks = exmReadJson(DB.exams, []);
       var list = dbMarks.filter(function (m) {
           return m.examName === examName && (!cls || m.class === cls) && exmResultDateOf(m) === resultDate;
@@ -3206,6 +3285,8 @@
   document.getElementById('btn-load-promote')?.addEventListener('click', function () {
       var examName = document.getElementById('promo-exam-name').value;
       var fromClass = document.getElementById('promo-from-class').value;
+      var promoDateEl = document.getElementById('promo-result-date');
+      var promoDate = promoDateEl && promoDateEl.value ? String(promoDateEl.value).trim().slice(0, 10) : '';
       if (!fromClass) return showToast("موجودہ درجہ منتخب کریں!", "error");
       var dbMarks = exmReadJson(DB.exams, []);
       var users = exmGetUsers();
@@ -3214,7 +3295,9 @@
 
       window._promoRows = students.map(function (std) {
           var candidates = dbMarks.filter(function (m) {
-              return m.examName === examName && m.class === fromClass && String(m.studentId) === String(std.id);
+              if (m.examName !== examName || m.class !== fromClass || String(m.studentId) !== String(std.id)) return false;
+              if (promoDate && exmResultDateOf(m) !== promoDate) return false;
+              return true;
           });
           candidates.sort(function (a, b) {
               var dateCmp = exmResultDateOf(b).localeCompare(exmResultDateOf(a));
@@ -3311,8 +3394,10 @@
 
       try {
           if (typeof window.emsRegRepoPersistRegistration === 'function') {
-              // رجسٹریشن SSOT + offline queue؛ filtered exam roster کو کبھی مکمل users blob پر نہ لکھیں۔
-              var saves = selected.map(function (r) {
+              var okCount = 0;
+              var failCount = 0;
+              for (var pi = 0; pi < selected.length; pi++) {
+                  var r = selected[pi];
                   var source = r.student || {};
                   var updated = Object.assign({}, source, {
                       id: r.id,
@@ -3321,18 +3406,26 @@
                       promotedAt: ts,
                       promotedFrom: fromClass
                   });
-                  return window.emsRegRepoPersistRegistration(updated, {
-                      tenantId: tenantId,
-                      status: 'approved',
-                      type: updated.type || 'student',
-                      currentEditingId: r.id,
-                      isEditingRejected: false
-                  }).then(function (res) {
+                  try {
+                      var res = await window.emsRegRepoPersistRegistration(updated, {
+                          tenantId: tenantId,
+                          status: 'approved',
+                          type: updated.type || 'student',
+                          currentEditingId: r.id,
+                          isEditingRejected: false
+                      });
                       if (res && res.ok === false) throw new Error(res.reason || 'registration_save_failed');
-                      return res;
-                  });
-              });
-              await Promise.all(saves);
+                      okCount++;
+                  } catch (oneErr) {
+                      failCount++;
+                      console.error('Promotion failed for', r.id, oneErr);
+                  }
+              }
+              if (failCount && okCount) {
+                  showToast(okCount + ' ترقی ہوئی، ' + failCount + ' ناکام — دوبارہ چیک کریں', 'warning');
+                  return;
+              }
+              if (failCount && !okCount) throw new Error('promotion_batch_failed');
           } else {
               var fdb = window.EMS_FIRESTORE_DB;
               if (fdb) {
@@ -3445,6 +3538,35 @@ window.emsExamsLocalKeyStats = function () {
   return { byKey: stats, total: total };
 };
 
+function exmApplyPulledModuleData(key, remoteStr, remoteAt) {
+  if (window.EmsCachePolicy && typeof window.EmsCachePolicy.markSynced === 'function') {
+    window.EmsCachePolicy.markSynced(key, remoteAt || Date.now());
+  }
+  if (typeof window.emsSaveModuleData === 'function') {
+    return window.emsSaveModuleData(key, remoteStr, { mutation: false, autoDelta: false }).then(function () {
+      exmPurgeUnscopedLegacyKey(key);
+      exmStampBlobOwner(key);
+      exmWarmCacheAfterSave(key, remoteStr);
+      return true;
+    }).catch(function () { return false; });
+  }
+  try {
+    if (typeof window.emsDurableWriteRaw === 'function') {
+      window.emsDurableWriteRaw(key, remoteStr);
+    } else if (window._emsOriginalSetItem) {
+      window._emsOriginalSetItem.call(localStorage, key, remoteStr);
+    } else {
+      localStorage.setItem(key, remoteStr);
+    }
+    exmWarmCacheAfterSave(key, remoteStr);
+    exmPurgeUnscopedLegacyKey(key);
+    exmStampBlobOwner(key);
+    return Promise.resolve(true);
+  } catch (eWrite) {
+    return Promise.resolve(false);
+  }
+}
+
 function exmPullModuleDataFallback(tenantId, key) {
   var db = typeof window.getDbOrNull === 'function' ? window.getDbOrNull() : null;
   if (!db || !tenantId || !key) return Promise.resolve(false);
@@ -3458,11 +3580,11 @@ function exmPullModuleDataFallback(tenantId, key) {
     var d = doc.data() || {};
     if (d.data == null) return false;
     var remoteStr = typeof d.data === 'string' ? d.data : JSON.stringify(d.data);
+    var remoteAt = typeof window.EmsCachePolicy.remoteDocTimestamp === 'function'
+      ? window.EmsCachePolicy.remoteDocTimestamp(d)
+      : 0;
     if (window.EmsCachePolicy && typeof window.EmsCachePolicy.resolvePullConflict === 'function') {
       var localStr = exmReadRaw(key) || '';
-      var remoteAt = typeof window.EmsCachePolicy.remoteDocTimestamp === 'function'
-        ? window.EmsCachePolicy.remoteDocTimestamp(d)
-        : 0;
       var decision = window.EmsCachePolicy.resolvePullConflict(key, localStr, remoteStr, remoteAt);
       if (!decision.apply) {
         if (decision.markSync && typeof window.EmsCachePolicy.markSynced === 'function') {
@@ -3472,26 +3594,14 @@ function exmPullModuleDataFallback(tenantId, key) {
         return false;
       }
     }
-    try {
-      if (window._emsOriginalSetItem) {
-        window._emsOriginalSetItem.call(localStorage, key, remoteStr);
-      } else {
-        localStorage.setItem(key, remoteStr);
-      }
-      if (typeof window.emsCacheInvalidate === 'function') window.emsCacheInvalidate(key);
-      if (window.EmsCachePolicy && typeof window.EmsCachePolicy.markSynced === 'function') {
-        window.EmsCachePolicy.markSynced(key, Date.now());
-      }
-      return true;
-    } catch (eWrite) {
-      return false;
-    }
+    return exmApplyPulledModuleData(key, remoteStr, remoteAt);
   }).catch(function () { return false; });
 }
 
 window.emsPullExamsFromCloud = function (tenantId, opts) {
   opts = opts || {};
   tenantId = tenantId
+    || (typeof window.emsGetCanonicalTenantId === 'function' && window.emsGetCanonicalTenantId())
     || (typeof window.emsGetTenantId === 'function' && window.emsGetTenantId())
     || window.CURRENT_MADRASA_TENANT_ID
     || null;

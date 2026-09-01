@@ -263,6 +263,15 @@
         return String(persistedBeforeActivation) === String(tenantId);
     }
 
+    var EXAM_MIGRATION_GUARD_KEYS = {
+        'ems_full_exams': true,
+        'ems_exam_types': true,
+        'ems_library_books': true,
+        'ems_exam_templates': true,
+        'ems_exam_locks': true,
+        'ems_master_sheet_meta': true
+    };
+
     /**
      * Copy (never delete) legacy global data to a tenant key once its ownership is
      * known. A mismatched prior tenant is quarantined in place for manual recovery,
@@ -287,6 +296,10 @@
                 return idbRead.then(function (idbValue) {
                     var source = localValue != null ? localValue : idbValue;
                     if (source == null) return null;
+                    if (EXAM_MIGRATION_GUARD_KEYS[baseKey] && localValue != null) {
+                        var owner = rawLocalGet('ems_blob_owner__' + baseKey);
+                        if (owner && String(owner) !== String(tenantId)) return null;
+                    }
                     var targetExists = rawLocalGet(target);
                     var targetRead = targetExists != null || typeof global.emsIdbKvGet !== 'function'
                         ? Promise.resolve(targetExists)
@@ -301,6 +314,9 @@
                             global.emsIdbKvSet(target, str);
                         } else {
                             localStorage.setItem(target, str);
+                        }
+                        if (EXAM_MIGRATION_GUARD_KEYS[baseKey]) {
+                            try { localStorage.setItem('ems_blob_owner__' + baseKey, String(tenantId)); } catch (eOwn) { /* ignore */ }
                         }
                         return null;
                     });

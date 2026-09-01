@@ -27,7 +27,16 @@
         raw = typeof global.emsSafeLocalGet === 'function' ? global.emsSafeLocalGet(key) : localStorage.getItem(key);
       }
       return raw ? JSON.parse(raw) : fallback;
-    } catch (e) { return fallback; }
+    } catch (e) {
+      if (key && typeof global.showToast === 'function') {
+        global._exmImportJsonWarned = global._exmImportJsonWarned || Object.create(null);
+        if (!global._exmImportJsonWarned[key]) {
+          global._exmImportJsonWarned[key] = true;
+          global.showToast('امتحانات کا ڈیٹا خراب لگ رہا ہے — کلاؤڈ سے بحالی کریں', 'error');
+        }
+      }
+      return fallback;
+    }
   }
   function dateYmd(v) {
     if (v instanceof Date && !isNaN(v.getTime())) {
@@ -209,7 +218,7 @@
     return file.text().then(function (text) {
       var rows = csvRows(String(text).replace(/^\uFEFF/, ''));
       if (rows.length < 2) throw new Error('فائل خالی ہے یا کم از کم ایک data row درکار ہے');
-      return { headers: rows[0].map(String), rows: rows.slice(1), sheetName: '', sheetNames: [], rawAoa: rows };
+      return { headers: rows[0].map(String), rows: rows.slice(1), sheetName: '', sheetNames: [], rawAoa: rows, headerRow: 0 };
     });
   }
 
@@ -255,6 +264,27 @@
     if (!S || !S.workbook || !S.sheetName) return;
     S.parsed = workbookToParsed(S.workbook, S.sheetName, S.headerRow || 0);
     S.map = autoMap(S.parsed.headers);
+    S.customBooks = {};
+    render();
+  }
+
+  function reparseFromRawAoa() {
+    if (!S || !S.parsed || !S.parsed.rawAoa || !S.parsed.rawAoa.length) return;
+    var aoa = S.parsed.rawAoa;
+    var headerRow = Math.max(0, Math.min(Number(S.headerRow) || 0, aoa.length - 1));
+    var headers = (aoa[headerRow] || []).map(function (h) { return String(h).trim(); });
+    var rows = aoa.slice(headerRow + 1).filter(function (row) {
+      return row && row.some(function (cell) { return String(cell == null ? '' : cell).trim() !== ''; });
+    });
+    S.parsed = {
+      headers: headers,
+      rows: rows,
+      sheetName: S.parsed.sheetName || '',
+      sheetNames: S.sheetNames || [],
+      rawAoa: aoa,
+      headerRow: headerRow
+    };
+    S.map = autoMap(headers);
     S.customBooks = {};
     render();
   }
@@ -534,6 +564,7 @@
     if (headerInput) headerInput.onchange = function () {
       S.headerRow = Math.max(0, Math.min(19, Number(this.value) || 0));
       if (S.workbook) reparseSheet();
+      else reparseFromRawAoa();
     };
 
     Array.prototype.forEach.call(document.querySelectorAll('.exam-import-map'), function (el) {
@@ -635,43 +666,58 @@
         return toast('لاک شدہ نتیجہ: ' + chk.examName + ' — درآمد ممکن نہیں', 'error');
       }
     }
-    var db = readJson(EXAMS_KEY, []);
-    if (!Array.isArray(db)) db = [];
-    var now = Date.now(), inserted = 0, updated = 0, healed = 0;
-    p.valid.forEach(function (r) {
-      var existing = findExistingResult(db, r);
-      // جزوی subject import پر پہلے سے موجود دوسرے مضامین محفوظ رہیں۔
-      var marks = Object.assign({}, existing && existing.marks || {}, r.marks || {});
-      var summary = summarizeMarks(r.className, marks);
-      var record = Object.assign({}, existing || {}, {
-        id: existing && existing.id
-          ? existing.id
-          : (typeof global.exmCanonicalResultId === 'function'
-            ? global.exmCanonicalResultId(r.examName, r.className, r.user.id, r.resultDate)
-            : ('RES-' + now + '-' + r.rowNo)),
-        examName: r.examName, class: r.className, studentId: r.user.id, studentName: r.user.name || '',
-        studentPhoto: r.user.photoBase64 || r.user.photoUrl || '',
-        marks: marks, totalObtained: summary.total, grandTotal: summary.grand,
-        percentage: summary.percentage.toFixed(1), grade: summary.grade, resultDate: r.resultDate, timestamp: now
+    function doPersistWrite() {
+      var db = readJson(EXAMS_KEY, []);
+      if (!Array.isArray(db)) db = [];
+      var now = Date.now(), inserted = 0, updated = 0, healed = 0;
+      p.valid.forEach(function (r) {
+        var existing = findExistingResult(db, r);
+        var marks = Object.assign({}, existing && existing.marks || {}, r.marks || {});
+        var summary = summarizeMarks(r.className, marks);
+        var record = Object.assign({}, existing || {}, {
+          id: existing && existing.id
+            ? existing.id
+            : (typeof global.exmCanonicalResultId === 'function'
+              ? global.exmCanonicalResultId(r.examName, r.className, r.user.id, r.resultDate)
+              : ('RES-' + now + '-' + r.rowNo)),
+          examName: r.examName, class: r.className, studentId: r.user.id, studentName: r.user.name || '',
+          studentPhoto: r.user.photoBase64 || r.user.photoUrl || '',
+          marks: marks, totalObtained: summary.total, grandTotal: summary.grand,
+          percentage: summary.percentage.toFixed(1), grade: summary.grade, resultDate: r.resultDate, timestamp: now
+        });
+        if (typeof global.emsStampDepartment === 'function') global.emsStampDepartment(record, r.user.departmentId);
+        if (typeof global.exmUpsertResultByIdentity === 'function') {
+          var upsert = global.exmUpsertResultByIdentity(db, record);
+          if (upsert.inserted) inserted++; else updated++;
+          healed += Number(upsert.duplicatesRemoved || 0);
+        } else if (existing) {
+          var existingIndex = db.indexOf(existing);
+          db[existingIndex] = record; updated++;
+        } else {
+          db.push(record); inserted++;
+        }
       });
-      if (typeof global.emsStampDepartment === 'function') global.emsStampDepartment(record, r.user.departmentId);
-      if (typeof global.exmUpsertResultByIdentity === 'function') {
-        var upsert = global.exmUpsertResultByIdentity(db, record);
-        if (upsert.inserted) inserted++; else updated++;
-        healed += Number(upsert.duplicatesRemoved || 0);
-      } else if (existing) {
-        var existingIndex = db.indexOf(existing);
-        db[existingIndex] = record; updated++;
-      } else {
-        db.push(record); inserted++;
+      var save = typeof global.emsSaveModuleData === 'function'
+        ? global.emsSaveModuleData(EXAMS_KEY, JSON.stringify(db), { mutation: true, autoDelta: true })
+        : Promise.resolve(localStorage.setItem(EXAMS_KEY, JSON.stringify(db)));
+      return Promise.resolve(save).then(function () {
+        return { inserted: inserted, updated: updated, healed: healed };
+      });
+    }
+
+    var chain = typeof global.emsDurableEnsureKey === 'function'
+      ? global.emsDurableEnsureKey(EXAMS_KEY)
+      : Promise.resolve();
+    chain = chain.then(function () {
+      if (typeof global.exmRunExamsPersist === 'function') {
+        return global.exmRunExamsPersist(doPersistWrite);
       }
+      return doPersistWrite();
     });
-    var save = typeof global.emsSaveModuleData === 'function'
-      ? global.emsSaveModuleData(EXAMS_KEY, JSON.stringify(db), { mutation: true, autoDelta: true })
-      : Promise.resolve(localStorage.setItem(EXAMS_KEY, JSON.stringify(db)));
-    Promise.resolve(save).then(function () {
-      toast(inserted + ' نئے اور ' + updated + ' نتائج محفوظ ہو گئے'
-        + (healed ? '؛ ' + healed + ' پرانی نقلیں ختم ہوئیں' : '')
+    Promise.resolve(chain).then(function (stats) {
+      stats = stats || {};
+      toast((stats.inserted || 0) + ' نئے اور ' + (stats.updated || 0) + ' نتائج محفوظ ہو گئے'
+        + (stats.healed ? '؛ ' + stats.healed + ' پرانی نقلیں ختم ہوئیں' : '')
         + (p.errors.length ? '؛ ' + p.errors.length + ' غلط قطاریں چھوڑی گئیں' : ''), p.errors.length ? 'warning' : 'success');
       S = { file: null, parsed: null, map: {}, customBooks: {}, preview: null, workbook: null, sheetNames: [] };
       render();

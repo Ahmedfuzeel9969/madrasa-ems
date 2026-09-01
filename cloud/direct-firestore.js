@@ -21,6 +21,7 @@
         'ems_library_books': { type: 'blob', collection: 'Exams_Config', docId: 'library_books', group: 'Exams' },
         'ems_exam_templates': { type: 'blob', collection: 'Exams_Config', docId: 'exam_templates', group: 'Exams' },
         'ems_exam_locks': { type: 'blob', collection: 'Exams_Config', docId: 'exam_locks', group: 'Exams' },
+        'ems_master_sheet_meta': { type: 'blob', collection: 'Exams_Config', docId: 'master_sheet_meta', group: 'Exams' },
         'ems_curriculum_plans': { type: 'module_data_blob', module: 'Curriculum', group: 'Curriculum' },
         'ems_curriculum_daily': { type: 'module_data_blob', module: 'Curriculum', group: 'Curriculum' },
         'ems_curriculum_settings': { type: 'module_data_blob', module: 'Curriculum', group: 'Curriculum' },
@@ -100,6 +101,10 @@
     }
 
     function getTenantId() {
+        if (typeof global.emsGetCanonicalTenantId === 'function') {
+            var canonical = global.emsGetCanonicalTenantId();
+            if (canonical) return canonical;
+        }
         if (global.emsGetTenantId) return global.emsGetTenantId();
         if (global.CURRENT_MADRASA_TENANT_ID) return global.CURRENT_MADRASA_TENANT_ID;
         var u = firebase.auth().currentUser;
