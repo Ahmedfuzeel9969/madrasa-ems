@@ -174,13 +174,168 @@
     return node && node.value === 'selected' ? 'selected' : 'all';
   }
 
-  function resolveRoster(roles, requestId, context) {
+  function readTimetablePeriods() {
+    var rows = [];
+    if (typeof global.attReadAllTimetablePeriodsRaw === 'function') {
+      rows = global.attReadAllTimetablePeriodsRaw() || [];
+    } else if (typeof global.attActiveTimetablePeriods === 'function') {
+      rows = global.attActiveTimetablePeriods() || [];
+    }
+    return Array.isArray(rows) ? rows.filter(function (period) { return period && period.id; }) : [];
+  }
+
+  function selectedClassId() {
+    var node = byId('att-col-view-class');
+    return String(node && node.value || '').trim();
+  }
+
+  function selectedPeriodId() {
+    var node = byId('att-col-view-period');
+    return String(node && node.value || 'all').trim() || 'all';
+  }
+
+  function findPeriod(periodId) {
+    var id = String(periodId || '').trim();
+    if (!id || id === 'all') return null;
+    var rows = readTimetablePeriods();
+    for (var i = 0; i < rows.length; i += 1) {
+      if (String(rows[i].id) === id) return rows[i];
+    }
+    if (typeof global.attResolvePeriodById === 'function') return global.attResolvePeriodById(id);
+    return null;
+  }
+
+  function viewScope() {
+    var classId = selectedClassId();
+    var periodId = classId ? selectedPeriodId() : 'all';
+    return {
+      classId: classId,
+      periodId: periodId,
+      period: periodId !== 'all' ? findPeriod(periodId) : null
+    };
+  }
+
+  function periodLabel(period) {
+    if (!period) return 'گھنٹہ نامعلوم';
+    var main = period.bookName || period.name || 'گھنٹہ';
+    var details = [];
+    if (period.name && period.name !== main) details.push(period.name);
+    if (period.teacherName) details.push(period.teacherName);
+    if (period.start) details.push(period.start + (period.end ? ' تا ' + period.end : ''));
+    var archived = period.archived === true || period.deleted === true ? ' — محفوظ پرانا گھنٹہ' : '';
+    return main + (details.length ? ' (' + details.join(' • ') + ')' : '') + archived;
+  }
+
+  function fillViewClassSelect() {
+    var select = byId('att-col-view-class');
+    if (!select) return;
+    var current = String(select.value || '');
+    var classes = typeof global.attListAttendanceClasses === 'function'
+      ? (global.attListAttendanceClasses() || [])
+      : [];
+    readTimetablePeriods().forEach(function (period) {
+      var name = String(period.className || '').trim();
+      if (name && name !== '-' && name !== 'نامعلوم') classes.push(name);
+    });
+    classes = classes.filter(function (name, index, all) {
+      return name && all.indexOf(name) === index;
+    }).sort(function (a, b) { return String(a).localeCompare(String(b), 'ur'); });
+    select.innerHTML = '<option value="">تمام درجات</option>' + classes.map(function (name) {
+      return '<option value="' + escHtml(name) + '">' + escHtml(name) + '</option>';
+    }).join('');
+    if (current && classes.indexOf(current) >= 0) select.value = current;
+  }
+
+  function fillViewPeriodSelect() {
+    var select = byId('att-col-view-period');
+    if (!select) return;
+    var classId = selectedClassId();
+    var current = String(select.value || 'all');
+    var seen = Object.create(null);
+    var periods = classId ? readTimetablePeriods().filter(function (period) {
+      if (String(period.className || '').trim() !== classId) return false;
+      var id = String(period.id || '');
+      if (!id || seen[id]) return false;
+      seen[id] = true;
+      return true;
+    }).sort(function (a, b) {
+      var time = String(a.start || '').localeCompare(String(b.start || ''));
+      return time || periodLabel(a).localeCompare(periodLabel(b), 'ur');
+    }) : [];
+    select.innerHTML = '<option value="all">تمام گھنٹے / روزانہ خلاصہ</option>' + periods.map(function (period) {
+      return '<option value="' + escHtml(period.id) + '">' + escHtml(periodLabel(period)) + '</option>';
+    }).join('');
+    select.disabled = !classId;
+    var valid = current === 'all' || periods.some(function (period) { return String(period.id) === current; });
+    select.value = valid ? current : 'all';
+  }
+
+  function updateScopeNote() {
+    var note = byId('att-col-view-scope-note');
+    if (!note) return;
+    var roles = selectedRoles();
+    var scope = viewScope();
+    var parts = [];
+    if (roles.indexOf('students') >= 0) {
+      parts.push(scope.classId
+        ? 'طلباء: ' + scope.classId + (scope.periodId === 'all' ? ' کے تمام گھنٹوں کا خلاصہ' : ' کا منتخب گھنٹہ')
+        : 'طلباء: تمام درجات کا روزانہ خلاصہ');
+    }
+    if (roles.indexOf('teachers') >= 0) {
+      parts.push(scope.classId
+        ? 'اساتذہ: ' + scope.classId + (scope.periodId === 'all' ? ' پڑھانے والے تمام اساتذہ' : ' کے منتخب گھنٹے کے استاد')
+        : 'اساتذہ: تمام اساتذہ');
+    }
+    if (roles.indexOf('staff') >= 0) parts.push('عملہ: روزانہ حاضری');
+    note.textContent = parts.join('۔ ') + (parts.length ? '۔' : 'کم از کم ایک قسم منتخب کریں۔');
+  }
+
+  function syncScopeControls() {
+    var roles = selectedRoles();
+    var relevant = roles.indexOf('students') >= 0 || roles.indexOf('teachers') >= 0;
+    var wrap = byId('att-col-view-register-scope');
+    if (wrap) wrap.classList.toggle('att-col-hidden', !relevant);
+    fillViewClassSelect();
+    fillViewPeriodSelect();
+    updateScopeNote();
+  }
+
+  function periodMatchesTeacher(period, user) {
+    if (!period || !user) return false;
+    var uid = userId(user);
+    if (typeof global.attPeriodTeacherIdMatches === 'function') {
+      return global.attPeriodTeacherIdMatches(period, uid);
+    }
+    return String(period.teacherId || '').trim() === uid;
+  }
+
+  function filterUsersForScope(users, role, scope) {
+    if (!scope || !scope.classId || role === 'staff') return users || [];
+    if (role === 'students') {
+      return (users || []).filter(function (user) { return userClass(user) === scope.classId; });
+    }
+    if (role === 'teachers') {
+      var periods = readTimetablePeriods().filter(function (period) {
+        return String(period.className || '').trim() === scope.classId;
+      });
+      if (scope.periodId !== 'all') {
+        periods = periods.filter(function (period) { return String(period.id) === scope.periodId; });
+      }
+      return (users || []).filter(function (user) {
+        return periods.some(function (period) { return periodMatchesTeacher(period, user); });
+      });
+    }
+    return users || [];
+  }
+
+  function resolveRoster(roles, requestId, context, scope) {
     if (typeof global.attResolveTargetUsers !== 'function') {
       return Promise.reject(new Error('attendance roster reader unavailable'));
     }
     return Promise.all((roles || []).map(function (role) {
-      return Promise.resolve(global.attResolveTargetUsers(role, '')).then(function (users) {
-        return normalizePeople(users, role);
+      var classArg = role === 'students' && scope && scope.classId ? scope.classId : '';
+      return Promise.resolve(global.attResolveTargetUsers(role, classArg)).then(function (users) {
+        return normalizePeople(filterUsersForScope(users, role, scope), role);
       });
     })).then(function (groups) {
       if (requestId !== _rosterRequest && requestId !== _viewRequest) return [];
@@ -266,8 +421,9 @@
     }
     var requestId = ++_rosterRequest;
     var context = tenantContext();
+    var scope = viewScope();
     setPickerBusy(true);
-    return resolveRoster(roles, requestId, context).then(function (rows) {
+    return resolveRoster(roles, requestId, context, scope).then(function (rows) {
       if (requestId !== _rosterRequest || !tenantContextMatches(context)) return [];
       _roster = rows;
       renderPicker();
@@ -304,7 +460,10 @@
     }
     var month = byId('att-col-view-month');
     if (month && !month.value) month.value = todayMonth();
-    if (_mode === 'view') refreshPicker();
+    if (_mode === 'view') {
+      syncScopeControls();
+      refreshPicker();
+    }
   }
 
   function holidays() {
@@ -372,14 +531,45 @@
     return sheets[person.role] || safeSheetData(null);
   }
 
-  function rawDayStatus(person, sheet, month, day, symbols) {
+  function rawDayStatus(person, sheet, month, day, symbols, scope) {
+    scope = scope || { classId: '', periodId: 'all' };
     var daily = sheet.records[person.uid] && sheet.records[person.uid][day];
+    var periodMap = sheet.periodRecords[person.uid] && sheet.periodRecords[person.uid][day];
+
+    // Exact hour view reads the very same periodRecords cell written by
+    // collective attendance; a daily rollup is not evidence for that hour.
+    if (scope.periodId && scope.periodId !== 'all' && person.role !== 'staff') {
+      var one = periodMap && periodMap[scope.periodId];
+      return one != null && one !== '' ? one : '';
+    }
+
+    // A class-specific teacher register must include only that class's hours.
+    // The teacher daily record may also contain lessons from other classes.
+    if (person.role === 'teachers' && scope.classId) {
+      if (!periodMap || typeof periodMap !== 'object' || !Object.keys(periodMap).length) return '';
+      var teacherPeriods = typeof global.attTeacherPeriodsForRegisterDay === 'function'
+        ? (global.attTeacherPeriodsForRegisterDay(
+          person.uid,
+          person.name,
+          day,
+          weekdayOf(month, day),
+          periodMap
+        ) || [])
+        : [];
+      var teacherIds = teacherPeriods.filter(function (period) {
+        return period && String(period.className || '').trim() === scope.classId;
+      }).map(function (period) { return period.id; }).filter(Boolean);
+      if (!teacherIds.length) return '';
+      return typeof global.attRollupPeriodDayStatus === 'function'
+        ? (global.attRollupPeriodDayStatus(periodMap, symbols, teacherIds) || '')
+        : '';
+    }
+
     // Canonical daily records are also used by dashboard/reports.  Prefer them
     // so the monthly view cannot diverge merely because a timetable changed.
     if (daily != null && daily !== '') return daily;
     if (person.role === 'staff') return '';
 
-    var periodMap = sheet.periodRecords[person.uid] && sheet.periodRecords[person.uid][day];
     if (!periodMap || typeof periodMap !== 'object' || !Object.keys(periodMap).length) return '';
     var periods = [];
     var weekday = weekdayOf(month, day);
@@ -426,11 +616,11 @@
     return '';
   }
 
-  function buildMarks(person, sheet, month, dayCount, symbols, savedHolidays) {
+  function buildMarks(person, sheet, month, dayCount, symbols, savedHolidays, scope) {
     var marks = [];
     var totals = { P: 0, A: 0, L: 0, partial: 0, incomplete: 0 };
     for (var day = 1; day <= dayCount; day += 1) {
-      var raw = rawDayStatus(person, sheet, month, day, symbols);
+      var raw = rawDayStatus(person, sheet, month, day, symbols, scope);
       var kind = statusKind(raw, symbols);
       var holiday = !kind ? holidayReason(month, day, savedHolidays) : '';
       if (totals[kind] != null) totals[kind] += 1;
@@ -458,6 +648,20 @@
 
   function roleSummary(roles) {
     return (roles || []).map(roleLabel).join('، ');
+  }
+
+  function scopeSummary(state) {
+    var scope = state && state.scope ? state.scope : { classId: '', periodId: 'all', period: null };
+    var parts = [];
+    parts.push(scope.classId ? 'درجہ: ' + scope.classId : 'تمام درجات');
+    parts.push(scope.periodId && scope.periodId !== 'all'
+      ? 'گھنٹہ: ' + periodLabel(scope.period)
+      : 'تمام گھنٹے / روزانہ خلاصہ');
+    return parts.join(' — ');
+  }
+
+  function registerTitle(state) {
+    return 'ماہانہ اجتماعی حاضری — ' + monthLabel(state.month) + ' — ' + scopeSummary(state);
   }
 
   function tableHeadHtml(state) {
@@ -523,7 +727,7 @@
     var totals = overallTotals(state.rows);
     state.totals = totals;
     wrap.innerHTML = tableHtml(state.rows, state, true);
-    if (title) title.textContent = 'ماہانہ اجتماعی حاضری — ' + monthLabel(state.month);
+    if (title) title.textContent = registerTitle(state);
     if (summary) summary.textContent = 'افراد: ' + state.rows.length
       + ' | حاضر: ' + totals.P + ' | غیر حاضر: ' + totals.A + ' | رخصت: ' + totals.L;
     if (actions) actions.classList.remove('att-col-hidden');
@@ -543,10 +747,11 @@
     var requestId = ++_viewRequest;
     var context = tenantContext();
     var mode = peopleMode();
+    var scope = viewScope();
     setLoadBusy(true);
     // Resolve again at open time: a role, repository, or tenant may have changed
     // after the picker was rendered. This is read-only and prevents stale people.
-    var rosterPromise = resolveRoster(roles, requestId, context);
+    var rosterPromise = resolveRoster(roles, requestId, context, scope);
     rosterPromise.then(function (allRows) {
       if (requestId !== _viewRequest || !tenantContextMatches(context)) return null;
       var rows = allRows;
@@ -567,12 +772,13 @@
       var dayCount = daysInMonth(month);
       var savedHolidays = holidays();
       payload.rows.forEach(function (person) {
-        buildMarks(person, sheetForPerson(person, payload.sheets), month, dayCount, symbols, savedHolidays);
+        buildMarks(person, sheetForPerson(person, payload.sheets), month, dayCount, symbols, savedHolidays, scope);
       });
       _viewState = {
         month: month,
         dayCount: dayCount,
         roles: roles.slice(),
+        scope: scope,
         rows: payload.rows.sort(sortPeople),
         tenant: context.tenant,
         generation: context.generation,
@@ -584,7 +790,7 @@
       if (error && error.message === 'NO_SELECTED_PEOPLE') {
         toast('کم از کم ایک فرد منتخب کریں', 'warning');
       } else if (error && error.message === 'NO_PEOPLE') {
-        toast('منتخب قسم میں کوئی فرد نہیں ملا', 'warning');
+        toast(scope.classId ? 'منتخب درجہ یا گھنٹے میں کوئی متعلقہ فرد نہیں ملا' : 'منتخب قسم میں کوئی فرد نہیں ملا', 'warning');
       } else {
         console.error('[EMS] collective month view', error);
         toast('ماہانہ حاضری لوڈ نہیں ہو سکی', 'error');
@@ -646,9 +852,10 @@
       var pageNo = index + 1;
       return '<section class="att-col-month-export-page">'
         + header
-        + '<h2 class="att-col-month-export-title">ماہانہ اجتماعی حاضری — ' + escHtml(monthLabel(state.month)) + '</h2>'
+        + '<h2 class="att-col-month-export-title">' + escHtml(registerTitle(state)) + '</h2>'
         + '<div class="att-col-month-export-meta"><span>اقسام: ' + escHtml(roleSummary(state.roles))
-        + '</span><span>افراد: ' + state.rows.length + '</span><span>صفحہ: ' + pageNo + ' / ' + pages.length + '</span></div>'
+        + '</span><span>' + escHtml(scopeSummary(state)) + '</span><span>افراد: ' + state.rows.length
+        + '</span><span>صفحہ: ' + pageNo + ' / ' + pages.length + '</span></div>'
         + tableHtml(rows, state, false)
         + (pageNo === pages.length ? footer : '')
         + '<div class="att-col-month-page-number">' + pageNo + ' / ' + pages.length + '</div>'
@@ -788,6 +995,18 @@
     renderPicker();
   }
 
+  function invalidateRenderedView(message) {
+    _viewState = null;
+    var actions = byId('att-col-view-actions');
+    var wrap = byId('att-col-view-table-wrap');
+    if (actions) actions.classList.add('att-col-hidden');
+    if (wrap) {
+      wrap.innerHTML = '<p class="att-col-placeholder">'
+        + escHtml(message || 'نئے انتخاب کے مطابق «ماہانہ حاضری دکھائیں» دوبارہ دبائیں۔')
+        + '</p>';
+    }
+  }
+
   function bind() {
     if (_bound || !root()) return;
     _bound = true;
@@ -813,10 +1032,27 @@
     panel.addEventListener('change', function (event) {
       var target = event.target;
       if (!target) return;
-      if (target.name === 'att_col_view_people' || target.name === 'att_col_view_role') {
+      if (target.name === 'att_col_view_role') {
+        syncScopeControls();
+        invalidateRenderedView();
         refreshPicker();
+      } else if (target.name === 'att_col_view_people') {
+        invalidateRenderedView();
+        refreshPicker();
+      } else if (target.id === 'att-col-view-class') {
+        fillViewPeriodSelect();
+        updateScopeNote();
+        invalidateRenderedView();
+        refreshPicker();
+      } else if (target.id === 'att-col-view-period') {
+        updateScopeNote();
+        invalidateRenderedView();
+        refreshPicker();
+      } else if (target.id === 'att-col-view-month') {
+        invalidateRenderedView();
       } else if (target.hasAttribute && target.hasAttribute('data-att-col-person')) {
         syncSelectedFromDom();
+        invalidateRenderedView();
       }
     });
     panel.addEventListener('input', function (event) {
@@ -824,10 +1060,15 @@
     });
     if (typeof global.addEventListener === 'function') {
       global.addEventListener('ems:repository-ready', function () {
-        if (_mode === 'view' && peopleMode() === 'selected') refreshPicker();
+        if (_mode !== 'view') return;
+        syncScopeControls();
+        if (peopleMode() === 'selected') refreshPicker();
       });
       global.addEventListener('ems:users-changed', function () {
-        if (_mode === 'view' && peopleMode() === 'selected') refreshPicker();
+        if (_mode !== 'view') return;
+        syncScopeControls();
+        invalidateRenderedView('افراد یا درجات کی فہرست بدلی ہے؛ ماہانہ حاضری دوبارہ لوڈ کریں۔');
+        if (peopleMode() === 'selected') refreshPicker();
       });
       global.addEventListener('ems:tenant-changed', function () {
         _roster = [];
@@ -837,7 +1078,10 @@
         var wrap = byId('att-col-view-table-wrap');
         if (actions) actions.classList.add('att-col-hidden');
         if (wrap) wrap.innerHTML = '<p class="att-col-placeholder">مدرسہ تبدیل ہوا ہے؛ ماہانہ حاضری دوبارہ لوڈ کریں۔</p>';
-        if (_mode === 'view') refreshPicker();
+        if (_mode === 'view') {
+          syncScopeControls();
+          refreshPicker();
+        }
       });
     }
   }
@@ -846,6 +1090,7 @@
     bind();
     var month = byId('att-col-view-month');
     if (month && !month.value) month.value = todayMonth();
+    syncScopeControls();
   }
 
   global.attCollectiveViewBoot = boot;
@@ -853,6 +1098,8 @@
   global.attCollectiveViewDaysInMonth = daysInMonth;
   global.attCollectiveViewStatusKind = statusKind;
   global.attCollectiveViewBuildPages = exportPagesHtml;
+  global.attCollectiveViewRawDayStatus = rawDayStatus;
+  global.attCollectiveViewFilterUsersForScope = filterUsersForScope;
 
   if (typeof global.emsRunWhenDomReady === 'function') {
     global.emsRunWhenDomReady(boot);

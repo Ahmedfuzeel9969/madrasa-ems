@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260901_collective_month_view_v12';
+  var CACHE_BUST = '20260901_collective_class_period_view_v13';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,

@@ -35,7 +35,7 @@ describe('Collective monthly read-only attendance view', () => {
         expect(html).toContain('id="att-col-entry-mode"');
         expect(html).toContain('id="att-col-view-mode"');
         expect(html).toContain('id="att-col-view-month"');
-        expect(html).toContain('یہ موڈ صرف محفوظ حاضری دکھاتا ہے');
+        expect(html).toContain('یہ ویو اسی مرکزی ریکارڈ کو دکھاتا ہے جس میں اجتماعی حاضری محفوظ ہوتی ہے');
     });
 
     it('supports students, teachers, staff, all people, or selected people', () => {
@@ -48,6 +48,84 @@ describe('Collective monthly read-only attendance view', () => {
         expect(html).toContain('id="att-col-view-people-list"');
         expect(html).toContain('id="att-col-view-search"');
         expect(html).toContain('id="btn-att-col-view-select-all"');
+    });
+
+    it('offers all classes, one class, and every timetable period of that class', () => {
+        const html = read('index.html');
+        const src = read('att-collective-view.js');
+        expect(html).toContain('id="att-col-view-register-scope"');
+        expect(html).toContain('id="att-col-view-class"');
+        expect(html).toContain('id="att-col-view-period"');
+        expect(html).toContain('تمام گھنٹے / روزانہ خلاصہ');
+        expect(src).toContain('attListAttendanceClasses');
+        expect(src).toContain('attReadAllTimetablePeriodsRaw');
+        expect(src).toContain("String(period.className || '').trim() !== classId");
+        expect(src).toContain('محفوظ پرانا گھنٹہ');
+    });
+
+    it('reads an exact hour from collective periodRecords instead of the daily rollup', () => {
+        const sandbox = loadPureExports();
+        const sheet = {
+            records: { S1: { 4: 'ح' } },
+            periodRecords: { S1: { 4: { p1: 'غ' } } }
+        };
+        const mark = sandbox.attCollectiveViewRawDayStatus(
+            { uid: 'S1', role: 'students', className: 'درجہ اول' },
+            sheet,
+            '2026-09',
+            4,
+            { P: 'ح', A: 'غ', L: 'ر' },
+            { classId: 'درجہ اول', periodId: 'p1' }
+        );
+        expect(mark).toBe('غ');
+    });
+
+    it('rolls a class-specific teacher register from only that class periods', () => {
+        const sandbox = loadPureExports();
+        sandbox.attTeacherPeriodsForRegisterDay = () => [
+            { id: 'p1', className: 'درجہ اول' },
+            { id: 'p2', className: 'درجہ دوم' }
+        ];
+        sandbox.attRollupPeriodDayStatus = (map, symbols, ids) => ids.map((id) => map[id]).join('|');
+        const sheet = {
+            records: { T1: { 4: 'ح' } },
+            periodRecords: { T1: { 4: { p1: 'غ', p2: 'ح' } } }
+        };
+        const mark = sandbox.attCollectiveViewRawDayStatus(
+            { uid: 'T1', role: 'teachers', name: 'استاد اول' },
+            sheet,
+            '2026-09',
+            4,
+            { P: 'ح', A: 'غ', L: 'ر' },
+            { classId: 'درجہ اول', periodId: 'all' }
+        );
+        expect(mark).toBe('غ');
+    });
+
+    it('can show all teachers or only teachers linked to one class/period', () => {
+        const sandbox = loadPureExports();
+        sandbox.attGetUserId = (user) => user.id;
+        sandbox.attReadAllTimetablePeriodsRaw = () => [
+            { id: 'p1', className: 'درجہ اول', teacherId: 'T1' },
+            { id: 'p2', className: 'درجہ دوم', teacherId: 'T2' }
+        ];
+        sandbox.attPeriodTeacherIdMatches = (period, uid) => period.teacherId === uid;
+        const teachers = [{ id: 'T1' }, { id: 'T2' }];
+        expect(sandbox.attCollectiveViewFilterUsersForScope(
+            teachers,
+            'teachers',
+            { classId: '', periodId: 'all' }
+        )).toHaveLength(2);
+        expect(sandbox.attCollectiveViewFilterUsersForScope(
+            teachers,
+            'teachers',
+            { classId: 'درجہ اول', periodId: 'all' }
+        ).map((row) => row.id)).toEqual(['T1']);
+        expect(sandbox.attCollectiveViewFilterUsersForScope(
+            teachers,
+            'teachers',
+            { classId: 'درجہ دوم', periodId: 'p2' }
+        ).map((row) => row.id)).toEqual(['T2']);
     });
 
     it('loads after the existing collective editor and is network-first in the service worker', () => {
@@ -77,12 +155,19 @@ describe('Collective monthly read-only attendance view', () => {
     });
 
     it('uses daily canonical records first so dashboard, report, and month view stay aligned', () => {
-        const src = read('att-collective-view.js');
-        const daily = src.indexOf("var daily = sheet.records[person.uid]");
-        const periods = src.indexOf("var periodMap = sheet.periodRecords[person.uid]");
-        expect(daily).toBeGreaterThan(0);
-        expect(periods).toBeGreaterThan(daily);
-        expect(src.slice(daily, periods)).toContain("return daily");
+        const sandbox = loadPureExports();
+        const sheet = {
+            records: { T1: { 4: 'ح' } },
+            periodRecords: { T1: { 4: { p1: 'غ' } } }
+        };
+        expect(sandbox.attCollectiveViewRawDayStatus(
+            { uid: 'T1', role: 'teachers', name: 'استاد اول' },
+            sheet,
+            '2026-09',
+            4,
+            { P: 'ح', A: 'غ', L: 'ر' },
+            { classId: '', periodId: 'all' }
+        )).toBe('ح');
     });
 
     it('calculates Gregorian month length including leap years', () => {
