@@ -166,7 +166,7 @@
       half1: { fromPage: 1, toPage: 0, fromLine: 1, toLine: 0 },
       half2: { fromPage: 1, toPage: 0, fromLine: 1, toLine: 0 },
       months: defaultMonthSlots(),
-      examLink: { half1: '', half2: '', annual: '' },
+      examLink: { half1: '', half2: '', quarterly: '', annual: '' },
       updatedAt: Date.now(),
       fromCentralLibrary: !!opts.fromCentralLibrary
     };
@@ -520,7 +520,11 @@
     var plan = window.curGetPlans().find(function (p) { return p.bookName === bookName; });
     if (!plan) return null;
     term = term || 'annual';
-    var scope = term === 'half1' ? plan.half1 : (term === 'half2' ? plan.half2 : plan.annual);
+    var scope;
+    if (term === 'half1') scope = plan.half1;
+    else if (term === 'half2') scope = plan.half2;
+    else if (term === 'quarterly') scope = plan.quarterly || plan.half1;
+    else scope = plan.annual;
     return {
       bookName: plan.bookName,
       grade: plan.grade,
@@ -936,7 +940,8 @@
   }
 
   function autoExamLinks(p) {
-    if (!p.examLink) p.examLink = { half1: '', half2: '', annual: '' };
+    if (!p.examLink) p.examLink = { half1: '', half2: '', quarterly: '', annual: '' };
+    if (!p.examLink.quarterly) p.examLink.quarterly = '';
     ['half1', 'half2', 'annual'].forEach(function (k) {
       if (!p.examLink[k] && p[k] && p[k].toPage) p.examLink[k] = scopeToLinkText(p, p[k]);
     });
@@ -1128,10 +1133,12 @@
     });
     set('cur-exam-h1', (p.examLink && p.examLink.half1) || '');
     set('cur-exam-h2', (p.examLink && p.examLink.half2) || '');
+    set('cur-exam-quarterly', (p.examLink && p.examLink.quarterly) || '');
     set('cur-exam-annual', (p.examLink && p.examLink.annual) || '');
     autoExamLinks(p);
     set('cur-exam-h1', (p.examLink && p.examLink.half1) || '');
     set('cur-exam-h2', (p.examLink && p.examLink.half2) || '');
+    set('cur-exam-quarterly', (p.examLink && p.examLink.quarterly) || '');
     set('cur-exam-annual', (p.examLink && p.examLink.annual) || '');
     var mgrid = document.getElementById('cur-months-grid');
     if (mgrid) {
@@ -1169,7 +1176,12 @@
         toLine: Number(g('cur-' + k + '-tl')) || 0
       };
     });
-    p.examLink = { half1: g('cur-exam-h1'), half2: g('cur-exam-h2'), annual: g('cur-exam-annual') };
+    p.examLink = {
+      half1: g('cur-exam-h1'),
+      half2: g('cur-exam-h2'),
+      quarterly: g('cur-exam-quarterly'),
+      annual: g('cur-exam-annual')
+    };
     if (!p.months) p.months = defaultMonthSlots();
     document.querySelectorAll('.cur-month-row').forEach(function (row, idx) {
       if (!p.months[idx]) p.months[idx] = { id: ISLAMIC_MONTHS[idx].id, label: ISLAMIC_MONTHS[idx].label };

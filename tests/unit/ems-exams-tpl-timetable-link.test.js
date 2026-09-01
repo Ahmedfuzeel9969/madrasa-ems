@@ -9,7 +9,11 @@ describe('Timetable books linked into exams master sheet by class', function () 
     it('exposes sync from ems_att_periods class+book into ems_exam_templates', function () {
         var src = fs.readFileSync(path.join(ROOT, 'exams.js'), 'utf8');
         expect(src).toContain('window.exmSyncTimetableBooksToMasterSheet');
-        expect(src).toContain("localStorage.getItem('ems_att_periods'");
+        expect(src).toContain('exmReadAttendancePeriodsForTpl');
+        expect(src).toContain('attActiveTimetablePeriods');
+        expect(src).toContain('exmCollectClassesFromTimetable');
+        expect(src).toContain('window.exmCollectAllClasses');
+        expect(src).toContain('window.exmFillClassSelects');
         expect(src).toContain('exmEnsureClassTemplate');
         expect(src).toContain('exmBuildTplBookEntry');
         expect(src).toContain("ems_exam_templates");

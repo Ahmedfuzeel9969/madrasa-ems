@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260901_owais_timetable_103_guard_v14';
+    var CACHE_BUST = '20260901_exams_quarterly_dates_v1';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 
