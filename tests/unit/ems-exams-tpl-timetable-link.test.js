@@ -18,7 +18,7 @@ describe('Timetable books linked into exams master sheet by class', function () 
         expect(src).toContain('exmBuildTplBookEntry');
         expect(src).toContain("ems_exam_templates");
         expect(src).toContain('exam-win-template');
-        expect(src).toContain('exmSyncTimetableBooksToMasterSheet({ silent: false })');
+        expect(src).toContain('exmSyncTimetableBooksToMasterSheet({ silent: true })');
         expect(src).toContain('removedBooks');
         expect(src).toContain('exmTplRemovedSet');
     });

@@ -36,6 +36,11 @@ describe('Exams master sheet all-classes option', function () {
         expect(src).toContain('exmTplMarkBookRemoved');
         expect(src).toContain('window.exmSaveTplSheet');
         expect(src).toContain('sheetName');
+        expect(src).toContain('window.exmMoveTplBook');
+        expect(src).toContain('window.exmEditTplBook');
+        expect(src).toContain('exmTplBookActionButtons');
+        expect(src).toContain('emsCloudPushNow');
+        expect(src).toContain('شیٹ کلاؤڈ پر محفوظ');
     });
 
     it('HTML includes matrix printable schedule for all classes', function () {
@@ -56,6 +61,7 @@ describe('Exams master sheet all-classes option', function () {
         expect(html).toContain('id="sch-matrix-printable"');
         expect(html).toContain('id="tpl-sheet-name"');
         expect(html).toContain('id="btn-save-tpl-sheet"');
-        expect(html).toContain('شیٹ محفوظ کریں');
+        expect(html).toContain('شیٹ کلاؤڈ پر محفوظ کریں');
+        expect(html).toContain('id="btn-cancel-tpl-book-edit"');
     });
 });

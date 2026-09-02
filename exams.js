@@ -1114,6 +1114,140 @@
       };
   }
 
+  function exmNormalizeTplBookOrders(classTpl) {
+      if (!classTpl || !Array.isArray(classTpl.books)) return;
+      var ordered = exmSortTplBooksForMatrix(classTpl.books);
+      ordered.forEach(function (b, i) {
+          if (b) b.matrixOrder = i;
+      });
+      classTpl.books = ordered;
+  }
+
+  function exmTplBookActionButtons(cls, bookId) {
+      var safeCls = exmTplEscapeAttr(cls);
+      var safeId = exmTplEscapeAttr(bookId);
+      return '<span class="tpl-book-actions" style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:center;">' +
+          '<button type="button" class="icon-btn" title="اوپر" onclick="window.exmMoveTplBook(\'' + safeCls + '\',\'' + safeId + '\',-1)"><i class="fas fa-arrow-up"></i></button>' +
+          '<button type="button" class="icon-btn" title="نیچے" onclick="window.exmMoveTplBook(\'' + safeCls + '\',\'' + safeId + '\',1)"><i class="fas fa-arrow-down"></i></button>' +
+          '<button type="button" class="icon-btn edit" title="ترمیم" onclick="window.exmEditTplBook(\'' + safeCls + '\',\'' + safeId + '\')"><i class="fas fa-edit"></i></button>' +
+          '<button type="button" class="icon-btn delete" title="صرف اس ماسٹر شیٹ سے ہٹائیں" onclick="deleteTplBook(\'' + safeCls + '\',\'' + safeId + '\')"><i class="fas fa-trash"></i></button>' +
+          '</span>';
+  }
+
+  var _exmTplEditing = { className: '', bookId: '' };
+
+  function exmSetTplAddButtonMode(editing) {
+      var addBtn = document.getElementById('btn-add-tpl-book');
+      var cancelBtn = document.getElementById('btn-cancel-tpl-book-edit');
+      if (addBtn) {
+          addBtn.innerHTML = editing
+              ? '<i class="fas fa-check"></i> کتاب اپ ڈیٹ کریں'
+              : '<i class="fas fa-plus"></i> شیٹ میں شامل کریں';
+      }
+      if (cancelBtn) cancelBtn.style.display = editing ? 'inline-flex' : 'none';
+  }
+
+  window.exmCancelTplBookEdit = function () {
+      _exmTplEditing = { className: '', bookId: '' };
+      exmSetTplAddButtonMode(false);
+  };
+
+  window.exmEditTplBook = function (cls, bookId) {
+      if (!exmStaffHasExamsEdit()) {
+          if (typeof window.emsRequireStaffAction === 'function') window.emsRequireStaffAction('exams', 'edit');
+          return;
+      }
+      var templates = exmReadJson('ems_exam_templates', []);
+      var classTpl = (templates || []).find(function (t) { return t && t.class === cls; });
+      if (!classTpl || !Array.isArray(classTpl.books)) return showToast('کتاب نہیں ملی', 'error');
+      var book = classTpl.books.find(function (b) { return b && b.id === bookId; });
+      if (!book) return showToast('کتاب نہیں ملی', 'error');
+
+      var classSel = document.getElementById('tpl-class-select');
+      if (classSel && classSel.value !== EXM_TPL_ALL_CLASSES) {
+          classSel.value = cls;
+      }
+      /* تمام درجات موڈ میں کلاس منتخب نہ بدلیں — ترمیم اسی درجے کی کتاب پر رہے گی */
+      var root = document.getElementById('exam-win-template');
+      if (root && classSel && classSel.value === EXM_TPL_ALL_CLASSES) {
+          root.classList.add('tpl-extra-open');
+          try { sessionStorage.setItem('ems_tpl_extra_open', '1'); } catch (eSet) { /* ignore */ }
+          exmUpdateTplExtraSettingsButton();
+      }
+
+      var bookSel = document.getElementById('tpl-book-select');
+      if (bookSel) {
+          var hasOpt = Array.from(bookSel.options || []).some(function (o) { return o.value === book.name; });
+          if (!hasOpt && book.name) {
+              var opt = document.createElement('option');
+              opt.value = book.name;
+              opt.textContent = book.name;
+              bookSel.appendChild(opt);
+          }
+          bookSel.value = book.name || '';
+      }
+      var marksEl = document.getElementById('tpl-book-marks');
+      if (marksEl) marksEl.value = book.marks != null ? book.marks : 100;
+      var dateEl = document.getElementById('tpl-book-date');
+      if (dateEl) dateEl.value = book.date || '';
+      var timeEl = document.getElementById('tpl-book-time');
+      if (timeEl) timeEl.value = book.time || '';
+      var roomEl = document.getElementById('tpl-book-room');
+      if (roomEl) roomEl.value = book.room || '';
+      var invEl = document.getElementById('tpl-book-invig');
+      if (invEl) invEl.value = book.invigilator || '';
+      var teacherEl = document.getElementById('tpl-book-teacher');
+      if (teacherEl) {
+          if (book.teacher) {
+              var hasT = Array.from(teacherEl.options || []).some(function (o) { return o.value === book.teacher; });
+              if (!hasT) {
+                  var tOpt = document.createElement('option');
+                  tOpt.value = book.teacher;
+                  tOpt.textContent = book.teacher;
+                  teacherEl.appendChild(tOpt);
+              }
+          }
+          teacherEl.value = book.teacher || '';
+      }
+      var typeEl = document.getElementById('tpl-book-type');
+      if (typeEl) typeEl.value = book.paperType || 'تحریری';
+
+      _exmTplEditing = { className: cls, bookId: bookId };
+      exmSetTplAddButtonMode(true);
+      if (typeof window.examUpdateTplScopePreview === 'function') window.examUpdateTplScopePreview();
+      showToast('کتاب ترمیم کے لیے فارم میں آ گئی — اپ ڈیٹ دبائیں', 'info');
+      try {
+          var formTop = document.getElementById('tpl-extra-form-fields') || document.getElementById('tpl-sheet-name-wrap');
+          if (formTop && formTop.scrollIntoView) formTop.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } catch (eScroll) { /* ignore */ }
+  };
+
+  window.exmMoveTplBook = function (cls, bookId, delta) {
+      if (!exmStaffHasExamsEdit()) {
+          if (typeof window.emsRequireStaffAction === 'function') window.emsRequireStaffAction('exams', 'edit');
+          return;
+      }
+      delta = parseInt(delta, 10) || 0;
+      if (!delta) return;
+      var templates = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(templates)) return;
+      var classTpl = templates.find(function (t) { return t && t.class === cls; });
+      if (!classTpl || !Array.isArray(classTpl.books) || !classTpl.books.length) return;
+      var books = exmSortTplBooksForMatrix(classTpl.books);
+      var idx = books.findIndex(function (b) { return b && b.id === bookId; });
+      if (idx < 0) return;
+      var next = idx + delta;
+      if (next < 0 || next >= books.length) return;
+      var tmp = books[idx];
+      books[idx] = books[next];
+      books[next] = tmp;
+      books.forEach(function (b, i) { if (b) b.matrixOrder = i; });
+      classTpl.books = books;
+      emsSaveKey('ems_exam_templates', JSON.stringify(templates));
+      var viewCls = (document.getElementById('tpl-class-select') || {}).value || cls;
+      renderTemplateTable(viewCls);
+  };
+
   function exmTplBookDedupeKey(name) {
       var s = String(name == null ? '' : name).trim().replace(/\s+/g, ' ');
       if (!s) return '';
@@ -1303,15 +1437,22 @@
 
 
 
-  window.loadTemplateForClass = function(cls) { document.getElementById('tpl-class-select').value = cls; renderTemplateTable(cls); };
+  window.loadTemplateForClass = function(cls) {
+      window.exmCancelTplBookEdit();
+      document.getElementById('tpl-class-select').value = cls;
+      renderTemplateTable(cls);
+  };
 
-  document.getElementById('tpl-class-select')?.addEventListener('change', function() { renderTemplateTable(this.value); });
+  document.getElementById('tpl-class-select')?.addEventListener('change', function() {
+      window.exmCancelTplBookEdit();
+      renderTemplateTable(this.value);
+  });
 
 
 
   document.getElementById('btn-add-tpl-book')?.addEventListener('click', () => {
 
-      const cls = document.getElementById('tpl-class-select').value;
+      const clsSel = document.getElementById('tpl-class-select').value;
 
       const bookName = document.getElementById('tpl-book-select').value;
 
@@ -1329,7 +1470,34 @@
 
       const paperType = document.getElementById('tpl-book-type')?.value || 'تحریری';
 
+      if (_exmTplEditing.bookId && _exmTplEditing.className) {
+          if (!bookName) return showToast('کتاب کا انتخاب لازمی ہے!', 'error');
+          var editTemplates = exmReadJson('ems_exam_templates', []);
+          var editTpl = (editTemplates || []).find(function (t) { return t && t.class === _exmTplEditing.className; });
+          var editBook = editTpl && (editTpl.books || []).find(function (b) { return b && b.id === _exmTplEditing.bookId; });
+          if (!editBook) {
+              window.exmCancelTplBookEdit();
+              return showToast('ترمیم والی کتاب نہیں ملی', 'error');
+          }
+          editBook.name = bookName;
+          editBook.marks = marks;
+          editBook.date = date;
+          editBook.time = time;
+          editBook.room = room;
+          editBook.invigilator = invigilator;
+          editBook.teacher = teacher;
+          editBook.paperType = paperType;
+          editBook.curScope = window.examFormatCurScope(window.examGetCurScopeForBook(bookName, 'سالانہ امتحان'));
+          emsSaveKey('ems_exam_templates', JSON.stringify(editTemplates));
+          var viewAfterEdit = clsSel || _exmTplEditing.className;
+          window.exmCancelTplBookEdit();
+          renderTemplateTable(viewAfterEdit);
+          renderQuickAccessTabs();
+          showToast('کتاب کی تفصیلات اپ ڈیٹ ہو گئیں', 'success');
+          return;
+      }
 
+      const cls = clsSel;
 
       if(!cls || !bookName) return showToast("درجہ اور کتاب کا انتخاب لازمی ہے!", "error");
 
@@ -1349,6 +1517,7 @@
               exmTplClearBookRemoved(classTpl, bookName);
               if (!classTpl.books.find(function (b) { return b.name === bookName; })) {
                   classTpl.books.push(exmBuildTplBookEntry(bookName, marks, date, time, room, invigilator, teacher, paperType));
+                  exmNormalizeTplBookOrders(classTpl);
                   added++;
               } else {
                   skipped++;
@@ -1373,6 +1542,7 @@
       if(!classTpl.books.find(b => b.name === bookName)) {
 
           classTpl.books.push(exmBuildTplBookEntry(bookName, marks, date, time, room, invigilator, teacher, paperType));
+          exmNormalizeTplBookOrders(classTpl);
 
           emsSaveKey('ems_exam_templates', JSON.stringify(templates));
 
@@ -1863,9 +2033,9 @@
                          'style="max-width:140px;padding:2px 4px;font-size:12px;" title="امتحانی تاریخ" ' +
                          "onchange=\"exmSetTplBookDate('" + safeCls + "', '" + safeId + "', this.value)\">" +
                          '</div>' +
-                         '<button type="button" class="icon-btn delete tpl-matrix-del" title="حذف" ' +
-                         "onclick=\"deleteTplBook('" + safeCls + "', '" + safeId + "')\">" +
-                         '<i class="fas fa-trash"></i></button>')
+                         '<div class="tpl-matrix-ctrl" style="margin-top:4px;">' +
+                         exmTplBookActionButtons(className, book.id) +
+                         '</div>')
                       : (dateVal
                           ? '<div class="tpl-paper-date-print" style="margin-top:4px;font-size:12px;">' + exmMatrixDateLabel(dateVal) + '</div>'
                           : '')) +
@@ -1933,17 +2103,16 @@
 
       if(!classTpl || classTpl.books.length === 0) { tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">اس درجے کی شیٹ میں کوئی کتاب نہیں</td></tr>'; return; }
 
-      classTpl.books.forEach(book => {
+      var orderedBooks = exmSortTplBooksForMatrix(classTpl.books);
+      orderedBooks.forEach(function (book) {
 
           var scopeTxt = window.examFormatCurScope(window.examGetCurScopeForBook(book.name, examName)) || book.curScope || '—';
 
-          var safeCls = exmTplEscapeAttr(classTpl.class);
-          var safeId = exmTplEscapeAttr(book.id);
           var sheetLabel = exmTplDisplayName(classTpl);
 
           tbody.innerHTML += `<tr><td><strong>${exmTplEscapeHtml(sheetLabel)}</strong>${classTpl.sheetName ? '<div style="font-size:11px;color:#64748b;">' + exmTplEscapeHtml(classTpl.class) + '</div>' : ''}</td><td>${exmTplEscapeHtml(book.name)}</td><td style="font-size:12px;color:#5b21b6;">${exmTplEscapeHtml(scopeTxt)}</td><td>${book.marks}</td><td>${book.date || '-'}</td><td>${exmTplEscapeHtml(book.time || '-')}</td><td>${exmTplEscapeHtml(book.room || '-')}</td><td>${exmTplEscapeHtml(book.invigilator || '-')}</td><td>${exmTplEscapeHtml(book.teacher || '-')}</td><td>${exmTplEscapeHtml(book.paperType || 'تحریری')}</td>
 
-                              <td><button class="icon-btn delete" onclick="deleteTplBook('${safeCls}', '${safeId}')" title="صرف اس ماسٹر شیٹ سے ہٹائیں"><i class="fas fa-trash"></i></button></td></tr>`;
+                              <td>${exmTplBookActionButtons(classTpl.class, book.id)}</td></tr>`;
 
       });
 
@@ -2010,8 +2179,41 @@
       var cls = (document.getElementById('tpl-class-select') || {}).value;
       var nameEl = document.getElementById('tpl-sheet-name');
       var sheetName = nameEl ? String(nameEl.value || '').trim() : '';
+      var saveBtn = document.getElementById('btn-save-tpl-sheet');
       if (!cls) return showToast('پہلے درجہ / شیٹ منتخب کریں', 'error');
       if (!sheetName) return showToast('شیٹ کا نام لکھیں', 'error');
+      if (!exmStaffHasExamsEdit()) {
+          if (typeof window.emsRequireStaffAction === 'function') window.emsRequireStaffAction('exams', 'edit');
+          return;
+      }
+
+      if (saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> محفوظ ہو رہا ہے…';
+      }
+
+      function finishUi(msg, kind) {
+          if (saveBtn) {
+              saveBtn.disabled = false;
+              saveBtn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> شیٹ کلاؤڈ پر محفوظ کریں';
+          }
+          if (typeof showToast === 'function') showToast(msg, kind || 'success');
+      }
+
+      function pushCloudAfterLocal(localMsg) {
+          var push = typeof window.emsCloudPushNow === 'function'
+              ? window.emsCloudPushNow()
+              : Promise.resolve({ ok: false, reason: 'no_push' });
+          return Promise.resolve(push).then(function (res) {
+              if (res && res.ok) {
+                  finishUi(localMsg + ' — کلاؤڈ پر بھی بھیج دی گئی', 'success');
+              } else {
+                  finishUi(localMsg + ' — مقامی محفوظ؛ کلاؤڈ بعد میں ہم وقت ہو گی', 'success');
+              }
+          }).catch(function () {
+              finishUi(localMsg + ' — مقامی محفوظ؛ کلاؤڈ بعد میں', 'success');
+          });
+      }
 
       if (cls === EXM_TPL_ALL_CLASSES) {
           var meta = exmReadMasterSheetMeta();
@@ -2026,20 +2228,37 @@
           }
           if (timeEl) meta.matrixTime = String(timeEl.value || '').trim();
           exmWriteMasterSheetMeta(meta);
-          renderTemplateTable(EXM_TPL_ALL_CLASSES);
-          renderQuickAccessTabs();
-          showToast('تمام درجات شیٹ کا نام محفوظ ہو گیا', 'success');
-          return;
+          var allTemplates = exmReadJson('ems_exam_templates', []);
+          if (!Array.isArray(allTemplates)) allTemplates = [];
+          allTemplates.forEach(function (t) { exmNormalizeTplBookOrders(t); });
+          return Promise.resolve(emsSaveKey('ems_exam_templates', JSON.stringify(allTemplates))).then(function () {
+              renderTemplateTable(EXM_TPL_ALL_CLASSES);
+              renderQuickAccessTabs();
+              return pushCloudAfterLocal('تمام درجات کی شیٹ محفوظ ہو گئی');
+          }).catch(function (err) {
+              console.error('tpl sheet save failed', err);
+              finishUi('شیٹ محفوظ نہیں ہو سکی', 'error');
+          });
       }
 
       var templates = exmReadJson('ems_exam_templates', []);
       if (!Array.isArray(templates)) templates = [];
       var classTpl = exmEnsureClassTemplate(templates, cls);
       classTpl.sheetName = sheetName;
-      emsSaveKey('ems_exam_templates', JSON.stringify(templates));
-      renderTemplateTable(cls);
-      renderQuickAccessTabs();
-      showToast('شیٹ کا نام محفوظ ہو گیا: ' + sheetName, 'success');
+      exmNormalizeTplBookOrders(classTpl);
+      return Promise.resolve(emsSaveKey('ems_exam_templates', JSON.stringify(templates))).then(function (res) {
+          renderTemplateTable(cls);
+          renderQuickAccessTabs();
+          var status = res && res.status;
+          if (status === 'synced') {
+              finishUi('شیٹ کلاؤڈ پر محفوظ ہو گئی: ' + sheetName, 'success');
+              return null;
+          }
+          return pushCloudAfterLocal('شیٹ محفوظ ہو گئی: ' + sheetName);
+      }).catch(function (err) {
+          console.error('tpl sheet save failed', err);
+          finishUi('شیٹ محفوظ نہیں ہو سکی', 'error');
+      });
   };
 
 

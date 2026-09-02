@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260902_exams_nav_touch_v2">
+    <link rel="stylesheet" href="style.css?v=20260902_exams_master_sheet_edit_v1">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -2427,10 +2427,10 @@
                                 <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
                                     <input type="text" id="tpl-sheet-name" class="input-control" style="flex:1; min-width:220px;" placeholder="مثلاً: سالانہ امتحان — درجہ اولیٰ">
                                     <button type="button" class="btn btn-success" id="btn-save-tpl-sheet" onclick="window.exmSaveTplSheet()">
-                                        <i class="fas fa-save"></i> شیٹ محفوظ کریں
+                                        <i class="fas fa-cloud-upload-alt"></i> شیٹ کلاؤڈ پر محفوظ کریں
                                     </button>
                                 </div>
-                                <small style="display:block; margin-top:6px; color:#64748b;">ہر درجے کی ماسٹر شیٹ کا الگ نام محفوظ کریں۔ ڈیلیٹ صرف اسی شیٹ سے کتاب ہٹاتا ہے — لائبریری/نظام الاوقات سے نہیں۔</small>
+                                <small style="display:block; margin-top:6px; color:#64748b;">شیٹ کا نام، کتابیں اور ترتیب مقامی + کلاؤڈ پر محفوظ ہوں گے۔ ہر کتاب کے ساتھ ↑ ↓ سے ترتیب اور ✎ سے ترمیم کریں۔ ڈیلیٹ صرف اسی شیٹ سے کتاب ہٹاتا ہے — لائبریری/نظام الاوقات سے نہیں۔</small>
                             </div>
                             <div id="tpl-extra-form-fields" style="display:contents;">
                             <div class="input-group">
@@ -2474,7 +2474,8 @@
                                     <option value="عملی">عملی</option>
                                 </select>
                             </div>
-                            <div class="input-group" style="justify-content: flex-end;">
+                            <div class="input-group" style="justify-content: flex-end; gap:8px; flex-wrap:wrap;">
+                                <button type="button" class="btn btn-outline" id="btn-cancel-tpl-book-edit" style="display:none;" onclick="window.exmCancelTplBookEdit()"><i class="fas fa-times"></i> ترمیم منسوخ</button>
                                 <button class="btn btn-primary" id="btn-add-tpl-book"><i class="fas fa-plus"></i> شیٹ میں شامل کریں</button>
                             </div>
                             </div>
@@ -2510,11 +2511,13 @@
                                 #exam-win-template:not(.tpl-extra-open) #tpl-extra-form-fields { display: none !important; }
                                 #exam-win-template:not(.tpl-extra-open) #tpl-matrix-extra-settings { display: none !important; }
                                 #exam-win-template:not(.tpl-extra-open) .tpl-matrix-ctrl,
-                                #exam-win-template:not(.tpl-extra-open) .tpl-matrix-del { display: none !important; }
+                                #exam-win-template:not(.tpl-extra-open) .tpl-matrix-del,
+                                #exam-win-template:not(.tpl-extra-open) .tpl-book-actions { display: none !important; }
                                 #exam-win-template:not(.tpl-extra-open) .tpl-paper-date-print { display: block !important; }
                                 #exam-win-template:not(.tpl-extra-open) .tpl-matrix-paper-head { cursor: default; }
                                 #exam-win-template.tpl-extra-open .tpl-paper-date-print { display: none; }
-                                #exam-win-template.tpl-extra-open .tpl-exam-matrix .tpl-matrix-del { display: inline-block; }
+                                #exam-win-template.tpl-extra-open .tpl-exam-matrix .tpl-matrix-del,
+                                #exam-win-template.tpl-extra-open .tpl-exam-matrix .tpl-book-actions { display: inline-flex !important; }
                                 .tpl-exam-matrix th, .tpl-exam-matrix td {
                                     border: 1.5px solid #1e3a5f;
                                     padding: 8px 6px;

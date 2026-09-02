@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260902_exams_nav_touch_v2';
+    var CACHE_BUST = '20260902_exams_master_sheet_edit_v1';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;
