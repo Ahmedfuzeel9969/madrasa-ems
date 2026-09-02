@@ -6,9 +6,17 @@ import { fileURLToPath } from 'url';
 var ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 describe('Exam analysis teacher chart labels', function () {
-    it('uses horizontal bars for teacher chart to avoid overlapping names', function () {
+    it('merges teacher chart into filtered subject chart panel', function () {
         var src = fs.readFileSync(path.join(ROOT, 'exams.js'), 'utf8');
-        expect(src).toContain("emsBarChartSVG(teacherItems, { horizontal: true");
+        expect(src).toContain('exmBuildAnaSubjectChartCard');
+        expect(src).toContain('window.exmRefreshAnaSubjectChart');
+        expect(src).toContain("value=\"teachers\"");
+        expect(src).toContain("value=\"class_books\"");
+        expect(src).toContain("value=\"student_books\"");
+        expect(src).toContain('horizontal: true, labelMaxChars: 24');
+        expect(src).toContain('emsEnsureUsersReady');
+        expect(src).toContain('exmRenderExamAnalysisInner');
+        expect(src).not.toContain('<h4>استاد وار اوسط کارکردگی</h4>');
     });
 
     it('bar chart helper supports horizontal layout and rotated labels', function () {

@@ -3662,12 +3662,185 @@
   window.renderExamAnalysis = function () {
       var box = document.getElementById('exam-analysis-content');
       if (!box) return;
+
+      function ensureReady() {
+          var steps = [];
+          if (typeof window.emsDurableEnsureKey === 'function') {
+              steps.push(window.emsDurableEnsureKey(DB.exams));
+              steps.push(window.emsDurableEnsureKey('ems_exam_templates'));
+          }
+          if (typeof window.emsEnsureUsersReady === 'function') {
+              steps.push(window.emsEnsureUsersReady());
+          }
+          return steps.length ? Promise.all(steps) : Promise.resolve();
+      }
+
+      box.innerHTML = '<p style="color:#64748b;"><i class="fas fa-spinner fa-spin"></i> تجزیہ تیار ہو رہا ہے…</p>';
+      return ensureReady().then(function () {
+          exmRenderExamAnalysisInner(box);
+      }).catch(function (err) {
+          console.error('renderExamAnalysis ensure', err);
+          exmRenderExamAnalysisInner(box);
+      });
+  };
+
+  function exmAnaChartItemsForView(ctx, view, filterClass, studentId) {
+      view = view || 'books';
+      var list = ctx.list || [];
+      var bookMax = ctx.bookMax || {};
+      var bookTeacher = ctx.bookTeacher || {};
+
+      if (view === 'teachers') {
+          return {
+              title: 'استاد وار اوسط کارکردگی',
+              items: ctx.teacherItems || [],
+              empty: 'استاد وار تجزیے کے لیے ماسٹر شیٹ میں ہر کتاب کے ساتھ "مضمون کا استاد" منتخب کریں۔',
+              chartOpts: { horizontal: true, labelMaxChars: 24 }
+          };
+      }
+
+      if (view === 'student_books') {
+          var row = list.find(function (r) {
+              return String(r.studentId == null ? '' : r.studentId) === String(studentId || '');
+          });
+          if (!row) {
+              return { title: 'طالب علم — کتاب بہ کتاب', items: [], empty: 'طالب علم منتخب کریں۔', chartOpts: { rotateLabels: true } };
+          }
+          var sItems = Object.keys(row.marks || {}).map(function (b) {
+              if (exmIsAbsentMark(row.marks[b])) {
+                  return { label: b, value: 0, display: 'AB' };
+              }
+              var mx = bookMax[b] || 100;
+              var pct = mx ? Math.round((Number(row.marks[b] || 0) / mx) * 100) : 0;
+              return { label: b, value: pct, display: pct + '%' };
+          }).sort(function (a, b) { return b.value - a.value; });
+          return {
+              title: 'طالب علم: ' + (row.studentName || row.studentId || '') + ' — کتاب بہ کتاب',
+              items: sItems,
+              empty: 'اس طالب علم کے مضامین کے نمبرات نہیں ملے۔',
+              chartOpts: { rotateLabels: sItems.length > 5, horizontal: sItems.length > 8, labelMaxChars: 22 }
+          };
+      }
+
+      var rows = list;
+      if (view === 'class_books' && filterClass) {
+          rows = list.filter(function (r) { return exmClassEquals(r.class, filterClass); });
+      }
+      var bookSum = {}, bookCnt = {};
+      rows.forEach(function (r) {
+          Object.keys(r.marks || {}).forEach(function (b) {
+              if (exmIsAbsentMark(r.marks[b])) return;
+              bookSum[b] = (bookSum[b] || 0) + Number(r.marks[b] || 0);
+              bookCnt[b] = (bookCnt[b] || 0) + 1;
+          });
+      });
+      var bookItems = Object.keys(bookSum).map(function (b) {
+          var avgB = bookSum[b] / bookCnt[b];
+          var mx = bookMax[b] || 100;
+          var pct = Math.round((avgB / mx) * 100);
+          return { label: b, value: pct, display: pct + '%' };
+      }).sort(function (a, b) { return b.value - a.value; });
+
+      var title = view === 'class_books'
+          ? ('درجہ: ' + (filterClass || '—') + ' — کتاب وار اوسط')
+          : 'مضمون / کتاب وار اوسط';
+      return {
+          title: title,
+          items: bookItems,
+          empty: 'منتخب فلٹر پر کوئی مضمون ڈیٹا نہیں۔',
+          chartOpts: {
+              rotateLabels: bookItems.length > 5,
+              horizontal: bookItems.length > 10,
+              labelMaxChars: 22
+          }
+      };
+  }
+
+  window.exmRefreshAnaSubjectChart = function () {
+      var ctx = window._exmAnaChartCtx;
+      var body = document.getElementById('ana-subject-chart-body');
+      var titleEl = document.getElementById('ana-subject-chart-title');
+      var viewEl = document.getElementById('ana-chart-view');
+      var classWrap = document.getElementById('ana-chart-class-wrap');
+      var studentWrap = document.getElementById('ana-chart-student-wrap');
+      var classEl = document.getElementById('ana-chart-class');
+      var studentEl = document.getElementById('ana-chart-student');
+      if (!ctx || !body || !viewEl) return;
+      var view = viewEl.value || 'books';
+      if (classWrap) classWrap.style.display = (view === 'class_books') ? '' : 'none';
+      if (studentWrap) studentWrap.style.display = (view === 'student_books') ? '' : 'none';
+      var pack = exmAnaChartItemsForView(
+          ctx,
+          view,
+          classEl ? classEl.value : '',
+          studentEl ? studentEl.value : ''
+      );
+      if (titleEl) titleEl.textContent = pack.title;
+      if (!pack.items.length) {
+          body.innerHTML = '<p style="color:#94a3b8;">' + pack.empty + '</p>';
+          return;
+      }
+      body.innerHTML = (typeof window.emsBarChartSVG === 'function')
+          ? window.emsBarChartSVG(pack.items, pack.chartOpts || {})
+          : '';
+  };
+
+  function exmBuildAnaSubjectChartCard(ctx) {
+      window._exmAnaChartCtx = ctx;
+      var classOpts = (ctx.classKeys || []).map(function (c) {
+          return '<option value="' + String(c).replace(/"/g, '&quot;') + '">' + String(c).replace(/</g, '&lt;') + '</option>';
+      }).join('');
+      var studentOpts = (ctx.list || []).slice().sort(function (a, b) {
+          return String(a.studentName || '').localeCompare(String(b.studentName || ''), 'ur');
+      }).map(function (r) {
+          var id = String(r.studentId == null ? '' : r.studentId);
+          var label = (r.studentName || id) + (r.class ? (' — ' + r.class) : '');
+          return '<option value="' + id.replace(/"/g, '&quot;') + '">' + String(label).replace(/</g, '&lt;') + '</option>';
+      }).join('');
+
+      var defaultPack = exmAnaChartItemsForView(ctx, 'books', '', '');
+      var defaultChart = defaultPack.items.length && typeof window.emsBarChartSVG === 'function'
+          ? window.emsBarChartSVG(defaultPack.items, defaultPack.chartOpts || {})
+          : '<p style="color:#94a3b8;">' + defaultPack.empty + '</p>';
+
+      return '<div class="cmp-dash-card cmp-dash-wide" id="ana-subject-chart-card">' +
+          '<h4 id="ana-subject-chart-title">' + defaultPack.title + '</h4>' +
+          '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin:0 0 12px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;">' +
+            '<div class="input-group" style="min-width:200px;margin:0;flex:1;">' +
+              '<label>چارٹ فلٹر</label>' +
+              '<select id="ana-chart-view" class="input-control" onchange="window.exmRefreshAnaSubjectChart()">' +
+                '<option value="books">کتاب / مضمون وار</option>' +
+                '<option value="teachers">استاد وار</option>' +
+                '<option value="class_books">ایک درجے کی کتابیں</option>' +
+                '<option value="student_books">ایک طالب علم — کتاب بہ کتاب</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="input-group" id="ana-chart-class-wrap" style="display:none;min-width:160px;margin:0;flex:1;">' +
+              '<label>درجہ</label>' +
+              '<select id="ana-chart-class" class="input-control" onchange="window.exmRefreshAnaSubjectChart()">' +
+                '<option value="">منتخب کریں...</option>' + classOpts +
+              '</select>' +
+            '</div>' +
+            '<div class="input-group" id="ana-chart-student-wrap" style="display:none;min-width:200px;margin:0;flex:1.4;">' +
+              '<label>طالب علم</label>' +
+              '<select id="ana-chart-student" class="input-control" onchange="window.exmRefreshAnaSubjectChart()">' +
+                '<option value="">منتخب کریں...</option>' + studentOpts +
+              '</select>' +
+            '</div>' +
+          '</div>' +
+          '<div id="ana-subject-chart-body">' + defaultChart + '</div>' +
+        '</div>';
+  }
+
+  function exmRenderExamAnalysisInner(box) {
       var examName = document.getElementById('ana-exam-name').value;
       var scope = exmResolveAnaScope();
       if (scope.mode === 'one' && (!scope.classes || !scope.classes.length)) {
+          box.innerHTML = '<p style="color:#94a3b8;">امتحان اور تجزیہ کی قسم منتخب کر کے "تجزیہ چلائیں" پر کلک کریں۔</p>';
           return showToast('ایک درجہ منتخب کریں، یا تجزیہ کی قسم بدلیں', 'error');
       }
       if (scope.mode === 'multi' && (!scope.classes || !scope.classes.length)) {
+          box.innerHTML = '<p style="color:#94a3b8;">امتحان اور تجزیہ کی قسم منتخب کر کے "تجزیہ چلائیں" پر کلک کریں۔</p>';
           return showToast('کم از کم ایک درجہ منتخب کریں', 'error');
       }
 
@@ -3678,7 +3851,7 @@
       }
 
       var dbMarks = exmReadJson(DB.exams, []);
-      var anaDateEl = document.getElementById('ana-result-date');
+      if (!Array.isArray(dbMarks)) dbMarks = [];
       var anaAllDates = document.getElementById('ana-all-dates');
       var useAllDates = !!(anaAllDates && anaAllDates.checked);
       var resultDate = useAllDates ? '' : (exmReadResultDateInput('ana') || exmEnsureResultDateFilled('ana'));
@@ -3708,15 +3881,26 @@
           activeStudents = exmGetUsers().filter(function (u) { return u && u.type === 'student'; });
       }
 
+      /* اگر رجسٹر ابھی خالی ہے مگر نتائج موجود ہیں — نتائج دکھاؤ (طلبہ فہرست بعد میں) */
+      var useActiveFilter = activeStudents.length > 0;
       var deduped = exmDedupeAnalysisRows(rawList, {
-          activeOnly: true,
+          activeOnly: useActiveFilter,
           activeStudents: activeStudents,
           uniqueStudent: !!useAllDates
       });
       var list = deduped.rows;
+      if (!list.length && rawList.length && useActiveFilter) {
+          deduped = exmDedupeAnalysisRows(rawList, {
+              activeOnly: false,
+              uniqueStudent: !!useAllDates
+          });
+          list = deduped.rows;
+          deduped.orphaned = 0;
+      }
       if (!list.length) {
           box.innerHTML = '<p style="color:#dc2626;">منتخب کسوٹی پر کوئی نتیجہ موجود نہیں۔'
               + (deduped.orphaned ? ' (' + deduped.orphaned + ' پرانے نتائج رجسٹرڈ طلبہ سے میل نہیں کھاتے)' : '')
+              + (rawList.length === 0 ? ' ڈیٹا لوڈ ہونے کے بعد دوبارہ "تجزیہ چلائیں" دبائیں۔' : '')
               + '</p>';
           return;
       }
@@ -3725,7 +3909,11 @@
       var fail = list.length - pass;
       var avg = (list.reduce(function (s, r) { return s + parseFloat(r.percentage || 0); }, 0) / list.length).toFixed(1);
       var registeredCount = activeStudents.length;
-      var orphanNote = deduped.orphaned
+      var orphanNote = (!useActiveFilter && rawList.length)
+          ? ('<div style="margin-bottom:10px;padding:8px 10px;background:#fef9c3;border:1px solid #fde047;border-radius:6px;color:#854d0e;font-size:12px;">'
+              + '<i class="fas fa-exclamation-triangle"></i> طلبہ کی فہرست مکمل لوڈ نہیں ہوئی تھی — نتائج دکھائے گئے ہیں۔ صفحہ ریفریش کر کے دوبارہ چلائیں تو رجسٹرڈ میل درست ہو گا۔'
+              + '</div>')
+          : (deduped.orphaned
           ? ('<div style="margin-bottom:10px;padding:8px 10px;background:#fff7ed;border:1px solid #fdba74;border-radius:6px;color:#9a3412;font-size:12px;">'
               + '<i class="fas fa-info-circle"></i> ' + deduped.orphaned
               + ' پرانا نتیجہ رجسٹرڈ فہرست سے باہر ہے (منتقل/حذف شدہ) — گنتی میں شامل نہیں۔'
@@ -3735,15 +3923,13 @@
               ? ('<div style="margin-bottom:10px;padding:8px 10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;color:#075985;font-size:12px;">'
                   + 'نتائج والے طلبہ: ' + list.length + ' / رجسٹرڈ: ' + registeredCount
                   + '</div>')
-              : '');
+              : ''));
 
-      // درجہ بندی تقسیم
       var gradeColors = { 'ممتاز مرتفع': '#16a34a', 'ممتاز': '#22c55e', 'جید جدا': '#0891b2', 'جید': '#3b82f6', 'مقبول': '#d97706', 'راسب': '#dc2626' };
       var gradeSegs = Object.keys(gradeColors).map(function (g) {
           return { label: g, value: list.filter(function (r) { return r.grade === g; }).length, color: gradeColors[g] };
       }).filter(function (s) { return s.value > 0; });
 
-      // درجہ وار اوسط + جدول
       var byClass = {};
       list.forEach(function (r) { (byClass[r.class] = byClass[r.class] || []).push(r); });
       var classKeys = Object.keys(byClass).sort(function (a, b) {
@@ -3772,7 +3958,6 @@
               '</tbody></table></div>';
       }
 
-      // مضمون وار اوسط
       var bookSum = {}, bookCnt = {}, bookMax = {};
       list.forEach(function (r) {
           Object.keys(r.marks || {}).forEach(function (b) {
@@ -3781,6 +3966,7 @@
           });
       });
       var tpls = exmReadJson('ems_exam_templates', []);
+      if (!Array.isArray(tpls)) tpls = [];
       tpls.forEach(function (t) {
           if (classSet && !classSet[t.class] && !Object.keys(classSet).some(function (c) { return exmClassEquals(c, t.class); })) return;
           (t.books || []).forEach(function (b) { bookMax[b.name] = b.marks; });
@@ -3791,7 +3977,6 @@
           return { label: b, value: pct, display: pct + '%' };
       }).sort(function (a, b) { return b.value - a.value; });
 
-      // استاد وار کارکردگی (ماسٹر شیٹ میں مضمون → استاد منسلک)
       var bookTeacher = {};
       tpls.forEach(function (t) {
           if (classSet && !classSet[t.class] && !Object.keys(classSet).some(function (c) { return exmClassEquals(c, t.class); })) return;
@@ -3816,7 +4001,6 @@
 
       var passSegs = [{ label: 'کامیاب', value: pass, color: '#16a34a' }, { label: 'ناکام', value: fail, color: '#dc2626' }];
 
-      // سال بہ سال موازنہ — اصل resultDate کو ترجیح، timestamp صرف legacy fallback۔
       var byYear = {};
       list.forEach(function (r) {
           var resultYmd = exmResultDateOf(r);
@@ -3833,14 +4017,17 @@
       var donutGrade = (typeof window.emsDonutSVG === 'function') ? window.emsDonutSVG(gradeSegs, list.length, 'کل طلبہ') : '';
       var donutPass = (typeof window.emsDonutSVG === 'function') ? window.emsDonutSVG(passSegs, Math.round((pass / list.length) * 100) + '%', 'کامیابی') : '';
       var barClass = (typeof window.emsBarChartSVG === 'function') ? window.emsBarChartSVG(classItems) : '';
-      var barBook = (typeof window.emsBarChartSVG === 'function')
-          ? window.emsBarChartSVG(bookItems, { rotateLabels: bookItems.length > 5 })
-          : '';
-      var barTeacher = (teacherItems.length && typeof window.emsBarChartSVG === 'function')
-          ? window.emsBarChartSVG(teacherItems, { horizontal: true, labelMaxChars: 24 })
-          : '<p style="color:#94a3b8;">استاد وار تجزیے کے لیے ماسٹر شیٹ میں ہر کتاب کے ساتھ "مضمون کا استاد" منتخب کریں۔</p>';
       var lineYear = (yearItems.length > 1 && typeof window.emsLineChartSVG === 'function') ? window.emsLineChartSVG(yearItems, '#7c3aed')
           : '<p style="color:#94a3b8;">سال بہ سال موازنے کے لیے کم از کم دو مختلف سالوں کا ریکارڈ درکار ہے۔</p>';
+
+      var chartCard = exmBuildAnaSubjectChartCard({
+          list: list,
+          classKeys: classKeys,
+          bookItems: bookItems,
+          teacherItems: teacherItems,
+          bookMax: bookMax,
+          bookTeacher: bookTeacher
+      });
 
       var scopeBanner =
           '<div style="margin-bottom:12px;padding:10px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;color:#1e40af;font-size:13px;">' +
@@ -3864,15 +4051,14 @@
             '<div class="cmp-dash-card"><h4>درجہ بندی کی تقسیم</h4>' + donutGrade + '</div>' +
             '<div class="cmp-dash-card"><h4>کامیابی / ناکامی</h4>' + donutPass + '</div>' +
             '<div class="cmp-dash-card cmp-dash-wide"><h4>درجہ وار اوسط کارکردگی</h4>' + barClass + classTableHtml + '</div>' +
-            '<div class="cmp-dash-card cmp-dash-wide"><h4>مضمون وار اوسط (کمزور مضامین کی نشاندہی)</h4>' + barBook + '</div>' +
-            '<div class="cmp-dash-card cmp-dash-wide"><h4>استاد وار اوسط کارکردگی</h4>' + barTeacher + '</div>' +
+            chartCard +
             '<div class="cmp-dash-card cmp-dash-wide"><h4>سال بہ سال موازنہ (اوسط فیصد)</h4>' + lineYear + '</div>' +
           '</div>';
 
       function statCard(l, v, c, i) {
           return '<div class="cmp-stat" style="border-top:3px solid ' + c + ';"><div class="cmp-stat-ico" style="color:' + c + ';"><i class="fas ' + i + '"></i></div><div class="cmp-stat-v">' + v + '</div><div class="cmp-stat-l">' + l + '</div></div>';
       }
-  };
+  }
 
   document.getElementById('btn-run-analysis')?.addEventListener('click', window.renderExamAnalysis);
   if (typeof window.exmUpdateAnaScopeUi === 'function') {

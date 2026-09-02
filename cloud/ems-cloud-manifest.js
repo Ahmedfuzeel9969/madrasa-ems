@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260902_exams_matrix_per_book_v1';
+  var CACHE_BUST = '20260902_exams_analysis_chart_filter_v1';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,
