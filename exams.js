@@ -38,6 +38,7 @@
 
   var EXM_DEFAULT_EXAM_TYPES = ['ماہانہ امتحان', 'سہ ماہی امتحان', 'ششماہی امتحان', 'سالانہ امتحان'];
   var EXM_BLOB_KEYS = [
+    'ems_full_exams',
     'ems_exam_types',
     'ems_library_books',
     'ems_exam_templates',
@@ -360,14 +361,33 @@
     return parts[2] + '-' + parts[1] + '-' + parts[0];
   }
 
-  /** ایک امتحان+درجہ کی محفوظ شدہ تمام تواریخ (نیا سے پرانا) */
+  function exmExamNameEquals(a, b) {
+    return String(a == null ? '' : a).trim() === String(b == null ? '' : b).trim();
+  }
+
+  /** ایک امتحان+درجہ کی محفوظ شدہ تمام تواریخ (نیا سے پرانا). cls = string یا classes[] */
   function exmListResultDates(examName, cls) {
     var dbMarks = exmReadJson(DB.exams, []);
     var set = Object.create(null);
+    var classList = null;
+    if (Array.isArray(cls)) {
+      classList = cls.map(function (c) { return String(c || '').trim(); }).filter(Boolean);
+      cls = '';
+    }
+    var wantExam = String(examName || '').trim();
+    var wantClass = String(cls || '').trim();
     (dbMarks || []).forEach(function (m) {
       if (!m) return;
-      if (examName && m.examName !== examName) return;
-      if (cls && m.class !== cls) return;
+      if (wantExam && !exmExamNameEquals(m.examName, wantExam)) return;
+      if (classList && classList.length) {
+        var hit = false;
+        for (var ci = 0; ci < classList.length; ci++) {
+          if (exmClassEquals(m.class, classList[ci])) { hit = true; break; }
+        }
+        if (!hit) return;
+      } else if (wantClass && !exmClassEquals(m.class, wantClass)) {
+        return;
+      }
       var d = exmResultDateOf(m);
       if (d) set[d] = true;
     });
@@ -379,7 +399,7 @@
     var exact = null;
     for (var i = 0; i < (dbMarks || []).length; i++) {
       var m = dbMarks[i];
-      if (!m || m.examName !== examName || !exmClassEquals(m.class, cls)
+      if (!m || !exmExamNameEquals(m.examName, examName) || !exmClassEquals(m.class, cls)
           || String(m.studentId == null ? '' : m.studentId) !== String(studentId == null ? '' : studentId)) continue;
       var d = exmResultDateOf(m);
       if (want && d === want && (!exact || Number(m.timestamp || 0) > Number(exact.timestamp || 0))) exact = m;
@@ -388,7 +408,22 @@
     return null;
   }
 
-  window.exmRefreshResultDateOptions = function (prefix) {
+  function exmAnaClassesForDateList() {
+    var mode = ((document.getElementById('ana-scope-mode') || {}).value || 'one');
+    if (mode === 'all') return [];
+    if (mode === 'multi') {
+      var picked = [];
+      document.querySelectorAll('#ana-class-multi-list input[type="checkbox"]:checked').forEach(function (cb) {
+        var v = String(cb.value || '').trim();
+        if (v) picked.push(v);
+      });
+      return picked;
+    }
+    var one = ((document.getElementById('ana-class') || {}).value || '').trim();
+    return one ? one : '';
+  }
+
+  function exmFillResultDateOptions(prefix) {
     prefix = prefix || 'mrk';
     var examEl = document.getElementById(prefix + '-exam-name');
     var classId = prefix === 'mrk' ? 'mrk-class' : (prefix === 'ana' ? 'ana-class' : 'res-class');
@@ -397,19 +432,33 @@
     var sessEl = document.getElementById(prefix + '-result-session');
     if (!dateEl) return;
     var examName = examEl ? examEl.value : '';
-    var cls = classEl ? classEl.value : '';
+    var cls = prefix === 'ana' ? exmAnaClassesForDateList() : (classEl ? classEl.value : '');
     var dates = exmListResultDates(examName, cls);
     if (sessEl) {
-      var cur = dateEl.value;
+      var curDate = dateEl.value ? String(dateEl.value).slice(0, 10) : '';
+      var curSess = sessEl.value ? String(sessEl.value).slice(0, 10) : '';
       var html = '<option value="">— نیا / دستی تاریخ —</option>';
       dates.forEach(function (d) {
         html += '<option value="' + d + '">' + exmFormatResultDateLabel(d) +
           (d === exmTodayYmd() ? ' (آج)' : '') + '</option>';
       });
       sessEl.innerHTML = html;
-      if (cur && dates.indexOf(cur) >= 0) sessEl.value = cur;
-      else if (!cur) sessEl.value = '';
+      if (curSess && dates.indexOf(curSess) >= 0) sessEl.value = curSess;
+      else if (curDate && dates.indexOf(curDate) >= 0) sessEl.value = curDate;
+      else sessEl.value = '';
     }
+  }
+
+  /** IndexedDB سے نتائج لوڈ کر کے محفوظ شدہ تواریخ بھریں (کبھی خالی نہ رہیں) */
+  window.exmRefreshResultDateOptions = function (prefix) {
+    prefix = prefix || 'mrk';
+    var examsKey = (typeof DB !== 'undefined' && DB.exams) ? DB.exams : 'ems_full_exams';
+    var run = function () { exmFillResultDateOptions(prefix); };
+    if (typeof window.emsDurableEnsureKey === 'function') {
+      return Promise.resolve(window.emsDurableEnsureKey(examsKey)).then(run).catch(run);
+    }
+    run();
+    return Promise.resolve();
   };
 
   window.exmOnResultSessionPick = function (prefix) {
@@ -695,6 +744,11 @@
       }
       if (typeof window.examUpdateTplScopePreview === 'function') window.examUpdateTplScopePreview();
       if (typeof window.exmUpdateLockUi === 'function') window.exmUpdateLockUi();
+      if (typeof window.exmRefreshResultDateOptions === 'function') {
+          window.exmRefreshResultDateOptions('mrk');
+          window.exmRefreshResultDateOptions('res');
+          window.exmRefreshResultDateOptions('ana');
+      }
       }
 
       exmEnsureBlobsReady().then(exmRefreshExamDataInner).catch(exmRefreshExamDataInner);
@@ -2632,12 +2686,34 @@
       return cols;
   }
 
+  var _exmLastMarkFocus = { row: 0, col: 0 };
+
+  function exmRememberMarkFocus(rowIdx, colIdx) {
+      if (isFinite(rowIdx)) _exmLastMarkFocus.row = rowIdx;
+      if (isFinite(colIdx)) _exmLastMarkFocus.col = colIdx;
+  }
+
   function exmFindMarkInput(rowIdx, colIdx) {
       var tbody = document.getElementById('mrk-entry-tbody');
       if (!tbody) return null;
       return tbody.querySelector(
           '.mark-val-input[data-row="' + rowIdx + '"][data-col="' + colIdx + '"]:not([disabled])'
       );
+  }
+
+  function exmWaitForMarkInput(rowIdx, colIdx, attempts) {
+      attempts = attempts == null ? 10 : attempts;
+      return new Promise(function (resolve) {
+          function tick(left) {
+              var el = exmFindMarkInput(rowIdx, colIdx);
+              if (el || left <= 0) {
+                  resolve(el || null);
+                  return;
+              }
+              requestAnimationFrame(function () { tick(left - 1); });
+          }
+          tick(attempts);
+      });
   }
 
   function exmScrollMarkRowIntoView(rowIdx, colIdx) {
@@ -2654,11 +2730,7 @@
       if (typeof window.emsVirtualTableRefresh === 'function') {
           window.emsVirtualTableRefresh('mrk-entry');
       }
-      return new Promise(function (resolve) {
-          requestAnimationFrame(function () {
-              requestAnimationFrame(function () { resolve(); });
-          });
-      });
+      return exmWaitForMarkInput(rowIdx, colIdx, 12).then(function () { return true; });
   }
 
   function exmFocusMarkCell(rowIdx, colIdx) {
@@ -2668,6 +2740,7 @@
           n.classList.remove('is-mrk-focus');
       });
       el.classList.add('is-mrk-focus');
+      exmRememberMarkFocus(rowIdx, colIdx);
       el.focus();
       try { el.select(); } catch (eSel) { /* ignore */ }
       return true;
@@ -2676,26 +2749,32 @@
   window.exmMoveMarkFocus = function (dir) {
       var active = document.activeElement;
       if (!active || !active.classList || !active.classList.contains('mark-val-input')) {
-          var first = document.querySelector('#mrk-entry-tbody .mark-val-input:not([disabled])');
-          if (first) {
-              active = first;
-              first.focus();
-          } else {
-              return false;
+          active = document.querySelector('#mrk-entry-tbody .mark-val-input.is-mrk-focus:not([disabled])');
+      }
+      var row;
+      var col;
+      if (active && active.classList && active.classList.contains('mark-val-input')) {
+          row = parseInt(active.getAttribute('data-row'), 10);
+          col = parseInt(active.getAttribute('data-col'), 10);
+          if (!isFinite(row)) {
+              var tr = active.closest('tr');
+              row = tr ? parseInt(tr.getAttribute('data-index'), 10) : _exmLastMarkFocus.row;
           }
+          if (!isFinite(col)) col = _exmLastMarkFocus.col;
+      } else {
+          row = _exmLastMarkFocus.row;
+          col = _exmLastMarkFocus.col;
       }
-      var row = parseInt(active.getAttribute('data-row'), 10);
-      var col = parseInt(active.getAttribute('data-col'), 10);
-      if (!isFinite(row)) {
-          var tr = active.closest('tr');
-          row = tr ? parseInt(tr.getAttribute('data-index'), 10) : 0;
-      }
+      if (!isFinite(row)) row = 0;
       if (!isFinite(col)) col = 0;
+      exmRememberMarkFocus(row, col);
+
       var editable = exmEditableMarkCols();
       if (!editable.length) return false;
       var colPos = editable.indexOf(col);
       if (colPos < 0) colPos = 0;
       var maxRow = (currentGridData || []).length - 1;
+      if (maxRow < 0) return false;
       var nextRow = row;
       var nextCol = editable[colPos];
 
@@ -2720,11 +2799,12 @@
       }
 
       if (nextRow === row && nextCol === col) return false;
-      active.dispatchEvent(new Event('blur'));
+      if (active && typeof active.blur === 'function') {
+          try { active.blur(); } catch (eBlur) { /* ignore */ }
+      }
       return exmScrollMarkRowIntoView(nextRow, nextCol).then(function () {
           if (!exmFocusMarkCell(nextRow, nextCol)) {
-              /* دوبارہ کوشش — ورچوئل رینڈر تاخیر */
-              return exmScrollMarkRowIntoView(nextRow, nextCol).then(function () {
+              return exmWaitForMarkInput(nextRow, nextCol, 12).then(function () {
                   return exmFocusMarkCell(nextRow, nextCol);
               });
           }
@@ -2753,8 +2833,18 @@
               n.classList.remove('is-mrk-focus');
           });
           input.classList.add('is-mrk-focus');
+          var r = parseInt(input.getAttribute('data-row'), 10);
+          var c = parseInt(input.getAttribute('data-col'), 10);
+          exmRememberMarkFocus(r, c);
       });
   }
+
+  document.getElementById('mrk-nav-pad')?.addEventListener('mousedown', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-mrk-nav]') : null;
+      if (!btn) return;
+      /* بٹن فوکس نہ چھینے تاکہ موجودہ خانہ یاد رہے */
+      e.preventDefault();
+  });
 
   document.getElementById('mrk-nav-pad')?.addEventListener('click', function (e) {
       var btn = e.target && e.target.closest ? e.target.closest('[data-mrk-nav]') : null;
@@ -2972,6 +3062,7 @@
 
   document.getElementById('btn-fetch-result')?.addEventListener('click', () => {
 
+      function exmDoFetchResult() {
       const examName = document.getElementById('res-exam-name').value;
 
       const resType = document.getElementById('res-type').value;
@@ -2996,11 +3087,13 @@
       const dbMarks = exmReadJson(DB.exams, []);
 
       let classResults = dbMarks.filter(function (m) {
-          return m.examName === examName && m.class === cls && exmResultDateOf(m) === resultDate;
+          return exmExamNameEquals(m.examName, examName) && exmClassEquals(m.class, cls) && exmResultDateOf(m) === resultDate;
       });
       // لیگیسی: اگر اس تاریخ پر کچھ نہ ملے اور صرف بلا تاریخ/ایک ہی سیشن ہو
       if (!classResults.length) {
-          var allForClass = dbMarks.filter(function (m) { return m.examName === examName && m.class === cls; });
+          var allForClass = dbMarks.filter(function (m) {
+              return exmExamNameEquals(m.examName, examName) && exmClassEquals(m.class, cls);
+          });
           var dates = exmListResultDates(examName, cls);
           if (dates.length <= 1 && allForClass.length) {
               classResults = allForClass.filter(function (m) {
@@ -3090,6 +3183,12 @@
       var rsw = document.getElementById('res-search-wrap');
       if (rsw) { rsw.style.display = (resType === 'class_summary') ? 'flex' : 'none'; var ri = document.getElementById('res-search'); if (ri) ri.value = ''; }
       showToast("رزلٹ اور پری ویو تیار ہو گیا!", "success");
+      }
+
+      var ensureRes = typeof window.emsDurableEnsureKey === 'function'
+        ? window.emsDurableEnsureKey(DB.exams)
+        : Promise.resolve();
+      Promise.resolve(ensureRes).then(exmDoFetchResult).catch(exmDoFetchResult);
 
   });
 
@@ -3256,6 +3355,14 @@
           return '<label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">' +
               '<input type="checkbox" value="' + safe + '"' + checked + '> ' + safe + '</label>';
       }).join('');
+      if (!box._exmDateRefreshBound) {
+          box._exmDateRefreshBound = true;
+          box.addEventListener('change', function (e) {
+              if (e.target && e.target.matches && e.target.matches('input[type="checkbox"]')) {
+                  if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions('ana');
+              }
+          });
+      }
   };
 
   window.exmUpdateAnaScopeUi = function () {
@@ -3266,12 +3373,14 @@
       if (oneWrap) oneWrap.style.display = mode === 'one' ? '' : 'none';
       if (multiWrap) multiWrap.style.display = mode === 'multi' ? '' : 'none';
       if (mode === 'multi') window.exmPopulateAnaMultiClasses();
+      if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions('ana');
   };
 
   window.exmAnaMultiSelectAll = function (on) {
       document.querySelectorAll('#ana-class-multi-list input[type="checkbox"]').forEach(function (cb) {
           cb.checked = !!on;
       });
+      if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions('ana');
   };
 
   /** @returns {{ mode: string, classes: string[]|null, label: string }} classes=null → تمام */
@@ -3326,7 +3435,7 @@
       var resultDate = useAllDates ? '' : (exmReadResultDateInput('ana') || exmEnsureResultDateFilled('ana'));
       var rawList = dbMarks.filter(function (m) {
           if (!m) return false;
-          if (examName && m.examName !== examName) return false;
+          if (examName && !exmExamNameEquals(m.examName, examName)) return false;
           if (classSet) {
               var mc = exmNormClass(m.class);
               var hit = false;

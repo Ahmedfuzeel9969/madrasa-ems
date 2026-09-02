@@ -13,6 +13,9 @@ describe('Exams marks grid directional navigation', function () {
         expect(src).toContain("key === 'ArrowUp'");
         expect(src).toContain("key === 'ArrowDown'");
         expect(src).toContain("data-mrk-nav");
+        expect(src).toContain('_exmLastMarkFocus');
+        expect(src).toContain('exmWaitForMarkInput');
+        expect(src).toContain("addEventListener('mousedown'");
     });
 
     it('HTML has four navigation buttons for marks entry', function () {
