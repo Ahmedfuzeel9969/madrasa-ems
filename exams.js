@@ -285,6 +285,74 @@
     return exmReadResultDateInput(prefix) || exmTodayYmd();
   }
 
+  function exmNormClass(cls) {
+    return String(cls == null ? '' : cls).trim().replace(/\s+/g, ' ');
+  }
+
+  function exmClassEquals(a, b) {
+    return exmNormClass(a) === exmNormClass(b);
+  }
+
+  /** رجسٹرڈ طلبہ — درجہ نام کی خالی جگہ / ہجے کی معمولی تفریق برداشت۔ */
+  function exmStudentsInClass(cls) {
+    var want = exmNormClass(cls);
+    if (!want) return [];
+    return exmGetUsers().filter(function (u) {
+      return u && u.type === 'student' && exmClassEquals(u.class, want);
+    });
+  }
+
+  function exmFindClassTpl(templates, cls) {
+    var want = exmNormClass(cls);
+    return (templates || []).find(function (t) { return t && exmClassEquals(t.class, want); }) || null;
+  }
+
+  /**
+   * تجزیہ: ایک طالب علم ایک بار — ایک ہی امتحان+درجہ+تاریخ پر متعدد ریکارڈ ہوں تو تازہ ترین رکھیں۔
+   * اختیاری: صرف رجسٹرڈ طلبہ (پرانا/منتقل شدہ نتیجہ الگ گنتی میں)۔
+   */
+  function exmDedupeAnalysisRows(list, opts) {
+    opts = opts || {};
+    var bySid = Object.create(null);
+    (list || []).forEach(function (m) {
+      if (!m) return;
+      var sid = String(m.studentId == null ? '' : m.studentId).trim();
+      if (!sid) sid = '__name__' + String(m.studentName || '').trim();
+      var key = opts.uniqueStudent
+          ? (sid + '||' + exmNormClass(m.class))
+          : (sid + '||' + exmNormClass(m.class) + '||' + exmResultDateOf(m));
+      var prev = bySid[key];
+      if (!prev || Number(m.timestamp || 0) >= Number(prev.timestamp || 0)) bySid[key] = m;
+    });
+    var rows = Object.keys(bySid).map(function (k) { return bySid[k]; });
+    var orphaned = 0;
+    if (opts.activeOnly) {
+      var activeIds = Object.create(null);
+      (opts.activeStudents || []).forEach(function (s) {
+        if (s && s.id != null) activeIds[String(s.id).trim()] = true;
+      });
+      var kept = [];
+      rows.forEach(function (m) {
+        var sid = String(m.studentId == null ? '' : m.studentId).trim();
+        if (activeIds[sid]) kept.push(m);
+        else orphaned++;
+      });
+      rows = kept;
+    }
+    return { rows: rows, orphaned: orphaned, rawCount: (list || []).length };
+  }
+
+  /** نئی شیٹ: تاریخ خالی ہو تو آج کی تاریخ خودکار بھر دیں۔ */
+  function exmEnsureResultDateFilled(prefix) {
+    var el = document.getElementById(prefix + '-result-date');
+    if (!el) return exmTodayYmd();
+    var v = String(el.value || '').trim().slice(0, 10);
+    if (v) return v;
+    var today = exmTodayYmd();
+    el.value = today;
+    return today;
+  }
+
   function exmFormatResultDateLabel(ymd) {
     if (!ymd) return '—';
     var parts = String(ymd).split('-');
@@ -308,15 +376,13 @@
 
   function exmFindStudentResult(dbMarks, examName, cls, studentId, resultDate) {
     var want = resultDate ? String(resultDate).slice(0, 10) : '';
-    var legacy = null;
     var exact = null;
     for (var i = 0; i < (dbMarks || []).length; i++) {
       var m = dbMarks[i];
-      if (!m || m.examName !== examName || m.class !== cls
+      if (!m || m.examName !== examName || !exmClassEquals(m.class, cls)
           || String(m.studentId == null ? '' : m.studentId) !== String(studentId == null ? '' : studentId)) continue;
       var d = exmResultDateOf(m);
       if (want && d === want && (!exact || Number(m.timestamp || 0) > Number(exact.timestamp || 0))) exact = m;
-      if (!m.resultDate && (!legacy || Number(m.timestamp || 0) > Number(legacy.timestamp || 0))) legacy = m;
     }
     if (exact) return exact;
     return null;
@@ -2330,7 +2396,7 @@
 
       const cls = document.getElementById('mrk-class').value;
 
-      const resultDate = exmReadResultDateInput('mrk');
+      const resultDate = exmEnsureResultDateFilled('mrk');
 
 
 
@@ -2344,17 +2410,15 @@
 
       let templates = exmReadJson('ems_exam_templates', []);
 
-      let classTpl = templates.find(t => t.class === cls);
+      let classTpl = exmFindClassTpl(templates, cls);
 
-      if(!classTpl || !Array.isArray(classTpl.books) || classTpl.books.length === 0) return showToast("اس درجے کی ماسٹر شیٹ میں کوئی کتاب نہیں ہے۔", "error");
+      if(!classTpl || !Array.isArray(classTpl.books) || classTpl.books.length === 0) return showToast("اس درجے کی ماسٹر شیٹ میں کوئی کتاب نہیں ہے۔ پہلے ماسٹر شیٹ میں کتابیں شامل کریں۔", "error");
 
 
 
       currentClassTemplateBooks = classTpl.books;
 
-      const users = exmGetUsers();
-
-      const students = users.filter(u => u.type === 'student' && u.class === cls);
+      const students = exmStudentsInClass(cls);
 
 
 
@@ -2410,7 +2474,7 @@
 
       currentGridData = students.map(std => {
 
-          let existingRecord = exmFindStudentResult(dbMarks, examName, cls, std.id, resultDate);
+          let existingRecord = exmFindStudentResult(dbMarks, examName, classTpl.class || cls, std.id, resultDate);
 
           frStudentSelect.innerHTML += `<option value="${std.id}">${std.name} (${std.id})</option>`;
 
@@ -2442,7 +2506,7 @@
       if (typeof window.exmRefreshResultDateOptions === 'function') window.exmRefreshResultDateOptions('mrk');
       if (typeof window.exmUpdateLockUi === 'function') window.exmUpdateLockUi();
 
-      showToast("ایکسل گرڈ تیار ہے! (تاریخ: " + exmFormatResultDateLabel(resultDate) + ")", "success");
+      showToast("ایکسل گرڈ تیار ہے! " + students.length + " طلبہ — تاریخ: " + exmFormatResultDateLabel(resultDate), "success");
 
       }
 
@@ -2666,7 +2730,7 @@
       const examName = document.getElementById('mrk-exam-name').value;
 
       const cls = document.getElementById('mrk-class').value;
-      const resultDate = exmReadResultDateInput('mrk');
+      const resultDate = exmEnsureResultDateFilled('mrk');
 
       if (!examName) return showToast("امتحان منتخب کرنا لازمی ہے!", "error");
       if (!cls) return showToast("درجہ منتخب کرنا لازمی ہے!", "error");
@@ -2740,7 +2804,7 @@
           _exmMarksSaveBusy = false;
           if (saveBtn) {
               saveBtn.disabled = exmIsMarksContextLocked();
-              saveBtn.innerHTML = '<i class="fas fa-save"></i> تمام نمبرات محفوظ کریں';
+              saveBtn.innerHTML = '<i class="fas fa-save"></i> تمام نمبرات ڈیٹا بیس میں محفوظ کریں';
           }
       });
       });
@@ -3116,18 +3180,61 @@
       var anaDateEl = document.getElementById('ana-result-date');
       var anaAllDates = document.getElementById('ana-all-dates');
       var useAllDates = !!(anaAllDates && anaAllDates.checked);
-      var resultDate = useAllDates ? '' : exmReadResultDateInput('ana');
-      var list = dbMarks.filter(function (m) {
+      var resultDate = useAllDates ? '' : (exmReadResultDateInput('ana') || exmEnsureResultDateFilled('ana'));
+      var rawList = dbMarks.filter(function (m) {
+          if (!m) return false;
           if (examName && m.examName !== examName) return false;
-          if (classSet && !classSet[m.class]) return false;
+          if (classSet) {
+              var mc = exmNormClass(m.class);
+              var hit = false;
+              Object.keys(classSet).forEach(function (c) {
+                  if (exmClassEquals(c, mc)) hit = true;
+              });
+              if (!hit) return false;
+          }
           if (!useAllDates && resultDate && exmResultDateOf(m) !== resultDate) return false;
           return true;
       });
-      if (!list.length) { box.innerHTML = '<p style="color:#dc2626;">منتخب کسوٹی پر کوئی نتیجہ موجود نہیں۔</p>'; return; }
+
+      var activeStudents = [];
+      if (scope.mode === 'one' && scope.classes && scope.classes[0]) {
+          activeStudents = exmStudentsInClass(scope.classes[0]);
+      } else if (scope.classes && scope.classes.length) {
+          scope.classes.forEach(function (c) {
+              activeStudents = activeStudents.concat(exmStudentsInClass(c));
+          });
+      } else {
+          activeStudents = exmGetUsers().filter(function (u) { return u && u.type === 'student'; });
+      }
+
+      var deduped = exmDedupeAnalysisRows(rawList, {
+          activeOnly: true,
+          activeStudents: activeStudents,
+          uniqueStudent: !!useAllDates
+      });
+      var list = deduped.rows;
+      if (!list.length) {
+          box.innerHTML = '<p style="color:#dc2626;">منتخب کسوٹی پر کوئی نتیجہ موجود نہیں۔'
+              + (deduped.orphaned ? ' (' + deduped.orphaned + ' پرانے نتائج رجسٹرڈ طلبہ سے میل نہیں کھاتے)' : '')
+              + '</p>';
+          return;
+      }
 
       var pass = list.filter(exmIsPassingResult).length;
       var fail = list.length - pass;
       var avg = (list.reduce(function (s, r) { return s + parseFloat(r.percentage || 0); }, 0) / list.length).toFixed(1);
+      var registeredCount = activeStudents.length;
+      var orphanNote = deduped.orphaned
+          ? ('<div style="margin-bottom:10px;padding:8px 10px;background:#fff7ed;border:1px solid #fdba74;border-radius:6px;color:#9a3412;font-size:12px;">'
+              + '<i class="fas fa-info-circle"></i> ' + deduped.orphaned
+              + ' پرانا نتیجہ رجسٹرڈ فہرست سے باہر ہے (منتقل/حذف شدہ) — گنتی میں شامل نہیں۔'
+              + (registeredCount ? (' رجسٹرڈ طلبہ: ' + registeredCount) : '')
+              + '</div>')
+          : (registeredCount && list.length !== registeredCount
+              ? ('<div style="margin-bottom:10px;padding:8px 10px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;color:#075985;font-size:12px;">'
+                  + 'نتائج والے طلبہ: ' + list.length + ' / رجسٹرڈ: ' + registeredCount
+                  + '</div>')
+              : '');
 
       // درجہ بندی تقسیم
       var gradeColors = { 'ممتاز مرتفع': '#16a34a', 'ممتاز': '#22c55e', 'جید جدا': '#0891b2', 'جید': '#3b82f6', 'مقبول': '#d97706', 'راسب': '#dc2626' };
@@ -3174,7 +3281,7 @@
       });
       var tpls = exmReadJson('ems_exam_templates', []);
       tpls.forEach(function (t) {
-          if (classSet && !classSet[t.class]) return;
+          if (classSet && !classSet[t.class] && !Object.keys(classSet).some(function (c) { return exmClassEquals(c, t.class); })) return;
           (t.books || []).forEach(function (b) { bookMax[b.name] = b.marks; });
       });
       var bookItems = Object.keys(bookSum).map(function (b) {
@@ -3186,7 +3293,7 @@
       // استاد وار کارکردگی (ماسٹر شیٹ میں مضمون → استاد منسلک)
       var bookTeacher = {};
       tpls.forEach(function (t) {
-          if (classSet && !classSet[t.class]) return;
+          if (classSet && !classSet[t.class] && !Object.keys(classSet).some(function (c) { return exmClassEquals(c, t.class); })) return;
           (t.books || []).forEach(function (b) {
               if (b.teacher) bookTeacher[b.name] = b.teacher;
           });
@@ -3242,7 +3349,7 @@
           '</div>';
 
       box.innerHTML =
-          scopeBanner +
+          scopeBanner + orphanNote +
           '<div class="cmp-stat-strip" style="margin-bottom:16px;">' +
             statCard('کل طلبہ', list.length, '#2563eb', 'fa-users') +
             statCard('اوسط فیصد', avg + '%', '#7c3aed', 'fa-percent') +
