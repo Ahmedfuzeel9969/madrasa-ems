@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260902_exams_marks_analysis_count_v1';
+    var CACHE_BUST = '20260902_exams_marks_arrow_nav_v1';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 

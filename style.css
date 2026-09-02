@@ -235,6 +235,24 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
 .exam-data-export-card { border-top: 4px solid #2563eb; position: sticky; top: 72px; }
 .exam-data-card.is-focused { box-shadow: 0 0 0 3px rgba(21,154,128,.16), 0 12px 26px rgba(15,23,42,.1); }
 .exam-data-note { margin-bottom: 14px; padding: 10px 12px; border: 1px solid #fed7aa; border-radius: 8px; background: #fff7ed; color: #9a3412; font-size: 13px; }
+.mrk-nav-pad {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.mrk-nav-hint { font-size: 13px; font-weight: 700; color: #334155; margin-left: 4px; }
+.mrk-nav-btn { min-width: 88px; }
+.mark-val-input.is-mrk-focus {
+  outline: 2px solid #159a80;
+  outline-offset: 1px;
+  background: #ecfdf5;
+}
 .exam-export-summary { display: grid; grid-template-columns: repeat(3, minmax(90px, 1fr)); gap: 8px; margin-bottom: 14px; }
 .exam-export-stat { padding: 12px 8px; border: 1px solid #dbeafe; border-radius: 9px; background: #eff6ff; text-align: center; }
 .exam-export-stat strong { display: block; color: #1d4ed8; font-size: 20px; line-height: 1.2; }

@@ -2496,6 +2496,8 @@
 
       document.getElementById('btn-save-all-marks').style.display = 'inline-flex';
       if (document.getElementById('btn-exam-data-page')) document.getElementById('btn-exam-data-page').style.display = 'inline-flex';
+      var navPad = document.getElementById('mrk-nav-pad');
+      if (navPad) navPad.style.display = 'flex';
 
       
 
@@ -2570,6 +2572,7 @@
               }
               input.addEventListener('input', syncRowFromInputs);
               input.addEventListener('blur', syncRowFromInputs);
+              exmBindMarkNavKeys(input);
           });
       }
 
@@ -2579,14 +2582,17 @@
           tr.setAttribute('data-index', index);
           tr.setAttribute('data-std-id', row.student.id);
           var trHTML = '<td><strong>' + row.student.name + '</strong> <br><small>' + row.student.id + '</small></td>';
-          currentClassTemplateBooks.forEach(function (b) {
+          currentClassTemplateBooks.forEach(function (b, colIdx) {
               var val = row.marks[b.name];
               var displayVal = exmGridMarkDisplay(val);
               var canEdit = window.exmCanEditBookColumn(b);
               var lockHint = exmIsMarksContextLocked() ? 'یہ نتیجہ لاک ہو چکا ہے' : 'آپ اس مضمون کے مجاز استاد نہیں';
               var disAttr = canEdit ? '' : ' disabled readonly';
-              var titleAttr = canEdit ? 'خالی یا غ = غیر حاضر' : lockHint;
-              trHTML += '<td><input type="text" class="input-control mark-val-input" data-subject="' + b.name + '" data-max="' + b.marks + '" value="' + displayVal + '" placeholder="" title="' + titleAttr + '"' + disAttr + ' style="width: 70px; text-align:center;"></td>';
+              var titleAttr = canEdit ? 'خالی یا غ = غیر حاضر | تیر والے بٹن سے حرکت' : lockHint;
+              trHTML += '<td><input type="text" class="input-control mark-val-input" data-subject="' + b.name +
+                  '" data-max="' + b.marks + '" data-row="' + index + '" data-col="' + colIdx +
+                  '" value="' + displayVal + '" placeholder="" title="' + titleAttr + '"' + disAttr +
+                  ' style="width: 70px; text-align:center;"></td>';
           });
           trHTML += '<td style="font-weight:bold;">' + currentTotalPossibleMarks + '</td>' +
               '<td class="row-obtained-total" style="font-weight:bold; color:var(--accent); font-size:16px;">' +
@@ -2618,7 +2624,144 @@
       if (typeof window.exmApplyMarksLockUi === 'function') window.exmApplyMarksLockUi();
   }
 
+  function exmEditableMarkCols() {
+      var cols = [];
+      (currentClassTemplateBooks || []).forEach(function (b, idx) {
+          if (window.exmCanEditBookColumn(b)) cols.push(idx);
+      });
+      return cols;
+  }
 
+  function exmFindMarkInput(rowIdx, colIdx) {
+      var tbody = document.getElementById('mrk-entry-tbody');
+      if (!tbody) return null;
+      return tbody.querySelector(
+          '.mark-val-input[data-row="' + rowIdx + '"][data-col="' + colIdx + '"]:not([disabled])'
+      );
+  }
+
+  function exmScrollMarkRowIntoView(rowIdx, colIdx) {
+      var scrollEl = document.querySelector('#mrk-entry-tbody') &&
+          document.getElementById('mrk-entry-tbody').closest('.table-responsive');
+      if (!scrollEl) return Promise.resolve();
+      var rowHeight = 52;
+      var top = rowIdx * rowHeight;
+      var bottom = top + rowHeight;
+      var viewTop = scrollEl.scrollTop;
+      var viewBot = viewTop + scrollEl.clientHeight;
+      if (top < viewTop) scrollEl.scrollTop = top;
+      else if (bottom > viewBot) scrollEl.scrollTop = Math.max(0, bottom - scrollEl.clientHeight);
+      if (typeof window.emsVirtualTableRefresh === 'function') {
+          window.emsVirtualTableRefresh('mrk-entry');
+      }
+      return new Promise(function (resolve) {
+          requestAnimationFrame(function () {
+              requestAnimationFrame(function () { resolve(); });
+          });
+      });
+  }
+
+  function exmFocusMarkCell(rowIdx, colIdx) {
+      var el = exmFindMarkInput(rowIdx, colIdx);
+      if (!el) return false;
+      document.querySelectorAll('.mark-val-input.is-mrk-focus').forEach(function (n) {
+          n.classList.remove('is-mrk-focus');
+      });
+      el.classList.add('is-mrk-focus');
+      el.focus();
+      try { el.select(); } catch (eSel) { /* ignore */ }
+      return true;
+  }
+
+  window.exmMoveMarkFocus = function (dir) {
+      var active = document.activeElement;
+      if (!active || !active.classList || !active.classList.contains('mark-val-input')) {
+          var first = document.querySelector('#mrk-entry-tbody .mark-val-input:not([disabled])');
+          if (first) {
+              active = first;
+              first.focus();
+          } else {
+              return false;
+          }
+      }
+      var row = parseInt(active.getAttribute('data-row'), 10);
+      var col = parseInt(active.getAttribute('data-col'), 10);
+      if (!isFinite(row)) {
+          var tr = active.closest('tr');
+          row = tr ? parseInt(tr.getAttribute('data-index'), 10) : 0;
+      }
+      if (!isFinite(col)) col = 0;
+      var editable = exmEditableMarkCols();
+      if (!editable.length) return false;
+      var colPos = editable.indexOf(col);
+      if (colPos < 0) colPos = 0;
+      var maxRow = (currentGridData || []).length - 1;
+      var nextRow = row;
+      var nextCol = editable[colPos];
+
+      if (dir === 'up') nextRow = Math.max(0, row - 1);
+      else if (dir === 'down' || dir === 'enter') nextRow = Math.min(maxRow, row + 1);
+      else if (dir === 'left') {
+          /* RTL جدول: بایاں تیر = اگلا مضمون (DOM میں آگے) */
+          if (colPos < editable.length - 1) nextCol = editable[colPos + 1];
+          else if (row < maxRow) {
+              nextRow = row + 1;
+              nextCol = editable[0];
+          }
+      } else if (dir === 'right') {
+          /* دایاں تیر = پچھلا مضمون */
+          if (colPos > 0) nextCol = editable[colPos - 1];
+          else if (row > 0) {
+              nextRow = row - 1;
+              nextCol = editable[editable.length - 1];
+          }
+      } else {
+          return false;
+      }
+
+      if (nextRow === row && nextCol === col) return false;
+      active.dispatchEvent(new Event('blur'));
+      return exmScrollMarkRowIntoView(nextRow, nextCol).then(function () {
+          if (!exmFocusMarkCell(nextRow, nextCol)) {
+              /* دوبارہ کوشش — ورچوئل رینڈر تاخیر */
+              return exmScrollMarkRowIntoView(nextRow, nextCol).then(function () {
+                  return exmFocusMarkCell(nextRow, nextCol);
+              });
+          }
+          return true;
+      });
+  };
+
+  function exmBindMarkNavKeys(input) {
+      if (!input || input._exmNavBound) return;
+      input._exmNavBound = true;
+      input.addEventListener('keydown', function (e) {
+          var key = e.key;
+          var dir = null;
+          if (key === 'ArrowUp') dir = 'up';
+          else if (key === 'ArrowDown') dir = 'down';
+          else if (key === 'ArrowLeft') dir = 'left';
+          else if (key === 'ArrowRight') dir = 'right';
+          else if (key === 'Enter' && !e.shiftKey) dir = 'enter';
+          if (!dir) return;
+          e.preventDefault();
+          e.stopPropagation();
+          window.exmMoveMarkFocus(dir);
+      });
+      input.addEventListener('focus', function () {
+          document.querySelectorAll('.mark-val-input.is-mrk-focus').forEach(function (n) {
+              n.classList.remove('is-mrk-focus');
+          });
+          input.classList.add('is-mrk-focus');
+      });
+  }
+
+  document.getElementById('mrk-nav-pad')?.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest ? e.target.closest('[data-mrk-nav]') : null;
+      if (!btn) return;
+      e.preventDefault();
+      window.exmMoveMarkFocus(btn.getAttribute('data-mrk-nav'));
+  });
 
   document.getElementById('btn-find-replace')?.addEventListener('click', () => {
 
