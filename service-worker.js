@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260902_exams_analysis_chart_filter_v1';
+var EMS_SW_BUILD_TAG = '20260902_exams_vertical_charts_v1';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

@@ -310,7 +310,7 @@
     }
 
     // ---------------- SVG چارٹ helpers ----------------
-    // عمودی بار چارٹ — لمبے لیبلز پر گھماؤ / افقی موڈ دستیاب
+    // عمودی بار چارٹ — لیبلز محور کے نیچے، اقدار بار کے اوپر (اوورلیپ نہیں)
     global.emsBarChartSVG = function (items, opts) {
         opts = opts || {};
         items = asArray(items);
@@ -326,37 +326,59 @@
             maxLabelLen = Math.max(maxLabelLen, String(it.label || '').length);
         });
         var n = items.length || 1;
-        var rotate = !!opts.rotateLabels || maxLabelLen > 10 || (n >= 6 && maxLabelLen > 6);
-        var labelMax = opts.labelMaxChars != null ? opts.labelMaxChars : (rotate ? 14 : 18);
+        var clear = opts.clearLabels !== false;
+        var rotate = opts.rotateLabels === false
+            ? false
+            : (!!opts.rotateLabels || maxLabelLen > 8 || n >= 5);
+        var labelMax = opts.labelMaxChars != null
+            ? opts.labelMaxChars
+            : (rotate ? 12 : 16);
 
-        var w = 560, padX = 36, padTop = 24;
-        var padBottom = rotate ? Math.min(110, 48 + maxLabelLen * 3.2) : 40;
-        var h = 220 + (rotate ? Math.max(0, padBottom - 40) : 0);
+        var w = Math.max(560, Math.min(920, 80 + n * 72));
+        var padX = 28;
+        var padTop = clear ? 40 : 24;
+        var padBottom = rotate
+            ? Math.min(140, 64 + Math.min(maxLabelLen, labelMax) * 5.2)
+            : (clear ? 52 : 40);
+        var plotH = opts.plotHeight || 168;
+        var h = padTop + plotH + padBottom;
         var max = Math.max(1, Math.max.apply(null, items.map(function (i) { return Math.abs(i.value); })));
-        var plotW = w - padX * 2, plotH = h - padTop - padBottom;
-        var step = plotW / n, bw = Math.min(46, step * 0.55);
+        var plotW = w - padX * 2;
+        var step = plotW / n;
+        var bw = Math.min(clear ? 42 : 46, Math.max(14, step * (clear ? 0.48 : 0.55)));
+        var axisY = padTop + plotH;
+
         var bars = items.map(function (it, i) {
             var bh = Math.round((Math.abs(it.value) / max) * plotH);
+            if (it.value !== 0 && bh < 3) bh = 3;
             var x = padX + step * i + (step - bw) / 2;
-            var y = padTop + (plotH - bh);
+            var y = axisY - bh;
             var col = it.color || palette(i);
             var fullLabel = String(it.label || '');
             var shortLabel = fullLabel.length > labelMax ? fullLabel.slice(0, labelMax - 1) + '…' : fullLabel;
             var lx = x + bw / 2;
-            var ly = h - padBottom + (rotate ? 10 : 16);
+            var valueText = String(it.display != null ? it.display : it.value);
+            /* قدر ہمیشہ بار کے اوپر خالی جگہ میں — بار کے اندر نہیں */
+            var valueY = Math.max(16, y - 8);
+            var ly = axisY + (rotate ? 14 : 20);
             var labelText = rotate
-                ? ('<text x="' + lx + '" y="' + ly + '" text-anchor="end" font-size="10" fill="#64748b" ' +
-                   'transform="rotate(-42 ' + lx + ' ' + ly + ')">' + esc(shortLabel) + '</text>')
-                : ('<text x="' + lx + '" y="' + ly + '" text-anchor="middle" font-size="11" fill="#64748b">' + esc(shortLabel) + '</text>');
+                ? ('<text x="' + lx + '" y="' + ly + '" text-anchor="end" font-size="11" font-weight="600" fill="#334155" ' +
+                   'transform="rotate(-48 ' + lx + ' ' + ly + ')">' + esc(shortLabel) + '</text>')
+                : ('<text x="' + lx + '" y="' + ly + '" text-anchor="middle" font-size="12" font-weight="600" fill="#334155">' +
+                   esc(shortLabel) + '</text>');
             return '<g>' +
-                '<rect x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="5" fill="' + col + '"><title>' + esc(fullLabel) + ': ' + (it.display || it.value) + '</title></rect>' +
-                '<text x="' + lx + '" y="' + (y - 6) + '" text-anchor="middle" font-size="11" fill="#475569">' + esc(it.display != null ? it.display : it.value) + '</text>' +
+                '<rect x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="5" fill="' + col + '">' +
+                '<title>' + esc(fullLabel) + ': ' + esc(valueText) + '</title></rect>' +
+                '<text x="' + lx + '" y="' + valueY + '" text-anchor="middle" font-size="12" font-weight="700" fill="#1e293b">' +
+                esc(valueText) + '</text>' +
                 labelText +
                 '</g>';
         }).join('');
-        return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="max-height:' + (h + 20) + 'px;">' +
-            '<line x1="' + padX + '" y1="' + (padTop + plotH) + '" x2="' + (w - padX) + '" y2="' + (padTop + plotH) + '" stroke="#cbd5e1"/>' +
-            bars + '</svg>';
+
+        return '<div style="width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;">' +
+            '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="min-width:' + Math.min(w, 640) + 'px;max-height:' + (h + 12) + 'px;display:block;">' +
+            '<line x1="' + padX + '" y1="' + axisY + '" x2="' + (w - padX) + '" y2="' + axisY + '" stroke="#94a3b8" stroke-width="1.5"/>' +
+            bars + '</svg></div>';
     };
 
     function emsHorizontalBarChartSVG(items, opts) {

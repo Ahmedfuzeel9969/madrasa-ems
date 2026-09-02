@@ -3684,18 +3684,28 @@
       });
   };
 
+  function exmAnaChartOpts(itemCount) {
+      itemCount = itemCount || 0;
+      return {
+          clearLabels: true,
+          rotateLabels: itemCount > 3,
+          labelMaxChars: itemCount > 8 ? 10 : 14,
+          plotHeight: 180
+      };
+  }
+
   function exmAnaChartItemsForView(ctx, view, filterClass, studentId) {
       view = view || 'books';
       var list = ctx.list || [];
       var bookMax = ctx.bookMax || {};
-      var bookTeacher = ctx.bookTeacher || {};
 
       if (view === 'teachers') {
+          var tItems = ctx.teacherItems || [];
           return {
               title: 'استاد وار اوسط کارکردگی',
-              items: ctx.teacherItems || [],
+              items: tItems,
               empty: 'استاد وار تجزیے کے لیے ماسٹر شیٹ میں ہر کتاب کے ساتھ "مضمون کا استاد" منتخب کریں۔',
-              chartOpts: { horizontal: true, labelMaxChars: 24 }
+              chartOpts: exmAnaChartOpts(tItems.length)
           };
       }
 
@@ -3704,7 +3714,7 @@
               return String(r.studentId == null ? '' : r.studentId) === String(studentId || '');
           });
           if (!row) {
-              return { title: 'طالب علم — کتاب بہ کتاب', items: [], empty: 'طالب علم منتخب کریں۔', chartOpts: { rotateLabels: true } };
+              return { title: 'طالب علم — کتاب بہ کتاب', items: [], empty: 'طالب علم منتخب کریں۔', chartOpts: exmAnaChartOpts(0) };
           }
           var sItems = Object.keys(row.marks || {}).map(function (b) {
               if (exmIsAbsentMark(row.marks[b])) {
@@ -3718,7 +3728,7 @@
               title: 'طالب علم: ' + (row.studentName || row.studentId || '') + ' — کتاب بہ کتاب',
               items: sItems,
               empty: 'اس طالب علم کے مضامین کے نمبرات نہیں ملے۔',
-              chartOpts: { rotateLabels: sItems.length > 5, horizontal: sItems.length > 8, labelMaxChars: 22 }
+              chartOpts: exmAnaChartOpts(sItems.length)
           };
       }
 
@@ -3748,11 +3758,7 @@
           title: title,
           items: bookItems,
           empty: 'منتخب فلٹر پر کوئی مضمون ڈیٹا نہیں۔',
-          chartOpts: {
-              rotateLabels: bookItems.length > 5,
-              horizontal: bookItems.length > 10,
-              labelMaxChars: 22
-          }
+          chartOpts: exmAnaChartOpts(bookItems.length)
       };
   }
 
@@ -4016,7 +4022,9 @@
 
       var donutGrade = (typeof window.emsDonutSVG === 'function') ? window.emsDonutSVG(gradeSegs, list.length, 'کل طلبہ') : '';
       var donutPass = (typeof window.emsDonutSVG === 'function') ? window.emsDonutSVG(passSegs, Math.round((pass / list.length) * 100) + '%', 'کامیابی') : '';
-      var barClass = (typeof window.emsBarChartSVG === 'function') ? window.emsBarChartSVG(classItems) : '';
+      var barClass = (typeof window.emsBarChartSVG === 'function')
+          ? window.emsBarChartSVG(classItems, exmAnaChartOpts(classItems.length))
+          : '';
       var lineYear = (yearItems.length > 1 && typeof window.emsLineChartSVG === 'function') ? window.emsLineChartSVG(yearItems, '#7c3aed')
           : '<p style="color:#94a3b8;">سال بہ سال موازنے کے لیے کم از کم دو مختلف سالوں کا ریکارڈ درکار ہے۔</p>';
 
