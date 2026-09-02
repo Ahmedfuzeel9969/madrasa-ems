@@ -245,9 +245,16 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
   border: 1px solid #cbd5e1;
   border-radius: 8px;
   background: #f8fafc;
+  touch-action: manipulation;
 }
 .mrk-nav-hint { font-size: 13px; font-weight: 700; color: #334155; margin-left: 4px; }
-.mrk-nav-btn { min-width: 88px; }
+.mrk-nav-btn {
+  min-width: 88px;
+  min-height: 44px;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
 .mark-val-input.is-mrk-focus {
   outline: 2px solid #159a80;
   outline-offset: 1px;

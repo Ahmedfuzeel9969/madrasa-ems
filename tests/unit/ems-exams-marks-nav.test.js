@@ -15,7 +15,16 @@ describe('Exams marks grid directional navigation', function () {
         expect(src).toContain("data-mrk-nav");
         expect(src).toContain('_exmLastMarkFocus');
         expect(src).toContain('exmWaitForMarkInput');
-        expect(src).toContain("addEventListener('mousedown'");
+        expect(src).toContain('exmBindMarkNavPad');
+        expect(src).toContain("pointerType === 'mouse'");
+        expect(src).toContain("addEventListener('pointerup'");
+        expect(src).toContain('exmScrollMarkRowIntoViewSync');
+    });
+
+    it('virtual table can paint sync for mobile focus', function () {
+        var src = fs.readFileSync(path.join(ROOT, 'ems-virtual-table.js'), 'utf8');
+        expect(src).toContain('paintNow');
+        expect(src).toContain('opts.sync');
     });
 
     it('HTML has four navigation buttons for marks entry', function () {

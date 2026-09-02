@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260902_exams_saved_dates_nav_v1';
+    var CACHE_BUST = '20260902_exams_nav_touch_v2';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 

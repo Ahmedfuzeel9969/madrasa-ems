@@ -2716,10 +2716,32 @@
       });
   }
 
-  function exmScrollMarkRowIntoView(rowIdx, colIdx) {
-      var scrollEl = document.querySelector('#mrk-entry-tbody') &&
+  function exmSnapshotMarkFocusFromDom() {
+      var active = document.activeElement;
+      if (active && active.classList && active.classList.contains('mark-val-input')) {
+          var r = parseInt(active.getAttribute('data-row'), 10);
+          var c = parseInt(active.getAttribute('data-col'), 10);
+          if (!isFinite(r)) {
+              var tr = active.closest('tr');
+              r = tr ? parseInt(tr.getAttribute('data-index'), 10) : _exmLastMarkFocus.row;
+          }
+          if (!isFinite(c)) c = _exmLastMarkFocus.col;
+          exmRememberMarkFocus(r, c);
+          return;
+      }
+      var marked = document.querySelector('#mrk-entry-tbody .mark-val-input.is-mrk-focus');
+      if (marked) {
+          exmRememberMarkFocus(
+              parseInt(marked.getAttribute('data-row'), 10),
+              parseInt(marked.getAttribute('data-col'), 10)
+          );
+      }
+  }
+
+  function exmScrollMarkRowIntoViewSync(rowIdx) {
+      var scrollEl = document.getElementById('mrk-entry-tbody') &&
           document.getElementById('mrk-entry-tbody').closest('.table-responsive');
-      if (!scrollEl) return Promise.resolve();
+      if (!scrollEl) return;
       var rowHeight = 52;
       var top = rowIdx * rowHeight;
       var bottom = top + rowHeight;
@@ -2727,10 +2749,10 @@
       var viewBot = viewTop + scrollEl.clientHeight;
       if (top < viewTop) scrollEl.scrollTop = top;
       else if (bottom > viewBot) scrollEl.scrollTop = Math.max(0, bottom - scrollEl.clientHeight);
+      /* sync paint — موبائل پر async کے بعد focus اکثر بلاک ہو جاتا ہے */
       if (typeof window.emsVirtualTableRefresh === 'function') {
-          window.emsVirtualTableRefresh('mrk-entry');
+          window.emsVirtualTableRefresh('mrk-entry', { sync: true });
       }
-      return exmWaitForMarkInput(rowIdx, colIdx, 12).then(function () { return true; });
   }
 
   function exmFocusMarkCell(rowIdx, colIdx) {
@@ -2741,35 +2763,30 @@
       });
       el.classList.add('is-mrk-focus');
       exmRememberMarkFocus(rowIdx, colIdx);
-      el.focus();
-      try { el.select(); } catch (eSel) { /* ignore */ }
+      try {
+          if (typeof el.focus === 'function') el.focus({ preventScroll: true });
+          else el.focus();
+      } catch (eFocus) {
+          try { el.focus(); } catch (e2) { /* ignore */ }
+      }
+      try {
+          if (typeof el.select === 'function' && el.type !== 'number') el.select();
+      } catch (eSel) { /* ignore */ }
       return true;
   }
 
   window.exmMoveMarkFocus = function (dir) {
-      var active = document.activeElement;
-      if (!active || !active.classList || !active.classList.contains('mark-val-input')) {
-          active = document.querySelector('#mrk-entry-tbody .mark-val-input.is-mrk-focus:not([disabled])');
-      }
-      var row;
-      var col;
-      if (active && active.classList && active.classList.contains('mark-val-input')) {
-          row = parseInt(active.getAttribute('data-row'), 10);
-          col = parseInt(active.getAttribute('data-col'), 10);
-          if (!isFinite(row)) {
-              var tr = active.closest('tr');
-              row = tr ? parseInt(tr.getAttribute('data-index'), 10) : _exmLastMarkFocus.row;
-          }
-          if (!isFinite(col)) col = _exmLastMarkFocus.col;
-      } else {
-          row = _exmLastMarkFocus.row;
-          col = _exmLastMarkFocus.col;
-      }
+      exmSnapshotMarkFocusFromDom();
+      var row = _exmLastMarkFocus.row;
+      var col = _exmLastMarkFocus.col;
       if (!isFinite(row)) row = 0;
       if (!isFinite(col)) col = 0;
-      exmRememberMarkFocus(row, col);
 
       var editable = exmEditableMarkCols();
+      if (!editable.length) {
+          /* تمام کالم بند ہوں تو بھی عمودی حرکت ممکن رکھیں */
+          (currentClassTemplateBooks || []).forEach(function (_b, idx) { editable.push(idx); });
+      }
       if (!editable.length) return false;
       var colPos = editable.indexOf(col);
       if (colPos < 0) colPos = 0;
@@ -2799,16 +2816,14 @@
       }
 
       if (nextRow === row && nextCol === col) return false;
-      if (active && typeof active.blur === 'function') {
-          try { active.blur(); } catch (eBlur) { /* ignore */ }
-      }
-      return exmScrollMarkRowIntoView(nextRow, nextCol).then(function () {
-          if (!exmFocusMarkCell(nextRow, nextCol)) {
-              return exmWaitForMarkInput(nextRow, nextCol, 12).then(function () {
-                  return exmFocusMarkCell(nextRow, nextCol);
-              });
-          }
-          return true;
+
+      exmScrollMarkRowIntoViewSync(nextRow);
+      if (exmFocusMarkCell(nextRow, nextCol)) return true;
+
+      /* fallback: قطار ابھی DOM میں نہیں — تھوڑی تاخیر سے دوبارہ */
+      return exmWaitForMarkInput(nextRow, nextCol, 12).then(function () {
+          exmScrollMarkRowIntoViewSync(nextRow);
+          return exmFocusMarkCell(nextRow, nextCol);
       });
   };
 
@@ -2839,19 +2854,53 @@
       });
   }
 
-  document.getElementById('mrk-nav-pad')?.addEventListener('mousedown', function (e) {
-      var btn = e.target && e.target.closest ? e.target.closest('[data-mrk-nav]') : null;
-      if (!btn) return;
-      /* بٹن فوکس نہ چھینے تاکہ موجودہ خانہ یاد رہے */
-      e.preventDefault();
-  });
+  (function exmBindMarkNavPad() {
+      var pad = document.getElementById('mrk-nav-pad');
+      if (!pad || pad._exmNavPadBound) return;
+      pad._exmNavPadBound = true;
+      var lastNavAt = 0;
 
-  document.getElementById('mrk-nav-pad')?.addEventListener('click', function (e) {
-      var btn = e.target && e.target.closest ? e.target.closest('[data-mrk-nav]') : null;
-      if (!btn) return;
-      e.preventDefault();
-      window.exmMoveMarkFocus(btn.getAttribute('data-mrk-nav'));
-  });
+      function activate(dir, e) {
+          if (!dir) return;
+          var now = Date.now();
+          if (now - lastNavAt < 320) return; /* touch + click دہرے نہ چلیں */
+          lastNavAt = now;
+          if (e) {
+              e.preventDefault();
+              e.stopPropagation();
+          }
+          window.exmMoveMarkFocus(dir);
+      }
+
+      function btnFromEvent(e) {
+          return e.target && e.target.closest ? e.target.closest('[data-mrk-nav]') : null;
+      }
+
+      /* فوکس یاد رکھیں — بٹن چھیننے سے پہلے (ماؤس/ٹچ دونوں) */
+      pad.addEventListener('pointerdown', function (e) {
+          var btn = btnFromEvent(e);
+          if (!btn) return;
+          exmSnapshotMarkFocusFromDom();
+          /* صرف ماؤس: فوکس بچانے کے لیے preventDefault — ٹچ پر نہیں (ورنہ click مر جاتا ہے) */
+          if (e.pointerType === 'mouse') {
+              e.preventDefault();
+          }
+      }, { passive: false });
+
+      pad.addEventListener('click', function (e) {
+          var btn = btnFromEvent(e);
+          if (!btn) return;
+          activate(btn.getAttribute('data-mrk-nav'), e);
+      });
+
+      /* کچھ موبائل براؤزر click نہیں دیتے — pointerup سے چلائیں */
+      pad.addEventListener('pointerup', function (e) {
+          if (e.pointerType === 'mouse') return;
+          var btn = btnFromEvent(e);
+          if (!btn) return;
+          activate(btn.getAttribute('data-mrk-nav'), e);
+      });
+  })();
 
   document.getElementById('btn-find-replace')?.addEventListener('click', () => {
 

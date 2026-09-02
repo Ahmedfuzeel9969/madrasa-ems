@@ -109,6 +109,13 @@
             if (state.raf) global.cancelAnimationFrame(state.raf);
             delete instances[id];
         };
+        state.paintNow = function () {
+            if (state.raf) {
+                global.cancelAnimationFrame(state.raf);
+                state.raf = null;
+            }
+            paint();
+        };
         state.refresh = schedule;
 
         instances[id] = state;
@@ -116,9 +123,16 @@
         return state;
     };
 
-    global.emsVirtualTableRefresh = function (id) {
+    /** @param {string} id @param {{ sync?: boolean }|boolean} [opts] sync=true → same-tick paint (mobile focus) */
+    global.emsVirtualTableRefresh = function (id, opts) {
         var inst = instances[id];
-        if (inst && typeof inst.refresh === 'function') inst.refresh();
+        if (!inst) return;
+        var sync = opts === true || (opts && opts.sync);
+        if (sync && typeof inst.paintNow === 'function') {
+            inst.paintNow();
+            return;
+        }
+        if (typeof inst.refresh === 'function') inst.refresh();
     };
 
     global.emsVirtualTableDestroy = function (id) {
