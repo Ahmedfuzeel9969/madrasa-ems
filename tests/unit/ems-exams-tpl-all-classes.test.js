@@ -39,6 +39,10 @@ describe('Exams master sheet all-classes option', function () {
         expect(src).toContain('window.exmMoveTplBook');
         expect(src).toContain('window.exmEditTplBook');
         expect(src).toContain('exmTplBookActionButtons');
+        expect(src).toContain("layout: 'matrix'");
+        expect(src).toContain('filterClass');
+        expect(src).toContain("mode === 'one'");
+        expect(src).toContain('exmShowScheduleClassMatrix');
         expect(src).toContain('emsCloudPushNow');
         expect(src).toContain('شیٹ کلاؤڈ پر محفوظ');
     });

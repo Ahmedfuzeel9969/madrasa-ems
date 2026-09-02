@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260902_exams_master_sheet_edit_v1';
+    var CACHE_BUST = '20260902_exams_matrix_per_book_v1';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;

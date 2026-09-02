@@ -1123,12 +1123,23 @@
       classTpl.books = ordered;
   }
 
-  function exmTplBookActionButtons(cls, bookId) {
+  function exmTplBookActionButtons(cls, bookId, opts) {
+      opts = opts || {};
       var safeCls = exmTplEscapeAttr(cls);
       var safeId = exmTplEscapeAttr(bookId);
+      var moveBtns = opts.layout === 'matrix'
+          ? (
+              '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="دائیں (پچھلا ورق)" ' +
+              'onclick="event.stopPropagation();window.exmMoveTplBook(\'' + safeCls + '\',\'' + safeId + '\',-1)">→</button>' +
+              '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="بائیں (اگلا ورق)" ' +
+              'onclick="event.stopPropagation();window.exmMoveTplBook(\'' + safeCls + '\',\'' + safeId + '\',1)">←</button>'
+            )
+          : (
+              '<button type="button" class="icon-btn" title="اوپر" onclick="window.exmMoveTplBook(\'' + safeCls + '\',\'' + safeId + '\',-1)"><i class="fas fa-arrow-up"></i></button>' +
+              '<button type="button" class="icon-btn" title="نیچے" onclick="window.exmMoveTplBook(\'' + safeCls + '\',\'' + safeId + '\',1)"><i class="fas fa-arrow-down"></i></button>'
+            );
       return '<span class="tpl-book-actions" style="display:inline-flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:center;">' +
-          '<button type="button" class="icon-btn" title="اوپر" onclick="window.exmMoveTplBook(\'' + safeCls + '\',\'' + safeId + '\',-1)"><i class="fas fa-arrow-up"></i></button>' +
-          '<button type="button" class="icon-btn" title="نیچے" onclick="window.exmMoveTplBook(\'' + safeCls + '\',\'' + safeId + '\',1)"><i class="fas fa-arrow-down"></i></button>' +
+          moveBtns +
           '<button type="button" class="icon-btn edit" title="ترمیم" onclick="window.exmEditTplBook(\'' + safeCls + '\',\'' + safeId + '\')"><i class="fas fa-edit"></i></button>' +
           '<button type="button" class="icon-btn delete" title="صرف اس ماسٹر شیٹ سے ہٹائیں" onclick="deleteTplBook(\'' + safeCls + '\',\'' + safeId + '\')"><i class="fas fa-trash"></i></button>' +
           '</span>';
@@ -1582,13 +1593,11 @@
   function exmSetTplTableMode(mode) {
       var detail = document.getElementById('tpl-detail-table-wrap');
       var matrix = document.getElementById('tpl-all-matrix-wrap');
-      if (detail) detail.style.display = mode === 'all' ? 'none' : '';
-      if (matrix) matrix.style.display = mode === 'all' ? 'block' : 'none';
-      if (mode !== 'all') {
-          var headRow = document.querySelector('#tpl-books-table thead tr');
-          if (headRow) headRow.innerHTML = EXM_TPL_DETAIL_HEADERS;
-      }
-      exmApplyTplExtraSettingsUi(mode === 'all');
+      /* انفرادی اور تمام درجات دونوں نقشہ (matrix) میں دکھائیں */
+      var showMatrix = mode === 'all' || mode === 'matrix' || mode === 'one';
+      if (detail) detail.style.display = 'none';
+      if (matrix) matrix.style.display = showMatrix ? 'block' : 'none';
+      exmApplyTplExtraSettingsUi(showMatrix);
   }
 
   function exmTplExtraSettingsIsOpen() {
@@ -1606,12 +1615,12 @@
       btn.setAttribute('aria-pressed', open ? 'true' : 'false');
   }
 
-  function exmApplyTplExtraSettingsUi(isAllMode) {
+  function exmApplyTplExtraSettingsUi(isMatrixMode) {
       var root = document.getElementById('exam-win-template');
       var toggleWrap = document.getElementById('tpl-settings-toggle-wrap');
       if (!root) return;
-      if (toggleWrap) toggleWrap.style.display = isAllMode ? '' : 'none';
-      if (!isAllMode) {
+      if (toggleWrap) toggleWrap.style.display = isMatrixMode ? '' : 'none';
+      if (!isMatrixMode) {
           root.classList.add('tpl-extra-open');
           exmUpdateTplExtraSettingsButton();
           return;
@@ -1626,7 +1635,7 @@
   window.exmToggleTplExtraSettings = function () {
       var root = document.getElementById('exam-win-template');
       var sel = document.getElementById('tpl-class-select');
-      if (!root || !sel || sel.value !== EXM_TPL_ALL_CLASSES) return;
+      if (!root || !sel || !sel.value) return;
       var open = root.classList.toggle('tpl-extra-open');
       try { sessionStorage.setItem('ems_tpl_extra_open', open ? '1' : '0'); } catch (eSet) { /* ignore */ }
       exmUpdateTplExtraSettingsButton();
@@ -1907,6 +1916,7 @@
       opts = opts || {};
       var prefix = opts.prefix || 'tpl';
       var editMode = opts.editMode !== false;
+      var filterClass = opts.filterClass ? String(opts.filterClass).trim() : '';
       var table = document.getElementById(prefix + '-matrix-table');
       var heading = document.getElementById(prefix + '-matrix-heading');
       var brand = document.getElementById(prefix + '-matrix-brand');
@@ -1921,10 +1931,19 @@
       var byClass = Object.create(null);
       (templates || []).forEach(function (tpl) {
           if (!tpl || !tpl.class) return;
+          if (filterClass && !exmClassEquals(tpl.class, filterClass)) return;
           byClass[tpl.class] = exmSortTplBooksForMatrix(tpl.books || []);
       });
 
       var classOrder = exmOrderedMatrixClasses(templates, byClass);
+      if (filterClass) {
+          classOrder = classOrder.filter(function (c) { return exmClassEquals(c, filterClass); });
+          if (!classOrder.length && byClass[filterClass]) classOrder = [filterClass];
+          else if (!classOrder.length) {
+              var matchedKey = Object.keys(byClass).find(function (c) { return exmClassEquals(c, filterClass); });
+              if (matchedKey) classOrder = [matchedKey];
+          }
+      }
 
       var maxCols = 0;
       classOrder.forEach(function (c) {
@@ -1940,6 +1959,11 @@
           timeEl.value = exmInferMatrixTime(byClass) || '8:15 — 11:30';
       }
       var title = titleEl ? String(titleEl.value || '').trim() : exmDefaultMatrixTitle();
+      if (filterClass && prefix === 'tpl') {
+          var oneTpl = (templates || []).find(function (t) { return t && exmClassEquals(t.class, filterClass); });
+          if (oneTpl && oneTpl.sheetName) title = String(oneTpl.sheetName).trim() || title;
+          else if (!titleEl || !String(titleEl.value || '').trim()) title = filterClass;
+      }
       var timeText = timeEl
           ? String(timeEl.value || '').trim()
           : (exmInferMatrixTime(byClass) || '8:15 — 11:30');
@@ -1955,11 +1979,14 @@
       }
 
       if (!classOrder.length || maxCols < 1) {
-          table.innerHTML = '<tbody><tr><td style="text-align:center;padding:20px;">تمام درجات کی شیٹ میں کوئی کتاب نہیں</td></tr></tbody>';
+          table.innerHTML = '<tbody><tr><td style="text-align:center;padding:20px;">' +
+              (filterClass ? 'اس درجے کی شیٹ میں کوئی کتاب نہیں' : 'تمام درجات کی شیٹ میں کوئی کتاب نہیں') +
+              '</td></tr></tbody>';
           if (prefix === 'tpl') exmSyncScheduleMatrixMirror(templates);
           return;
       }
 
+      var showClassOrderCtrl = editMode && !filterClass;
       var headCells = '<th class="tpl-matrix-class">الصفوف الدراسية<br><small>درجات / ترتیب</small></th>';
       for (var i = 0; i < maxCols; i++) {
           var colDate = exmInferPaperColumnDate(byClass, i);
@@ -1986,9 +2013,9 @@
               '</div>' +
               (editMode
                   ? ('<div class="tpl-matrix-ctrl" style="margin-top:6px;display:flex;gap:4px;justify-content:center;">' +
-                     '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="دائیں (پچھلا ورق)" ' +
+                     '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="دائیں (پچھلا ورق) — تمام درجات" ' +
                      'onclick="event.stopPropagation();exmMoveMatrixPaperCol(' + i + ', -1)">→</button>' +
-                     '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="بائیں (اگلا ورق)" ' +
+                     '<button type="button" class="btn btn-outline btn-sm" style="padding:2px 6px;" title="بائیں (اگلا ورق) — تمام درجات" ' +
                      'onclick="event.stopPropagation();exmMoveMatrixPaperCol(' + i + ', 1)">←</button>' +
                      '</div>')
                   : '') +
@@ -2003,7 +2030,7 @@
           bodyHtml +=
               '<tr><td class="tpl-matrix-class">' +
               '<div>' + exmTplEscapeHtml(className) + '</div>' +
-              (editMode
+              (showClassOrderCtrl
                   ? ('<div class="tpl-matrix-ctrl" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;align-items:center;justify-content:center;">' +
                      '<small style="color:#64748b;">ترتیب</small>' +
                      '<input type="number" min="1" max="' + classOrder.length + '" value="' + pos + '" ' +
@@ -2034,7 +2061,7 @@
                          "onchange=\"exmSetTplBookDate('" + safeCls + "', '" + safeId + "', this.value)\">" +
                          '</div>' +
                          '<div class="tpl-matrix-ctrl" style="margin-top:4px;">' +
-                         exmTplBookActionButtons(className, book.id) +
+                         exmTplBookActionButtons(className, book.id, { layout: 'matrix' }) +
                          '</div>')
                       : (dateVal
                           ? '<div class="tpl-paper-date-print" style="margin-top:4px;font-size:12px;">' + exmMatrixDateLabel(dateVal) + '</div>'
@@ -2072,64 +2099,66 @@
       showToast('تمام درجات کا نقشہ تیار ہے!', 'success');
   }
 
+  function exmShowScheduleClassMatrix(cls) {
+      if (typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
+          try { window.exmSyncTimetableBooksToMasterSheet({ silent: true }); } catch (eSyncSch) { /* ignore */ }
+      }
+      var templates = exmReadJson('ems_exam_templates', []);
+      var toolbar = document.getElementById('sch-format-toolbar');
+      var flat = document.getElementById('sch-printable-area');
+      var matrix = document.getElementById('sch-matrix-wrap');
+      if (toolbar) toolbar.style.display = 'none';
+      if (flat) flat.style.display = 'none';
+      if (matrix) matrix.style.display = 'block';
+      exmRenderAllClassesMatrix(templates, { prefix: 'sch', editMode: false, filterClass: cls });
+      var classTpl = (templates || []).find(function (t) { return t && exmClassEquals(t.class, cls); });
+      var hasBooks = !!(classTpl && (classTpl.books || []).length);
+      if (!hasBooks) return showToast('اس درجے کی ماسٹر شیٹ میں کوئی کتاب نہیں ملی!', 'error');
+      showToast('درجہ کا امتحانی نقشہ تیار ہے!', 'success');
+  }
+
   window.renderTemplateTable = function(cls) {
-
-      const tbody = document.querySelector('#tpl-books-table tbody');
-
-      if(!tbody && cls !== EXM_TPL_ALL_CLASSES) return;
-
       if (typeof window.exmSyncTimetableBooksToMasterSheet === 'function') {
           try { window.exmSyncTimetableBooksToMasterSheet({ silent: true }); } catch (eSync2) { /* ignore */ }
       }
 
       let templates = exmReadJson('ems_exam_templates', []);
 
-      var examName = (document.getElementById('sch-exam-name') || {}).value || 'سالانہ امتحان';
-
-      if (cls === EXM_TPL_ALL_CLASSES) {
-          exmSetTplTableMode('all');
-          exmApplyMasterSheetMetaToUi(exmReadMasterSheetMeta());
-          exmRenderAllClassesMatrix(templates);
-          exmFillTplSheetNameField(EXM_TPL_ALL_CLASSES);
+      if (!cls) {
+          exmSetTplTableMode('none');
+          exmFillTplSheetNameField('');
+          var emptyTable = document.getElementById('tpl-matrix-table');
+          if (emptyTable) {
+              emptyTable.innerHTML = '<tbody><tr><td style="text-align:center;padding:20px;">اوپر درجہ منتخب کریں</td></tr></tbody>';
+          }
           return;
       }
 
-      exmSetTplTableMode('detail');
-      if (!tbody) return;
-      tbody.innerHTML = '';
+      /* انفرادی شیٹ بھی وہی نقشہ (matrix) — تمام درجات جیسا */
+      exmSetTplTableMode(cls === EXM_TPL_ALL_CLASSES ? 'all' : 'one');
+      exmApplyMasterSheetMetaToUi(exmReadMasterSheetMeta());
       exmFillTplSheetNameField(cls);
-
-      let classTpl = templates.find(t => t.class === cls);
-
-      if(!classTpl || classTpl.books.length === 0) { tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;">اس درجے کی شیٹ میں کوئی کتاب نہیں</td></tr>'; return; }
-
-      var orderedBooks = exmSortTplBooksForMatrix(classTpl.books);
-      orderedBooks.forEach(function (book) {
-
-          var scopeTxt = window.examFormatCurScope(window.examGetCurScopeForBook(book.name, examName)) || book.curScope || '—';
-
-          var sheetLabel = exmTplDisplayName(classTpl);
-
-          tbody.innerHTML += `<tr><td><strong>${exmTplEscapeHtml(sheetLabel)}</strong>${classTpl.sheetName ? '<div style="font-size:11px;color:#64748b;">' + exmTplEscapeHtml(classTpl.class) + '</div>' : ''}</td><td>${exmTplEscapeHtml(book.name)}</td><td style="font-size:12px;color:#5b21b6;">${exmTplEscapeHtml(scopeTxt)}</td><td>${book.marks}</td><td>${book.date || '-'}</td><td>${exmTplEscapeHtml(book.time || '-')}</td><td>${exmTplEscapeHtml(book.room || '-')}</td><td>${exmTplEscapeHtml(book.invigilator || '-')}</td><td>${exmTplEscapeHtml(book.teacher || '-')}</td><td>${exmTplEscapeHtml(book.paperType || 'تحریری')}</td>
-
-                              <td>${exmTplBookActionButtons(classTpl.class, book.id)}</td></tr>`;
-
+      exmRenderAllClassesMatrix(templates, {
+          prefix: 'tpl',
+          editMode: true,
+          filterClass: cls === EXM_TPL_ALL_CLASSES ? '' : cls
       });
-
   };
 
 
 
   document.getElementById('tpl-matrix-title')?.addEventListener('change', function () {
-      if ((document.getElementById('tpl-class-select') || {}).value === EXM_TPL_ALL_CLASSES) {
+      var sel = (document.getElementById('tpl-class-select') || {}).value;
+      if (sel) {
           exmPersistMatrixMetaFromUi();
-          renderTemplateTable(EXM_TPL_ALL_CLASSES);
+          renderTemplateTable(sel);
       }
   });
   document.getElementById('tpl-matrix-time')?.addEventListener('change', function () {
-      if ((document.getElementById('tpl-class-select') || {}).value === EXM_TPL_ALL_CLASSES) {
+      var sel = (document.getElementById('tpl-class-select') || {}).value;
+      if (sel) {
           exmPersistMatrixMetaFromUi();
-          renderTemplateTable(EXM_TPL_ALL_CLASSES);
+          renderTemplateTable(sel);
       }
   });
 
@@ -2300,55 +2329,7 @@
           return;
       }
 
-      let rows = window.examBuildScheduleRows(aggregate, cls, examName);
-      if(rows.length === 0) return showToast("ماسٹر شیٹ میں کوئی کتاب نہیں ملی!", "error");
-
-      let templates = exmReadJson('ems_exam_templates', []);
-      let classTpl = templates.find(t => t.class === cls) || { customHeader: '', fontSize: 16, textAlign: 'right', showBorder: true };
-
-      var schMatrix = document.getElementById('sch-matrix-wrap');
-      if (schMatrix) schMatrix.style.display = 'none';
-      document.getElementById('sch-format-toolbar').style.display = 'flex';
-      document.getElementById('sch-printable-area').style.display = 'block';
-
-      // مدرسہ برانڈنگ ہیڈر/فوٹر خودکار
-      var bh = document.getElementById('sch-brand-header');
-      if (bh && typeof window.attBrandHeaderHTML === 'function') bh.innerHTML = window.attBrandHeaderHTML();
-      var bf = document.getElementById('sch-brand-footer');
-      if (bf && typeof window.attSignFooterHTML === 'function') bf.innerHTML = window.attSignFooterHTML();
-
-      document.getElementById('sch-custom-header').value = classTpl.customHeader || '';
-      document.getElementById('sch-print-header').innerText = classTpl.customHeader || '';
-      document.getElementById('sch-border-toggle').checked = classTpl.showBorder !== false;
-
-      const table = document.getElementById('sch-print-table');
-      table.style.textAlign = classTpl.textAlign || 'right';
-      table.style.fontSize = (classTpl.fontSize || 16) + 'px';
-      table.style.fontFamily = classTpl.fontFamily || "'Noto Nastaliq Urdu', serif";
-      table.style.color = classTpl.textColor || '#1e293b';
-      table.border = classTpl.showBorder !== false ? "1" : "0";
-      var thead = document.getElementById('sch-print-thead');
-      if (thead) thead.style.background = classTpl.headColor || '#eef2f6';
-      if (document.getElementById('sch-font-family')) document.getElementById('sch-font-family').value = classTpl.fontFamily || "'Noto Nastaliq Urdu', serif";
-      if (document.getElementById('sch-head-color')) document.getElementById('sch-head-color').value = classTpl.headColor || '#eef2f6';
-      if (document.getElementById('sch-text-color')) document.getElementById('sch-text-color').value = classTpl.textColor || '#1e293b';
-
-      document.getElementById('sch-print-title').innerText = `${examName} - ${cls}`;
-
-      // ہیڈر کالم
-      if (thead) {
-          thead.innerHTML = '<tr><th>تاریخ</th><th>دن</th><th>وقت</th><th>کتاب / پرچہ</th><th>نصاب حصہ</th><th>استاد</th><th>کمرہ</th><th>نگران</th><th>نوعیت</th></tr>';
-      }
-
-      const tbody = document.getElementById('sch-print-tbody');
-      tbody.innerHTML = '';
-      rows.forEach(r => {
-          let dayName = "-";
-          if(r.date) { let d = new Date(r.date); dayName = SCH_DAYS_URDU[d.getDay()]; }
-          tbody.innerHTML += '<tr>' +
-              `<td>${r.date || 'طے نہیں'}</td><td>${dayName}</td><td>${r.time || '-'}</td><td><strong>${r.name}</strong></td><td style="font-size:12px;color:#5b21b6;">${r.curScope || '—'}</td><td>${r.teacher || '-'}</td><td>${r.room || '-'}</td><td>${r.invigilator || '-'}</td><td>${r.paperType || 'تحریری'}</td></tr>`;
-      });
-      showToast("نقشہ تیار ہے! آپ فارمیٹنگ و رنگ کے ٹولز استعمال کر سکتے ہیں۔", "success");
+      exmShowScheduleClassMatrix(cls);
 
   });
 
