@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260902_exams_marks_arrow_nav_v1';
+    var CACHE_BUST = '20260902_exams_teacher_chart_labels_v1';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;

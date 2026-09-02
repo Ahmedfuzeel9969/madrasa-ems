@@ -3475,8 +3475,11 @@
       var donutGrade = (typeof window.emsDonutSVG === 'function') ? window.emsDonutSVG(gradeSegs, list.length, 'کل طلبہ') : '';
       var donutPass = (typeof window.emsDonutSVG === 'function') ? window.emsDonutSVG(passSegs, Math.round((pass / list.length) * 100) + '%', 'کامیابی') : '';
       var barClass = (typeof window.emsBarChartSVG === 'function') ? window.emsBarChartSVG(classItems) : '';
-      var barBook = (typeof window.emsBarChartSVG === 'function') ? window.emsBarChartSVG(bookItems) : '';
-      var barTeacher = (teacherItems.length && typeof window.emsBarChartSVG === 'function') ? window.emsBarChartSVG(teacherItems)
+      var barBook = (typeof window.emsBarChartSVG === 'function')
+          ? window.emsBarChartSVG(bookItems, { rotateLabels: bookItems.length > 5 })
+          : '';
+      var barTeacher = (teacherItems.length && typeof window.emsBarChartSVG === 'function')
+          ? window.emsBarChartSVG(teacherItems, { horizontal: true, labelMaxChars: 24 })
           : '<p style="color:#94a3b8;">استاد وار تجزیے کے لیے ماسٹر شیٹ میں ہر کتاب کے ساتھ "مضمون کا استاد" منتخب کریں۔</p>';
       var lineYear = (yearItems.length > 1 && typeof window.emsLineChartSVG === 'function') ? window.emsLineChartSVG(yearItems, '#7c3aed')
           : '<p style="color:#94a3b8;">سال بہ سال موازنے کے لیے کم از کم دو مختلف سالوں کا ریکارڈ درکار ہے۔</p>';

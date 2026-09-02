@@ -310,12 +310,28 @@
     }
 
     // ---------------- SVG چارٹ helpers ----------------
-    // عمودی بار چارٹ
+    // عمودی بار چارٹ — لمبے لیبلز پر گھماؤ / افقی موڈ دستیاب
     global.emsBarChartSVG = function (items, opts) {
         opts = opts || {};
         items = asArray(items);
-        var w = 560, h = 220, padX = 36, padTop = 24, padBottom = 40;
+        if (!items.length) {
+            return '<p style="color:#94a3b8;font-size:13px;">کوئی ڈیٹا نہیں</p>';
+        }
+        if (opts.horizontal || opts.layout === 'horizontal') {
+            return emsHorizontalBarChartSVG(items, opts);
+        }
+
+        var maxLabelLen = 0;
+        items.forEach(function (it) {
+            maxLabelLen = Math.max(maxLabelLen, String(it.label || '').length);
+        });
         var n = items.length || 1;
+        var rotate = !!opts.rotateLabels || maxLabelLen > 10 || (n >= 6 && maxLabelLen > 6);
+        var labelMax = opts.labelMaxChars != null ? opts.labelMaxChars : (rotate ? 14 : 18);
+
+        var w = 560, padX = 36, padTop = 24;
+        var padBottom = rotate ? Math.min(110, 48 + maxLabelLen * 3.2) : 40;
+        var h = 220 + (rotate ? Math.max(0, padBottom - 40) : 0);
         var max = Math.max(1, Math.max.apply(null, items.map(function (i) { return Math.abs(i.value); })));
         var plotW = w - padX * 2, plotH = h - padTop - padBottom;
         var step = plotW / n, bw = Math.min(46, step * 0.55);
@@ -324,16 +340,54 @@
             var x = padX + step * i + (step - bw) / 2;
             var y = padTop + (plotH - bh);
             var col = it.color || palette(i);
+            var fullLabel = String(it.label || '');
+            var shortLabel = fullLabel.length > labelMax ? fullLabel.slice(0, labelMax - 1) + '…' : fullLabel;
+            var lx = x + bw / 2;
+            var ly = h - padBottom + (rotate ? 10 : 16);
+            var labelText = rotate
+                ? ('<text x="' + lx + '" y="' + ly + '" text-anchor="end" font-size="10" fill="#64748b" ' +
+                   'transform="rotate(-42 ' + lx + ' ' + ly + ')">' + esc(shortLabel) + '</text>')
+                : ('<text x="' + lx + '" y="' + ly + '" text-anchor="middle" font-size="11" fill="#64748b">' + esc(shortLabel) + '</text>');
             return '<g>' +
-                '<rect x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="5" fill="' + col + '"><title>' + esc(it.label) + ': ' + (it.display || it.value) + '</title></rect>' +
-                '<text x="' + (x + bw / 2) + '" y="' + (y - 6) + '" text-anchor="middle" font-size="11" fill="#475569">' + esc(it.display != null ? it.display : it.value) + '</text>' +
-                '<text x="' + (x + bw / 2) + '" y="' + (h - padBottom + 16) + '" text-anchor="middle" font-size="11" fill="#64748b">' + esc(it.label) + '</text>' +
+                '<rect x="' + x + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="5" fill="' + col + '"><title>' + esc(fullLabel) + ': ' + (it.display || it.value) + '</title></rect>' +
+                '<text x="' + lx + '" y="' + (y - 6) + '" text-anchor="middle" font-size="11" fill="#475569">' + esc(it.display != null ? it.display : it.value) + '</text>' +
+                labelText +
                 '</g>';
         }).join('');
-        return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="max-height:240px;">' +
+        return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="max-height:' + (h + 20) + 'px;">' +
             '<line x1="' + padX + '" y1="' + (padTop + plotH) + '" x2="' + (w - padX) + '" y2="' + (padTop + plotH) + '" stroke="#cbd5e1"/>' +
             bars + '</svg>';
     };
+
+    function emsHorizontalBarChartSVG(items, opts) {
+        opts = opts || {};
+        var n = items.length || 1;
+        var rowH = 34;
+        var padTop = 12, padBottom = 12, padLeft = 150, padRight = 56;
+        var w = 560;
+        var h = padTop + padBottom + n * rowH;
+        var max = Math.max(1, Math.max.apply(null, items.map(function (i) { return Math.abs(i.value); })));
+        var plotW = w - padLeft - padRight;
+        var labelMax = opts.labelMaxChars != null ? opts.labelMaxChars : 22;
+        var bars = items.map(function (it, i) {
+            var bw = Math.max(4, Math.round((Math.abs(it.value) / max) * plotW));
+            var y = padTop + i * rowH;
+            var barY = y + 6;
+            var col = it.color || palette(i);
+            var fullLabel = String(it.label || '');
+            var shortLabel = fullLabel.length > labelMax ? fullLabel.slice(0, labelMax - 1) + '…' : fullLabel;
+            return '<g>' +
+                '<text x="' + (padLeft - 10) + '" y="' + (barY + 14) + '" text-anchor="end" font-size="12" fill="#334155">' + esc(shortLabel) + '</text>' +
+                '<title>' + esc(fullLabel) + ': ' + (it.display || it.value) + '</title>' +
+                '<rect x="' + padLeft + '" y="' + barY + '" width="' + bw + '" height="18" rx="5" fill="' + col + '"/>' +
+                '<text x="' + (padLeft + bw + 8) + '" y="' + (barY + 14) + '" text-anchor="start" font-size="11" fill="#475569">' +
+                esc(it.display != null ? it.display : it.value) + '</text>' +
+                '</g>';
+        }).join('');
+        return '<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" style="max-height:' + Math.min(420, h + 8) + 'px;">' +
+            '<line x1="' + padLeft + '" y1="' + padTop + '" x2="' + padLeft + '" y2="' + (h - padBottom) + '" stroke="#e2e8f0"/>' +
+            bars + '</svg>';
+    }
 
     // دو رنگوں والا گروپڈ بار (آمدن بمقابلہ اخراجات)
     global.emsGroupedBarsSVG = function (groups) {
