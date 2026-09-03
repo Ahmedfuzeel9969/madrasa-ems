@@ -32,6 +32,8 @@ describe('Collective monthly read-only attendance view', () => {
         const html = read('index.html');
         expect(html).toContain('id="btn-att-col-mode-entry"');
         expect(html).toContain('id="btn-att-col-mode-view"');
+        expect(html).toContain('ماہانہ حاضری دیکھیں');
+        expect(html).not.toContain('ماہانہ صرف دیکھیں');
         expect(html).toContain('id="att-col-entry-mode"');
         expect(html).toContain('id="att-col-view-mode"');
         expect(html).toContain('id="att-col-view-month"');
@@ -216,6 +218,19 @@ describe('Collective monthly read-only attendance view', () => {
         expect(output).toContain('2 / 2');
         expect(output).toContain('ستمبر 2026');
         expect(output).toContain('دستخط');
+    });
+
+    it('renders holiday cells as full vertical تعطیل in Nastaleeq', () => {
+        const src = read('att-collective-view.js');
+        const css = read('style.css');
+        expect(src).toContain("holiday ? 'تعطیل' : '—'");
+        expect(src).not.toContain("holiday ? 'تع' : '—'");
+        expect(src).toContain('function holidayCellHtml');
+        expect(src).toContain('att-month-holiday-text');
+        expect(src).toContain('att-month-holiday-ch');
+        expect(css).toContain("font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif");
+        expect(css).toContain('.att-month-holiday-text');
+        expect(css).toContain('flex-direction: column');
     });
 
     it('offers A3 landscape print and multi-page jsPDF download', () => {

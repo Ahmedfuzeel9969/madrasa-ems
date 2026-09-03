@@ -1,5 +1,5 @@
 // ============================================================================
-// اجتماعی حاضری — ماہانہ صرف دیکھنے والا رجسٹر، پرنٹ اور PDF
+// اجتماعی حاضری — ماہانہ حاضری دیکھیں (صرف پڑھنے والا رجسٹر، پرنٹ اور PDF)
 // یہ ماڈیول صرف canonical attendance readers استعمال کرتا ہے؛ کوئی write API نہیں۔
 // ============================================================================
 (function (global) {
@@ -629,12 +629,22 @@
         raw: raw,
         kind: kind,
         holiday: holiday,
-        text: kind ? displayStatus(raw, kind, symbols) : (holiday ? 'تع' : '—')
+        text: kind ? displayStatus(raw, kind, symbols) : (holiday ? 'تعطیل' : '—')
       });
     }
     person.marks = marks;
     person.totals = totals;
     return person;
+  }
+
+  function holidayCellHtml(label) {
+    var word = 'تعطیل';
+    var title = label ? String(label) : word;
+    return '<span class="att-month-holiday-text" aria-label="' + escHtml(title) + '">'
+      + Array.from(word).map(function (ch) {
+        return '<span class="att-month-holiday-ch">' + escHtml(ch) + '</span>';
+      }).join('')
+      + '</span>';
   }
 
   function setLoadBusy(busy) {
@@ -691,7 +701,10 @@
         var cls = mark.kind ? cellClass(mark.kind) : (mark.holiday ? 'att-month-holiday' : '');
         var title = mark.kind === 'partial' ? 'جزوی حاضری'
           : (mark.kind === 'incomplete' ? 'نامکمل حاضری' : (mark.holiday || ''));
-        html += '<td class="' + cls + '"' + (title ? ' title="' + escHtml(title) + '"' : '') + '>' + escHtml(mark.text) + '</td>';
+        var cellInner = mark.holiday
+          ? holidayCellHtml(mark.holiday)
+          : escHtml(mark.text);
+        html += '<td class="' + cls + '"' + (title ? ' title="' + escHtml(title) + '"' : '') + '>' + cellInner + '</td>';
       });
       html += '<td class="att-month-p att-col-month-summary">' + person.totals.P + '</td>'
         + '<td class="att-month-a att-col-month-summary">' + person.totals.A + '</td>'
@@ -821,8 +834,8 @@
       + '@page{size:A3 landscape;margin:7mm;}'
       + '.att-col-month-export-page{box-sizing:border-box;width:100%;min-height:270mm;padding:3mm;background:#fff;color:#0f172a;direction:rtl;page-break-after:always;break-after:page;}'
       + '.att-col-month-export-page:last-child{page-break-after:auto;break-after:auto;}'
-      + '.att-col-month-export-page table{border-collapse:collapse;width:100%;table-layout:fixed;font-family:Arial,"Noto Nastaliq Urdu",sans-serif;font-size:7.5px;text-align:center;}'
-      + '.att-col-month-export-page th,.att-col-month-export-page td{border:1px solid #64748b;padding:2px 1px;height:18px;overflow:hidden;}'
+      + '.att-col-month-export-page table{border-collapse:collapse;width:100%;table-layout:fixed;font-family:"Jameel Noori Nastaleeq","Noto Nastaliq Urdu",serif;font-size:8px;text-align:center;}'
+      + '.att-col-month-export-page th,.att-col-month-export-page td{border:1px solid #64748b;padding:2px 1px;height:28px;vertical-align:middle;text-align:center;overflow:hidden;}'
       + '.att-col-month-export-page th{background:#1e293b!important;color:#fff!important;}'
       + '.att-col-month-export-page .att-col-month-name{width:40mm;text-align:right;padding-right:3px;}'
       + '.att-col-month-export-page .att-col-month-role{width:14mm;}.att-col-month-export-page .att-col-month-day{width:auto;}'
@@ -833,9 +846,11 @@
       + '.att-col-month-export-page .att-month-l{background:#fef3c7!important;color:#92400e!important;font-weight:900;}'
       + '.att-col-month-export-page .att-month-partial{background:#dbeafe!important;color:#1d4ed8!important;font-weight:800;}'
       + '.att-col-month-export-page .att-month-incomplete{background:#f1f5f9!important;color:#475569!important;}'
-      + '.att-col-month-export-page .att-month-holiday{background:#fff1f2!important;color:#be123c!important;}'
-      + '.att-col-month-export-title{text-align:center;margin:2px 0 5px;font-size:18px;}'
-      + '.att-col-month-export-meta{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;padding:4px 7px;border:1px solid #94a3b8;font:9px Arial,sans-serif;}'
+      + '.att-col-month-export-page .att-month-holiday{background:#fff1f2!important;color:#be123c!important;padding:1px 0;}'
+      + '.att-col-month-export-page .att-month-holiday-text{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;font-family:"Jameel Noori Nastaleeq","Noto Nastaliq Urdu",serif;font-size:7.5px;font-weight:700;line-height:1.05;}'
+      + '.att-col-month-export-page .att-month-holiday-ch{display:block;text-align:center;}'
+      + '.att-col-month-export-title{text-align:center;margin:2px 0 5px;font-size:18px;font-family:"Jameel Noori Nastaleeq","Noto Nastaliq Urdu",serif;}'
+      + '.att-col-month-export-meta{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;padding:4px 7px;border:1px solid #94a3b8;font:9px "Jameel Noori Nastaleeq","Noto Nastaliq Urdu",serif;}'
       + '.att-col-month-page-number{text-align:center;margin-top:4px;font:8px Arial,sans-serif;color:#64748b;}'
       + '*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;}'
       + '</style>';

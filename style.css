@@ -1605,12 +1605,15 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 .att-col-pager { text-align: center; padding: 8px; font-size: 13px; }
 .att-col-empty-period { color: #94a3b8; font-size: 12px; padding: 12px 4px; }
 
-/* اجتماعی حاضری — ماہانہ صرف دیکھنے والا موڈ */
+/* اجتماعی حاضری — ماہانہ حاضری دیکھیں */
+#att-col-view-mode {
+  font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif;
+}
 .att-col-mode-switch {
   display: inline-flex; gap: 6px; padding: 5px; margin: 0 0 14px;
   border: 1px solid #cbd5e1; border-radius: 9px; background: #f8fafc;
 }
-.att-col-mode-switch .btn { min-width: 155px; }
+.att-col-mode-switch .btn { min-width: 170px; }
 .att-col-view-note {
   margin-bottom: 12px; padding: 10px 13px; border: 1px solid #bfdbfe;
   border-radius: 8px; background: #eff6ff; color: #1e40af; font-size: 13px;
@@ -1659,31 +1662,49 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 .att-col-view-table-wrap {
   max-height: 62vh; overflow: auto; border: 2px solid #334155;
   border-radius: 9px; background: #fff;
+  font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif;
 }
-.att-col-month-table { min-width: 1680px; margin: 0; border: none; table-layout: fixed; font-size: 10px; text-align: center; }
-.att-col-month-table thead th { position: sticky; top: 0; z-index: 3; background: #1e293b; color: #fff; padding: 5px 3px; }
+.att-col-month-table {
+  min-width: 1680px; margin: 0; border: none; table-layout: fixed;
+  font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif;
+  font-size: 12px; text-align: center;
+}
+.att-col-month-table thead th { position: sticky; top: 0; z-index: 3; background: #1e293b; color: #fff; padding: 5px 3px; text-align: center; }
 .att-col-month-table .att-col-month-name { position: sticky; right: 0; z-index: 4; width: 190px; min-width: 190px; text-align: right; background: #f8fafc; box-shadow: -2px 0 5px rgba(15,23,42,.1); }
-.att-col-month-table thead .att-col-month-name { z-index: 6; background: #0f172a; color: #fff; }
-.att-col-month-table .att-col-month-role { width: 75px; min-width: 75px; }
-.att-col-month-table .att-col-month-day { width: 31px; min-width: 31px; padding: 4px 1px; font-weight: 800; }
-.att-col-month-table .att-col-month-day small { display: block; font-size: 8px; font-weight: 500; opacity: .78; }
-.att-col-month-table .att-col-month-summary { width: 38px; min-width: 38px; font-weight: 800; }
-.att-col-month-table td { padding: 4px 2px; height: 28px; border: 1px solid #cbd5e1; }
+.att-col-month-table thead .att-col-month-name { z-index: 6; background: #0f172a; color: #fff; text-align: center; }
+.att-col-month-table .att-col-month-role { width: 75px; min-width: 75px; text-align: center; }
+.att-col-month-table .att-col-month-day { width: 34px; min-width: 34px; padding: 4px 1px; font-weight: 800; text-align: center; }
+.att-col-month-table .att-col-month-day small { display: block; font-size: 9px; font-weight: 500; opacity: .78; }
+.att-col-month-table .att-col-month-summary { width: 38px; min-width: 38px; font-weight: 800; text-align: center; }
+.att-col-month-table td {
+  padding: 3px 1px; height: 46px; border: 1px solid #cbd5e1;
+  vertical-align: middle; text-align: center;
+}
 .att-col-month-table td.att-month-p { background: var(--att-present-soft); color: var(--att-present); font-weight: 900; }
 .att-col-month-table td.att-month-a { background: var(--att-absent-soft); color: var(--att-absent); font-weight: 900; }
 .att-col-month-table td.att-month-l { background: var(--att-leave-soft); color: var(--att-leave); font-weight: 900; }
 .att-col-month-table td.att-month-partial { background: #dbeafe; color: #1d4ed8; font-weight: 800; }
 .att-col-month-table td.att-month-incomplete { background: #f1f5f9; color: #64748b; font-weight: 700; }
-.att-col-month-table td.att-month-holiday { background: #fff1f2; color: #be123c; font-size: 8px; }
-.att-col-month-table tr.att-col-month-group td { padding: 5px 8px; background: #e2e8f0; color: #334155; font-size: 11px; font-weight: 900; text-align: right; }
-.att-col-month-person-meta { display: block; margin-top: 2px; color: #64748b; font-size: 9px; font-weight: 500; }
+.att-col-month-table td.att-month-holiday {
+  background: #fff1f2; color: #be123c; padding: 2px 0;
+  font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif;
+}
+.att-month-holiday-text {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 100%; height: 100%; min-height: 40px;
+  font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif;
+  font-size: 10px; font-weight: 700; line-height: 1.05; color: #be123c;
+}
+.att-month-holiday-ch { display: block; text-align: center; }
+.att-col-month-table tr.att-col-month-group td { padding: 5px 8px; background: #e2e8f0; color: #334155; font-size: 12px; font-weight: 900; text-align: right; }
+.att-col-month-person-meta { display: block; margin-top: 2px; color: #64748b; font-size: 10px; font-weight: 500; }
 .att-col-month-export-host { position: fixed; left: -20000px; top: 0; width: 1560px; background: #fff; z-index: -1; pointer-events: none; }
-.att-col-month-export-page { width: 1560px; padding: 18px; background: #fff; color: #0f172a; direction: rtl; }
-.att-col-month-export-page .att-col-month-table { min-width: 0; width: 100%; font-size: 9px; }
+.att-col-month-export-page { width: 1560px; padding: 18px; background: #fff; color: #0f172a; direction: rtl; font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif; }
+.att-col-month-export-page .att-col-month-table { min-width: 0; width: 100%; font-size: 10px; }
 .att-col-month-export-page .att-col-month-table thead th,
 .att-col-month-export-page .att-col-month-table .att-col-month-name { position: static; box-shadow: none; }
-.att-col-month-export-title { text-align: center; margin: 4px 0 8px; color: #0f172a; font-size: 20px; }
-.att-col-month-export-meta { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; padding: 6px 9px; border: 1px solid #94a3b8; font-size: 11px; }
+.att-col-month-export-title { text-align: center; margin: 4px 0 8px; color: #0f172a; font-size: 20px; font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif; }
+.att-col-month-export-meta { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; padding: 6px 9px; border: 1px solid #94a3b8; font-size: 12px; }
 .att-col-month-page-number { margin-top: 6px; text-align: center; color: #64748b; font: 10px Arial,sans-serif; }
 
 @media (max-width: 900px) {

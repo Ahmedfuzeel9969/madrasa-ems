@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260902_exams_vertical_charts_v1';
+  var CACHE_BUST = '20260903_att_month_view_holiday_v1';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,
