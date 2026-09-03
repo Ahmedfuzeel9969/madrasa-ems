@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260903_att_month_view_holiday_v1';
+    var CACHE_BUST = '20260903_att_holiday_joined_vertical_v1';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 

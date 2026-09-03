@@ -637,14 +637,35 @@
     return person;
   }
 
-  function holidayCellHtml(label) {
+  function holidayCellHtml(label, span) {
     var word = 'تعطیل';
     var title = label ? String(label) : word;
-    return '<span class="att-month-holiday-text" aria-label="' + escHtml(title) + '">'
-      + Array.from(word).map(function (ch) {
-        return '<span class="att-month-holiday-ch">' + escHtml(ch) + '</span>';
-      }).join('')
-      + '</span>';
+    var rows = Math.max(1, Number(span) || 1);
+    /* بڑا rowspan = لمبا عمودی کالم؛ فونٹ قدرے بڑا تاکہ اوپر سے نیچے مناسب فاصلہ نظر آئے */
+    var fontPx = Math.max(12, Math.min(20, 11 + rows * 1.2));
+    return '<span class="att-month-holiday-text" style="font-size:' + fontPx + 'px" aria-label="'
+      + escHtml(title) + '">' + escHtml(word) + '</span>';
+  }
+
+  function holidayRowSpanAt(rows, rowIndex, dayIndex, grouped) {
+    var person = rows[rowIndex];
+    var mark = person && person.marks ? person.marks[dayIndex] : null;
+    if (!mark || !mark.holiday) return 0;
+    if (rowIndex > 0) {
+      var prev = rows[rowIndex - 1];
+      var prevMark = prev && prev.marks ? prev.marks[dayIndex] : null;
+      if (prevMark && prevMark.holiday && (!grouped || prev.role === person.role)) {
+        return 0;
+      }
+    }
+    var span = 1;
+    for (var j = rowIndex + 1; j < rows.length; j += 1) {
+      if (grouped && rows[j].role !== person.role) break;
+      var nextMark = rows[j].marks[dayIndex];
+      if (!nextMark || !nextMark.holiday) break;
+      span += 1;
+    }
+    return span;
   }
 
   function setLoadBusy(busy) {
@@ -675,9 +696,18 @@
   }
 
   function tableHeadHtml(state) {
+    var holidayDays = {};
+    (state.rows || []).forEach(function (person) {
+      (person.marks || []).forEach(function (mark) {
+        if (mark && mark.holiday) holidayDays[mark.day] = mark.holiday;
+      });
+    });
     var html = '<thead><tr><th class="att-col-month-name">نام / شناخت</th><th class="att-col-month-role">قسم</th>';
     for (var day = 1; day <= state.dayCount; day += 1) {
-      html += '<th class="att-col-month-day">' + day + '<small>' + escHtml(weekdayShort(state.month, day)) + '</small></th>';
+      var hol = holidayDays[day];
+      html += '<th class="att-col-month-day' + (hol ? ' att-col-month-day-holiday' : '') + '"'
+        + (hol ? ' title="' + escHtml(hol) + '"' : '') + '>'
+        + day + '<small>' + escHtml(weekdayShort(state.month, day)) + '</small></th>';
     }
     html += '<th class="att-col-month-summary">ح</th><th class="att-col-month-summary">غ</th><th class="att-col-month-summary">ر</th></tr></thead>';
     return html;
@@ -686,7 +716,7 @@
   function tableBodyHtml(rows, state, grouped) {
     var html = '<tbody>';
     var lastRole = '';
-    (rows || []).forEach(function (person) {
+    (rows || []).forEach(function (person, rowIndex) {
       if (grouped && person.role !== lastRole) {
         html += '<tr class="att-col-month-group"><td colspan="' + (state.dayCount + 5) + '">' + escHtml(roleLabel(person.role)) + '</td></tr>';
         lastRole = person.role;
@@ -697,14 +727,20 @@
       html += '<tr><td class="att-col-month-name"><strong>' + escHtml(person.name) + '</strong>'
         + '<span class="att-col-month-person-meta">' + escHtml(sub) + '</span></td>'
         + '<td class="att-col-month-role">' + escHtml(roleSingular(person.role)) + '</td>';
-      person.marks.forEach(function (mark) {
-        var cls = mark.kind ? cellClass(mark.kind) : (mark.holiday ? 'att-month-holiday' : '');
+      person.marks.forEach(function (mark, dayIndex) {
+        if (mark.holiday) {
+          var span = holidayRowSpanAt(rows, rowIndex, dayIndex, !!grouped);
+          if (!span) return;
+          html += '<td class="att-month-holiday" rowspan="' + span + '"'
+            + ' title="' + escHtml(mark.holiday || 'تعطیل') + '">'
+            + holidayCellHtml(mark.holiday, span) + '</td>';
+          return;
+        }
+        var cls = mark.kind ? cellClass(mark.kind) : '';
         var title = mark.kind === 'partial' ? 'جزوی حاضری'
-          : (mark.kind === 'incomplete' ? 'نامکمل حاضری' : (mark.holiday || ''));
-        var cellInner = mark.holiday
-          ? holidayCellHtml(mark.holiday)
-          : escHtml(mark.text);
-        html += '<td class="' + cls + '"' + (title ? ' title="' + escHtml(title) + '"' : '') + '>' + cellInner + '</td>';
+          : (mark.kind === 'incomplete' ? 'نامکمل حاضری' : '');
+        html += '<td class="' + cls + '"' + (title ? ' title="' + escHtml(title) + '"' : '') + '>'
+          + escHtml(mark.text) + '</td>';
       });
       html += '<td class="att-month-p att-col-month-summary">' + person.totals.P + '</td>'
         + '<td class="att-month-a att-col-month-summary">' + person.totals.A + '</td>'
@@ -846,9 +882,9 @@
       + '.att-col-month-export-page .att-month-l{background:#fef3c7!important;color:#92400e!important;font-weight:900;}'
       + '.att-col-month-export-page .att-month-partial{background:#dbeafe!important;color:#1d4ed8!important;font-weight:800;}'
       + '.att-col-month-export-page .att-month-incomplete{background:#f1f5f9!important;color:#475569!important;}'
-      + '.att-col-month-export-page .att-month-holiday{background:#fff1f2!important;color:#be123c!important;padding:1px 0;}'
-      + '.att-col-month-export-page .att-month-holiday-text{display:inline-flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;font-family:"Jameel Noori Nastaleeq","Noto Nastaliq Urdu",serif;font-size:7.5px;font-weight:700;line-height:1.05;}'
-      + '.att-col-month-export-page .att-month-holiday-ch{display:block;text-align:center;}'
+      + '.att-col-month-export-page .att-month-holiday{background:#fff1f2!important;color:#be123c!important;padding:4px 0;vertical-align:middle;overflow:hidden;}'
+      + '.att-col-month-export-page .att-month-holiday-text{display:inline-block;font-family:"Jameel Noori Nastaleeq","Noto Nastaliq Urdu",serif;font-weight:700;line-height:1.2;white-space:nowrap;transform:rotate(-90deg);transform-origin:center center;color:#be123c;}'
+      + '.att-col-month-export-page .att-col-month-day-holiday{background:#9f1239!important;}'
       + '.att-col-month-export-title{text-align:center;margin:2px 0 5px;font-size:18px;font-family:"Jameel Noori Nastaleeq","Noto Nastaliq Urdu",serif;}'
       + '.att-col-month-export-meta{display:flex;justify-content:space-between;gap:8px;margin-bottom:5px;padding:4px 7px;border:1px solid #94a3b8;font:9px "Jameel Noori Nastaleeq","Noto Nastaliq Urdu",serif;}'
       + '.att-col-month-page-number{text-align:center;margin-top:4px;font:8px Arial,sans-serif;color:#64748b;}'

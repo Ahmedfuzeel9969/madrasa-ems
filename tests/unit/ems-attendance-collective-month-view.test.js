@@ -220,17 +220,19 @@ describe('Collective monthly read-only attendance view', () => {
         expect(output).toContain('دستخط');
     });
 
-    it('renders holiday cells as full vertical تعطیل in Nastaleeq', () => {
+    it('renders holiday cells as joined vertical تعطیل spanning the day column', () => {
         const src = read('att-collective-view.js');
         const css = read('style.css');
         expect(src).toContain("holiday ? 'تعطیل' : '—'");
         expect(src).not.toContain("holiday ? 'تع' : '—'");
         expect(src).toContain('function holidayCellHtml');
+        expect(src).toContain('function holidayRowSpanAt');
         expect(src).toContain('att-month-holiday-text');
-        expect(src).toContain('att-month-holiday-ch');
+        expect(src).toContain('rowspan="');
+        expect(src).not.toContain('att-month-holiday-ch');
         expect(css).toContain("font-family: 'Jameel Noori Nastaleeq', 'Noto Nastaliq Urdu', serif");
         expect(css).toContain('.att-month-holiday-text');
-        expect(css).toContain('flex-direction: column');
+        expect(css).toContain('transform: rotate(-90deg)');
     });
 
     it('offers A3 landscape print and multi-page jsPDF download', () => {
