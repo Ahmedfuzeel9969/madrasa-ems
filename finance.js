@@ -17,6 +17,34 @@
     return p;
   }
 
+  function finReadFeeSetups() {
+    var raw = null;
+    if (typeof window.emsCacheGet === 'function') {
+      raw = window.emsCacheGet('ems_student_fee_setup', null);
+    }
+    if (raw == null) {
+      try { raw = JSON.parse(localStorage.getItem('ems_student_fee_setup') || '{}'); }
+      catch (e) { raw = {}; }
+    }
+    if (typeof raw === 'string') {
+      try { raw = JSON.parse(raw); } catch (e2) { raw = {}; }
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    return raw;
+  }
+
+  function finEnsureFinanceCloudPull() {
+    if (finEnsureFinanceCloudPull._started) return finEnsureFinanceCloudPull._started;
+    if (typeof window.emsPullModuleGroup !== 'function') {
+      finEnsureFinanceCloudPull._started = Promise.resolve();
+      return finEnsureFinanceCloudPull._started;
+    }
+    finEnsureFinanceCloudPull._started = window.emsPullModuleGroup('Finance').catch(function () {
+      return null;
+    });
+    return finEnsureFinanceCloudPull._started;
+  }
+
   function finGetAllUsers() {
     if (typeof window.emsGetUsersSync === 'function') return window.emsGetUsersSync();
     if (typeof window.emsGetUsersMerged === 'function') return window.emsGetUsersMerged();
@@ -39,7 +67,7 @@
     window._finFeeCtx = {
       gen: gen,
       users: users,
-      setups: JSON.parse(localStorage.getItem('ems_student_fee_setup') || '{}'),
+      setups: finReadFeeSetups(),
       collections: finFilterCollections(
         typeof window.emsCacheGet === 'function'
           ? window.emsCacheGet('ems_fee_collections', [])
@@ -235,7 +263,7 @@
 
   window.finGetMonthlyCharge = function (stdId, setup) {
     if (!setup) {
-      var setups = JSON.parse(localStorage.getItem('ems_student_fee_setup')) || {};
+      var setups = finReadFeeSetups();
       setup = setups[stdId];
       if (!setup) {
         var users = finGetAllUsers();
@@ -302,7 +330,7 @@
 
   window.finComputeStudent = function (stdId, users, setups, collections, bills, feeIndexes) {
     users = users || finGetAllUsers();
-    setups = setups || JSON.parse(localStorage.getItem('ems_student_fee_setup')) || {};
+    setups = setups || finReadFeeSetups();
     collections = collections || JSON.parse(localStorage.getItem('ems_fee_collections')) || [];
     bills = bills || window.finGetBills();
     feeIndexes = feeIndexes || null;
@@ -661,7 +689,7 @@
     if (!month) return showToast('مہینہ منتخب کریں!', 'error');
     var classFilter = document.getElementById('fin-bill-class') ? document.getElementById('fin-bill-class').value : '';
     var users = finGetAllUsers();
-    var setups = JSON.parse(localStorage.getItem('ems_student_fee_setup')) || {};
+    var setups = finReadFeeSetups();
     var bills = window.finGetBills();
     var collector = window.finCollectorName();
     var result = finGenerateBillsForMonth(month, classFilter, bills, users, setups, collector);
@@ -681,7 +709,7 @@
     count = Math.min(Math.max(count, 1), 24);
     var classFilter = document.getElementById('fin-bill-class') ? document.getElementById('fin-bill-class').value : '';
     var users = finGetAllUsers();
-    var setups = JSON.parse(localStorage.getItem('ems_student_fee_setup')) || {};
+    var setups = finReadFeeSetups();
     var bills = window.finGetBills();
     var collector = window.finCollectorName();
     var months = [];
@@ -934,6 +962,10 @@
   document.getElementById('tab-finance')?.addEventListener('click', function () {
     if (typeof window.emsIsFinanceModuleActive === 'function' && !window.emsIsFinanceModuleActive()) return;
     finInitOptDeptFilter();
+    finEnsureFinanceCloudPull().then(function () {
+      window._finFeeCtx = null;
+      if (typeof window.refreshFinanceData === 'function') window.refreshFinanceData(window._finActiveTab);
+    });
   });
 
 
@@ -1072,7 +1104,7 @@
 
       const cats = JSON.parse(localStorage.getItem('ems_fee_categories')) || [];
 
-      const setups = JSON.parse(localStorage.getItem('ems_student_fee_setup')) || {};
+      const setups = finReadFeeSetups();
 
       const studentSetup = setups[stdId];
       var classStruct = JSON.parse(localStorage.getItem('ems_class_fee_structure') || '{}');
@@ -1144,7 +1176,7 @@
 
       if(!currentSetupStudentId) return;
 
-      let setups = JSON.parse(localStorage.getItem('ems_student_fee_setup')) || {};
+      let setups = finReadFeeSetups();
 
       let feesObj = {};
 
@@ -1392,7 +1424,7 @@
       const users = finGetAllUsers();
       const setups = typeof window.emsCacheGet === 'function'
         ? window.emsCacheGet('ems_student_fee_setup', {})
-        : JSON.parse(localStorage.getItem('ems_student_fee_setup') || '{}');
+        : finReadFeeSetups();
       const collections = typeof window.emsCacheGet === 'function'
         ? window.emsCacheGet('ems_fee_collections', [])
         : JSON.parse(localStorage.getItem('ems_fee_collections') || '[]');
@@ -1646,7 +1678,7 @@
 
           const users = finGetAllUsers();
 
-          const setups = JSON.parse(localStorage.getItem('ems_student_fee_setup')) || {};
+          const setups = finReadFeeSetups();
 
           const collections = JSON.parse(localStorage.getItem('ems_fee_collections')) || [];
 
@@ -1993,4 +2025,5 @@
   });
 
   finInitOptDeptFilter();
+  finEnsureFinanceCloudPull();
 

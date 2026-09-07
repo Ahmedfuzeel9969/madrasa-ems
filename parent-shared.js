@@ -139,6 +139,40 @@
         return !!p.views[viewId];
     };
 
+    /** Apply server ParentPermissions snapshot into local cache (session refresh). */
+    global.emsApplyParentPermissionsSnapshot = function (permissions) {
+        if (!permissions || typeof permissions !== 'object') return;
+        var perms = getAllParentPerms();
+        Object.keys(permissions).forEach(function (sid) {
+            perms[sid] = migrateParentPerm(permissions[sid], sid);
+        });
+        try { localStorage.setItem(DB_PARENT_PERM, JSON.stringify(perms)); }
+        catch (e) { /* ignore */ }
+    };
+
+    global.emsRefreshParentPermissions = function () {
+        var tenantId = parentGetTenantId();
+        if (!tenantId || typeof global.emsCallFunction !== 'function') {
+            if (typeof global.emsPullModuleGroup === 'function') {
+                return global.emsPullModuleGroup('Admin').catch(function () { return null; });
+            }
+            return Promise.resolve(null);
+        }
+        return global.emsCallFunction('getParentLinkedStudents', { tenantId: tenantId })
+            .then(function (data) {
+                if (data && data.permissions) {
+                    global.emsApplyParentPermissionsSnapshot(data.permissions);
+                }
+                return data;
+            })
+            .catch(function () {
+                if (typeof global.emsPullModuleGroup === 'function') {
+                    return global.emsPullModuleGroup('Admin');
+                }
+                return null;
+            });
+    };
+
     global.parentGetChild = function (studentId) {
         return parentGetStudentById(studentId);
     };

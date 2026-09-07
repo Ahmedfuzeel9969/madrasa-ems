@@ -201,12 +201,20 @@ window.resetRegForm = function (type) {
   if (nameEl) nameEl.value = '';
   if (fnameEl) fnameEl.value = '';
 
-  // ماسٹر شرائط نامہ (Global Template) لوڈ کرنا
+  // ماسٹر شرائط نامہ (Global Template) لوڈ کرنا — tenant-scoped
   let termsInput = document.getElementById(`${prefix}-terms-text`);
   if (termsInput) {
-    let savedTerms = localStorage.getItem(`ems_global_terms_${prefix}`);
+    let termsKey = regTermsStorageKey(prefix);
+    let savedTerms = localStorage.getItem(termsKey);
+    if (!savedTerms) {
+      // legacy non-tenant key → migrate once
+      let legacy = localStorage.getItem(`ems_global_terms_${prefix}`);
+      if (legacy) {
+        savedTerms = legacy;
+        try { localStorage.setItem(termsKey, legacy); } catch (eMig) { /* ignore */ }
+      }
+    }
     if (savedTerms) {
-      // اگر پہلے سے سیو اور لاک ہے تو اسے ڈبے میں ڈال کر لاک کر دو
       termsInput.value = savedTerms;
       termsInput.setAttribute('readonly', 'true');
       let btnLock = document.getElementById(`btn-${prefix}-terms-lock`);
@@ -214,7 +222,6 @@ window.resetRegForm = function (type) {
       if (btnLock) btnLock.style.display = 'none';
       if (btnEdit) btnEdit.style.display = 'inline-flex';
     } else {
-      // اگر کچھ سیو نہیں ہے تو ڈبہ خالی اور ان لاک رکھو
       termsInput.value = '';
       termsInput.removeAttribute('readonly');
       let btnLock = document.getElementById(`btn-${prefix}-terms-lock`);
@@ -683,7 +690,7 @@ window.processRegistration = function (type, status) {
     user.designation = document.getElementById('tch-designation').value;
     user.department = document.getElementById('tch-department').value;
     user.shift = document.getElementById('tch-shift').value;
-    user.salary = document.getElementById('tch-salary').value || 0;
+    user.salary = parseFloat(document.getElementById('tch-salary').value) || 0;
     user.residence = document.getElementById('tch-residence').value;
     user.food = document.getElementById('tch-food').value;
     user.expInstitute = document.getElementById('tch-exp-institute').value;
@@ -692,6 +699,8 @@ window.processRegistration = function (type, status) {
     user.expReason = document.getElementById('tch-exp-reason').value;
     user.officeDemo = document.getElementById('tch-office-demo').value;
     user.officeNazim = document.getElementById('tch-office-nazim').value;
+    var tchTermsEl = document.getElementById('tch-terms-text');
+    user.termsText = tchTermsEl ? String(tchTermsEl.value || '').trim() : '';
     if (typeof window.sysFieldCollect === 'function') user.customFields = window.sysFieldCollect('teacher');
   } else if (type === 'staff') {
     user.id = document.getElementById('stf-emp-id').value;
@@ -710,7 +719,7 @@ window.processRegistration = function (type, status) {
     user.guaAddress = document.getElementById('stf-gua-address').value;
     user.expDetails = document.getElementById('stf-exp-details').value;
     user.healthIssue = document.getElementById('stf-health-issue').value;
-    user.salary = document.getElementById('stf-office-salary').value || 0;
+    user.salary = parseFloat(document.getElementById('stf-office-salary').value) || 0;
     user.shift = document.getElementById('stf-office-shift').value;
     user.officeNazim = document.getElementById('stf-office-nazim').value;
     if (typeof window.sysFieldCollect === 'function') user.customFields = window.sysFieldCollect('staff');
@@ -1153,38 +1162,52 @@ function buildRegFilteredUsers() {
   const filterEl = document.getElementById('reg-list-filter');
   const filterVal = filterEl ? filterEl.value : 'all';
   const st = window._regListState || { page: 1, perPage: 25, q: '' };
+  const perPage = st.perPage || 25;
+  const offset = Math.max(0, ((st.page || 1) - 1) * perPage);
+  const deptId = typeof window.emsGetDepartmentId === 'function' ? window.emsGetDepartmentId() : null;
+  const needDept = !!(deptId && deptId !== 'all' && typeof window.emsFilterByDepartment === 'function');
 
-  if (typeof window.emsRegRepoGetListPage === 'function') {
-    const perPage = st.perPage || 25;
-    const offset = Math.max(0, ((st.page || 1) - 1) * perPage);
-    return window.emsRegRepoGetListPage({
-      offset: offset,
-      limit: perPage,
-      type: filterVal,
-      q: st.q
-    });
+  function applyDept(list) {
+    if (!needDept || !Array.isArray(list)) return list || [];
+    return window.emsFilterByDepartment(list);
   }
 
-  let users = typeof window.emsRegRepoGetListReadonly === 'function'
-    ? window.emsRegRepoGetListReadonly().slice()
-    : (typeof window.emsRegRepoGetList === 'function'
-      ? window.emsRegRepoGetList()
-      : (typeof window.emsGetUsersMerged === 'function' ? window.emsGetUsersMerged() : []));
-  if (!Array.isArray(users)) users = [];
+  // Department-scoped views must filter before pagination so totals stay correct.
+  if (needDept || typeof window.emsRegRepoGetListPage !== 'function') {
+    let users = typeof window.emsRegRepoGetListReadonly === 'function'
+      ? window.emsRegRepoGetListReadonly().slice()
+      : (typeof window.emsRegRepoGetList === 'function'
+        ? window.emsRegRepoGetList()
+        : (typeof window.emsGetUsersMerged === 'function' ? window.emsGetUsersMerged() : []));
+    if (!Array.isArray(users)) users = [];
 
-  if (filterVal !== 'all') {
-    users = users.filter((u) => u.type === filterVal);
+    if (filterVal !== 'all') {
+      users = users.filter((u) => u.type === filterVal);
+    }
+
+    if (st.q) {
+      const q = String(st.q).toLowerCase();
+      users = users.filter((u) => {
+        const hay = [u.name, u.id, u.cnic, u.phone, u.class, u.designation, u.position, u.fname, u.madrasaRollNo, u.wifaqRollNo]
+          .map((x) => String(x || '').toLowerCase()).join(' ');
+        return hay.indexOf(q) >= 0;
+      });
+    }
+
+    users = applyDept(users);
+    return { rows: users.slice(offset, offset + perPage), total: users.length };
   }
 
-  if (st.q && typeof window.emsRegRepoSearch !== 'function') {
-    users = users.filter((u) => {
-      const hay = [u.name, u.id, u.cnic, u.phone, u.class, u.designation, u.position, u.fname, u.madrasaRollNo, u.wifaqRollNo]
-        .map((x) => String(x || '').toLowerCase()).join(' ');
-      return hay.indexOf(st.q) >= 0;
-    });
-  }
-
-  return { rows: users, total: users.length };
+  const page = window.emsRegRepoGetListPage({
+    offset: offset,
+    limit: perPage,
+    type: filterVal,
+    q: st.q
+  });
+  return {
+    rows: applyDept(page.rows || []),
+    total: page.total || 0
+  };
 }
 
 function regUserTypeMeta(user) {
@@ -2131,6 +2154,8 @@ window.editRegistration = function (id, type, fromRejected = false) {
     document.getElementById('tch-exp-reason').value = user.expReason || '';
     document.getElementById('tch-office-demo').value = user.officeDemo || '';
     document.getElementById('tch-office-nazim').value = user.officeNazim || '';
+    var tchTermsEdit = document.getElementById('tch-terms-text');
+    if (tchTermsEdit) tchTermsEdit.value = user.termsText || tchTermsEdit.value || '';
   } else if (type === 'staff') {
     document.getElementById('stf-emp-id').value = user.id;
     document.getElementById('stf-reg-date').value = user.date || '';
@@ -2336,6 +2361,14 @@ window.addEventListener('ems:search-index-complete', function () {
 // =========================================================
 // ماسٹر شرائط نامہ (Global Form Templates) کنٹرولز
 // =========================================================
+function regTermsStorageKey(prefix) {
+  var tid = typeof getAdmissionTenantId === 'function' ? getAdmissionTenantId() : null;
+  if (!tid && typeof window.emsGetTenantId === 'function') tid = window.emsGetTenantId();
+  return tid
+    ? ('ems_global_terms_' + prefix + '_' + tid)
+    : ('ems_global_terms_' + prefix);
+}
+
 window.lockTerms = function (prefix) {
   let textarea = document.getElementById(`${prefix}-terms-text`);
   if (textarea.value.trim() === '') {
@@ -2343,8 +2376,7 @@ window.lockTerms = function (prefix) {
     return;
   }
 
-  // شرائط کو ماسٹر ٹیمپلیٹ کے طور پر ہمیشہ کے لیے محفوظ کریں
-  localStorage.setItem(`ems_global_terms_${prefix}`, textarea.value);
+  localStorage.setItem(regTermsStorageKey(prefix), textarea.value);
 
   textarea.setAttribute('readonly', 'true');
   document.getElementById(`btn-${prefix}-terms-lock`).style.display = 'none';
@@ -2371,7 +2403,7 @@ window.deleteTerms = function (prefix) {
     let textarea = document.getElementById(`${prefix}-terms-text`);
     textarea.value = '';
 
-    // ماسٹر ٹیمپلیٹ کو میموری سے ڈیلیٹ کریں
+    localStorage.removeItem(regTermsStorageKey(prefix));
     localStorage.removeItem(`ems_global_terms_${prefix}`);
 
     textarea.removeAttribute('readonly');

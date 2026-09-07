@@ -497,12 +497,21 @@ const getParentLinkedStudents = functions.https.onCall(async (data, context) => 
 
     const studentIds = linkSnap.data().studentIds || [];
     const students = [];
+    const permissions = {};
     for (let i = 0; i < studentIds.length; i++) {
         const sid = studentIds[i];
         const doc = await db.collection('All_Madrasas').doc(tenantId).collection('Registrations').doc(sid).get();
         if (doc.exists) students.push(doc.data());
+        const permSnap = await db.collection('All_Madrasas').doc(tenantId)
+            .collection('ParentPermissions').doc(sid).get();
+        if (permSnap.exists) permissions[sid] = permSnap.data();
     }
-    return { students: students, studentIds: studentIds, link: linkSnap.data() };
+    return {
+        students: students,
+        studentIds: studentIds,
+        link: linkSnap.data(),
+        permissions: permissions
+    };
 });
 
 /**

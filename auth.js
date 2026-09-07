@@ -2151,9 +2151,12 @@ window.emsAuthContinueAsParent = function (user, ctx) {
             applyParentTenantProfile(user, ctx, firestore);
         }
 
-        var pull = typeof window.emsPullModuleGroup === 'function'
-            ? window.emsPullModuleGroup('Admin')
-            : Promise.resolve();
+        // Prefer CF permissions snapshot so session views match server (Phase 2 SSOT).
+        var pull = typeof window.emsRefreshParentPermissions === 'function'
+            ? window.emsRefreshParentPermissions()
+            : (typeof window.emsPullModuleGroup === 'function'
+                ? window.emsPullModuleGroup('Admin')
+                : Promise.resolve());
         pull.then(startParentUnlock).catch(startParentUnlock);
     });
 };

@@ -20,7 +20,18 @@
         teacher_urdu_standard: {
             name: 'استاد — Urdu standard',
             type: 'teacher',
-            map: { 'نام': 'name', 'ولدیت': 'fname', 'شناختی': 'cnic', 'موبائل': 'phone', 'عہدہ': 'designation', 'شعبہ': 'department' }
+            map: {
+                'نام': 'name',
+                'ولدیت': 'fname',
+                'شناختی': 'cnic',
+                'موبائل': 'phone',
+                'ای میل': 'email',
+                'عہدہ': 'designation',
+                'شعبہ': 'department',
+                'شفٹ': 'shift',
+                'تنخواہ': 'salary',
+                'تجربہ': 'expDuration'
+            }
         },
         staff_urdu_standard: {
             name: 'عملہ — Urdu standard',

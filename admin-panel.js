@@ -1160,10 +1160,50 @@
 
     window.emsParentAuditActor = apCurrentAdmin;
 
-    // ----------------------- ڈیٹا رسائی (localStorage) -----------------------
+    // ----------------------- ڈیٹا رسائی (رجسٹریشن SSOT پہلے) -----------------------
     function getUsers() {
+        if (typeof window.emsGetUsersMerged === 'function') {
+            try {
+                var merged = window.emsGetUsersMerged();
+                if (Array.isArray(merged) && merged.length) return merged;
+            } catch (eMerged) { /* fall through */ }
+        }
+        if (typeof window.emsRegRepoGetListReadonly === 'function') {
+            try {
+                var repo = window.emsRegRepoGetListReadonly();
+                if (Array.isArray(repo) && repo.length) return repo;
+            } catch (eRepo) { /* fall through */ }
+        }
         try { return JSON.parse(localStorage.getItem(DB_USERS)) || []; }
         catch (e) { return []; }
+    }
+
+    function apPersistUserEmail(userId, email) {
+        var normalized = String(email || '').toLowerCase().trim();
+        if (!userId || !normalized) return;
+        if (typeof window.emsRegRepoGetById === 'function' && typeof window.emsRegRepoUpsert === 'function') {
+            var existing = null;
+            try { existing = window.emsRegRepoGetById(userId); } catch (eGet) { existing = null; }
+            if (existing && typeof existing.then === 'function') {
+                existing.then(function (rec) {
+                    if (!rec) return;
+                    rec.email = normalized;
+                    return window.emsRegRepoUpsert(rec);
+                }).catch(function () { /* ignore */ });
+                return;
+            }
+            if (existing) {
+                existing.email = normalized;
+                window.emsRegRepoUpsert(existing);
+                return;
+            }
+        }
+        var users = getUsers();
+        var u = users.find(function (x) { return x && x.id === userId; });
+        if (u) {
+            u.email = normalized;
+            try { localStorage.setItem(DB_USERS, JSON.stringify(users)); } catch (eSet) { /* ignore */ }
+        }
     }
 
     function getAllPerms() {
@@ -2635,9 +2675,7 @@
             apToast('سروس دستیاب نہیں۔', 'error'); return;
         }
         window.emsCreateStaffLink(uid, staffId, email).then(function () {
-            var users = getUsers();
-            var u = users.find(function (x) { return x.id === staffId; });
-            if (u) { u.email = email.toLowerCase(); localStorage.setItem(DB_USERS, JSON.stringify(users)); }
+            apPersistUserEmail(staffId, email);
             apToast('Staff Link بھیج دیا — عملہ لاگ ان پر فعال ہوگا۔', 'success');
         }).catch(function (e) { apToast('Link ناکام: ' + e.message, 'error'); });
     };

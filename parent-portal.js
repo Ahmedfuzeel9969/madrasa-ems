@@ -409,19 +409,23 @@
             '<p style="font-size:12px;color:#64748b;">یہ معلومات صرف محفوظ سرور API سے دستیاب ہیں۔</p>';
     }
 
-    /** Linked students — Cloud Function only (Phase 4) */
+    /** Linked students — Cloud Function only (Phase 4); also refresh permissions */
     function pullLinkedStudentsForParent(tenantId) {
         if (typeof window.emsCallFunction !== 'function') {
             return Promise.reject(cfUnavailableError());
         }
         return window.emsCallFunction('getParentLinkedStudents', { tenantId: tenantId })
             .then(function (data) {
-                if (!data || !data.students) return;
+                if (!data || !data.students) return data;
                 if (typeof window.emsRegRepoUpsert === 'function') {
                     data.students.forEach(function (s) {
                         if (s && s.id) window.emsRegRepoUpsert(s);
                     });
                 }
+                if (data.permissions && typeof window.emsApplyParentPermissionsSnapshot === 'function') {
+                    window.emsApplyParentPermissionsSnapshot(data.permissions);
+                }
+                return data;
             });
     }
 
