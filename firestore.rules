@@ -13,11 +13,11 @@ service cloud.firestore {
     }
 
     function roles() {
-      return isSignedIn() && token().roles is list ? token().roles : [];
+      return isSignedIn() && token().get('roles', []) is list ? token().get('roles', []) : [];
     }
 
     function isSuperAdminClaim() {
-      return isSignedIn() && (token().isSuperAdmin == true || 'super_admin' in roles());
+      return isSignedIn() && (token().get('isSuperAdmin', false) == true || 'super_admin' in roles());
     }
 
     /** SuperAdmins/{email_with_underscores} — seed convention (see scripts/seed-super-admin.js) */
@@ -205,14 +205,39 @@ service cloud.firestore {
             && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, moduleId, 'delete')));
     }
 
+    /**
+     * Attendance rules place the super-admin branch once at the outer allow.
+     * These helpers avoid repeating the expensive platform-admin lookups until
+     * Firestore reaches its expression-evaluation ceiling on ordinary staff.
+     */
+    function canAttendanceCreateWithoutSuper(madrasaId) {
+      return isMadrasaActive(madrasaId)
+        && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, 'attendance', 'create'));
+    }
+
+    function canAttendanceUpdateWithoutSuper(madrasaId) {
+      return isMadrasaActive(madrasaId)
+        && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, 'attendance', 'edit'));
+    }
+
+    function canAttendanceDeleteWithoutSuper(madrasaId) {
+      return isMadrasaActive(madrasaId)
+        && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, 'attendance', 'delete'));
+    }
+
     /** Attendance documents are monthly canonical/legacy register sheets only. */
     function isValidAttendanceDocId(docId) {
       return docId.matches('^att_rec_[0-9]{4}-[0-9]{2}_(students|teachers|staff)_.+$');
     }
 
+    function isAttendanceModuleDataDocId(docId) {
+      return docId.matches('^Attendance__.+$');
+    }
+
     function hasValidAttendanceShape() {
       return request.resource.data.keys().hasOnly([
           'locked', 'records', 'dailyLocks', 'remarks', 'late', 'periodRecords',
+          'clearedCells', 'canonicalComplete', 'canonicalMigratedAt',
           'timestamp', 'clientUpdatedAt', 'updatedAt', '_version', 'departmentId'
         ])
         && request.resource.data.get('locked', false) is bool
@@ -220,12 +245,15 @@ service cloud.firestore {
         && request.resource.data.get('dailyLocks', {}) is map
         && request.resource.data.get('remarks', {}) is map
         && request.resource.data.get('late', {}) is map
-        && request.resource.data.get('periodRecords', {}) is map;
+        && request.resource.data.get('periodRecords', {}) is map
+        && request.resource.data.get('clearedCells', {}) is map
+        && request.resource.data.get('canonicalComplete', false) is bool
+        && request.resource.data.get('canonicalMigratedAt', request.time) is timestamp;
     }
 
     /** UI protection is not enough: ordinary staff cannot mark their own row. */
     function attendanceCreateDoesNotEditSelf(madrasaId) {
-      return isSuperAdmin() || isOwner(madrasaId)
+      return isOwner(madrasaId)
         || (!request.resource.data.get('records', {}).keys().hasAny([staffRecordId(madrasaId)])
           && !request.resource.data.get('periodRecords', {}).keys().hasAny([staffRecordId(madrasaId)])
           && !request.resource.data.get('remarks', {}).keys().hasAny([staffRecordId(madrasaId)])
@@ -233,7 +261,7 @@ service cloud.firestore {
     }
 
     function attendanceUpdateDoesNotEditSelf(madrasaId) {
-      return isSuperAdmin() || isOwner(madrasaId)
+      return isOwner(madrasaId)
         || (!request.resource.data.get('records', {}).diff(resource.data.get('records', {}))
               .affectedKeys().hasAny([staffRecordId(madrasaId)])
           && !request.resource.data.get('periodRecords', {}).diff(resource.data.get('periodRecords', {}))
@@ -242,6 +270,11 @@ service cloud.firestore {
               .affectedKeys().hasAny([staffRecordId(madrasaId)])
           && !request.resource.data.get('late', {}).diff(resource.data.get('late', {}))
               .affectedKeys().hasAny([staffRecordId(madrasaId)]));
+    }
+
+    /** A locked register is server-protected for ordinary staff, not only UI-disabled. */
+    function attendanceExistingRegisterIsEditable(madrasaId) {
+      return isOwner(madrasaId) || resource.data.get('locked', false) == false;
     }
 
     function isValidEmsAuditCreate() {
@@ -536,21 +569,26 @@ service cloud.firestore {
       }
 
       match /Attendance/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
-        allow create: if canStaffCreate(madrasaId, 'attendance')
-          && isValidAttendanceDocId(docId)
+        allow read: if canStaffReadModule(madrasaId, 'attendance');
+        allow create: if isValidAttendanceDocId(docId)
           && hasValidAttendanceShape()
-          && attendanceCreateDoesNotEditSelf(madrasaId);
-        allow update: if canStaffUpdate(madrasaId, 'attendance')
-          && isValidAttendanceDocId(docId)
+          && (isSuperAdmin()
+            || (canAttendanceCreateWithoutSuper(madrasaId)
+              && attendanceCreateDoesNotEditSelf(madrasaId)));
+        allow update: if isValidAttendanceDocId(docId)
           && hasValidAttendanceShape()
-          && attendanceUpdateDoesNotEditSelf(madrasaId);
-        allow delete: if canStaffDelete(madrasaId, 'attendance')
-          && isValidAttendanceDocId(docId);
+          && (isSuperAdmin()
+            || (canAttendanceUpdateWithoutSuper(madrasaId)
+              && attendanceExistingRegisterIsEditable(madrasaId)
+              && attendanceUpdateDoesNotEditSelf(madrasaId)));
+        allow delete: if isValidAttendanceDocId(docId)
+          && (isSuperAdmin()
+            || (canAttendanceDeleteWithoutSuper(madrasaId)
+              && attendanceExistingRegisterIsEditable(madrasaId)));
       }
 
       match /Attendance_Config/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canStaffReadModule(madrasaId, 'attendance');
         allow create: if canStaffCreate(madrasaId, 'attendance');
         allow update: if canStaffUpdate(madrasaId, 'attendance');
         allow delete: if canStaffDelete(madrasaId, 'attendance');
@@ -562,10 +600,10 @@ service cloud.firestore {
       }
 
       match /Archive_Attendance/{yearId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canStaffReadModule(madrasaId, 'attendance');
         allow write: if false;
         match /docs/{docId} {
-          allow read: if canReadTenantStaff(madrasaId);
+          allow read: if canStaffReadModule(madrasaId, 'attendance');
           allow write: if false;
         }
       }
@@ -600,12 +638,17 @@ service cloud.firestore {
       }
 
       match /ModuleData/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if (isAttendanceModuleDataDocId(docId)
+            && canStaffReadModule(madrasaId, 'attendance'))
+          || (!isAttendanceModuleDataDocId(docId) && canReadTenantStaff(madrasaId));
         allow create: if canOwnerAct(madrasaId) || isSuperAdmin()
+          || (isAttendanceModuleDataDocId(docId) && canStaffCreate(madrasaId, 'attendance'))
           || (docId == 'Curriculum__ems_curriculum_daily' && canStaffCreate(madrasaId, 'curriculum'));
         allow update: if canOwnerAct(madrasaId) || isSuperAdmin()
+          || (isAttendanceModuleDataDocId(docId) && canStaffUpdate(madrasaId, 'attendance'))
           || (docId == 'Curriculum__ems_curriculum_daily' && canStaffUpdate(madrasaId, 'curriculum'));
-        allow delete: if canOwnerAct(madrasaId) || isSuperAdmin();
+        allow delete: if canOwnerAct(madrasaId) || isSuperAdmin()
+          || (isAttendanceModuleDataDocId(docId) && canStaffDelete(madrasaId, 'attendance'));
       }
 
       match /BackupSnapshots/{backupId} {
@@ -852,8 +895,17 @@ service cloud.firestore {
           || (isSignedIn() && resource.data.email == token().email && resource.data.status == 'pending');
       }
 
-      match /{document=**} {
-        allow read: if canReadTenantStaff(madrasaId);
+      /**
+       * Legacy fallback for collections that do not yet have a dedicated rule.
+       * Attendance paths are explicitly excluded; otherwise this overlapping
+       * wildcard silently re-opens the stricter attendance/module RBAC above.
+       */
+      match /{collectionId}/{document=**} {
+        allow read: if collectionId != 'Attendance'
+          && collectionId != 'Attendance_Config'
+          && collectionId != 'Archive_Attendance'
+          && collectionId != 'ModuleData'
+          && canReadTenantStaff(madrasaId);
         allow write: if false;
       }
     }

@@ -788,6 +788,10 @@
     var roles = selectedRoles();
     if (!validMonth(month)) return toast('درست مہینہ منتخب کریں', 'warning');
     if (!roles.length) return toast('طلباء، اساتذہ یا عملہ میں سے کم از کم ایک قسم منتخب کریں', 'warning');
+    if (typeof global.emsArchiveMonthInWindow === 'function'
+        && !global.emsArchiveMonthInWindow(month)) {
+      return toast('یہ مہینہ فعال 24 ماہ کی حد سے پرانا ہے؛ محفوظ تاریخی ریکارڈ آرکائیو سے دیکھیں۔', 'warning');
+    }
     if (typeof global.attLoadCanonicalClassSheet !== 'function'
         || typeof global.attLoadStaffTypeSheet !== 'function') {
       return toast('حاضری کا مرکزی ریکارڈ ابھی تیار نہیں؛ صفحہ دوبارہ کھولیں', 'error');

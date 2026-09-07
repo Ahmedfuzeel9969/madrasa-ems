@@ -221,7 +221,8 @@
                 ok: false,
                 docId: row.docId,
                 type: row.type,
-                error: err && err.message ? err.message : String(err)
+                error: err && err.message ? err.message : String(err),
+                code: err && err.code ? err.code : 'MUTATION_FAILED'
             };
         });
     };

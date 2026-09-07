@@ -46,13 +46,13 @@ describe('Phase 6 — shared final-state dataset (TASK 6.2)', function () {
                 key: 'legacy',
                 type: 'students',
                 classId: 'A',
-                period: 'all',
+                period: 'p1',
                 data: { timestamp: 1, records: { U1: { 5: 'P' } } }
             },
             {
                 key: 'canonical',
                 type: 'students',
-                classId: '',
+                classId: 'A',
                 period: 'all',
                 data: { timestamp: 2, records: { U1: { 5: 'A' } } }
             }
@@ -81,6 +81,37 @@ describe('Phase 6 — shared final-state dataset (TASK 6.2)', function () {
         expect(daily.marks.T1.status).toBe('P');
         expect(period.marks.T1.status).toBe('A');
         expect(period.metric).toBe('period');
+    });
+
+    it('lets a canonical day tombstone block a retained legacy daily mark', function () {
+        var m = loadMetrics();
+        var users = [{ id: 'U1', type: 'student', class: 'A' }];
+        var sheets = [
+            { type: 'students', classId: 'A', period: 'p1', data: { timestamp: 50, records: { U1: { 5: 'P' } } } },
+            {
+                type: 'students', classId: 'A', period: 'all',
+                data: { timestamp: 10, records: {}, clearedCells: { days: { U1: { 5: true } } } }
+            }
+        ];
+        var finalDs = m.attMetricsBuildFinalMarksForDay('2026-08-05', sheets, users, '');
+        expect(finalDs.marks.U1.status).toBe('');
+        expect(finalDs.marks.U1.cleared).toBe(true);
+    });
+
+    it('lets a canonical period mark win even when an older tombstone is retained', function () {
+        var m = loadMetrics();
+        var users = [{ id: 'T1', type: 'teacher' }];
+        var sheets = [{
+            type: 'teachers', classId: '', period: 'all',
+            data: {
+                timestamp: 20,
+                periodRecords: { T1: { 5: { P1: 'A' } } },
+                clearedCells: { periods: { T1: { 5: { P1: true } } } }
+            }
+        }];
+        var finalDs = m.attMetricsBuildFinalMarksForDay('2026-08-05', sheets, users, 'P1');
+        expect(finalDs.marks.T1.status).toBe('A');
+        expect(finalDs.marks.T1.cleared).toBe(false);
     });
 
     it('monthly summary uses deduped daily final marks', function () {

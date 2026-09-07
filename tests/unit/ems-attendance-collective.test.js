@@ -73,6 +73,9 @@ describe('Collective student attendance register', function () {
         expect(col).toContain('attTeacherPeriodsForWeekday');
         expect(col).toContain('registerTypeValue');
         expect(col).toContain('syncRegisterTypeUi');
+        expect(col).toContain("emsRequireStaffAction('attendance', 'edit')");
+        expect(col).toMatch(/function setStatus[\s\S]{0,220}requireAttendanceEditPermission\(\)/);
+        expect(col).toMatch(/function undoLast[\s\S]{0,220}requireAttendanceEditPermission\(\)/);
     });
 
     it('maps custom symbols to canonical P/A/L for styling', function () {
@@ -169,11 +172,15 @@ describe('Collective student attendance register', function () {
 
     it('writes day marks for staff collective register', function () {
         var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
+        var tombstoneStart = src.indexOf('function attEnsureClearedCells');
+        var tombstoneEnd = src.indexOf('\nfunction attReadConfigJson', tombstoneStart);
         var writeStart = src.indexOf('function attWriteDayMarkOnSheetData');
         var writeEnd = src.indexOf('\nwindow.attWritePeriodOnSheetData');
         var sandbox = {};
         vm.runInNewContext(
-            src.slice(writeStart, writeEnd) + '\nthis.attWriteDayMarkOnSheetData = attWriteDayMarkOnSheetData;',
+            src.slice(tombstoneStart, tombstoneEnd) + '\n'
+            + src.slice(writeStart, writeEnd)
+            + '\nthis.attWriteDayMarkOnSheetData = attWriteDayMarkOnSheetData;',
             sandbox
         );
         var data = { records: {} };
@@ -181,5 +188,6 @@ describe('Collective student attendance register', function () {
         expect(data.records.U1[5]).toBe('P');
         sandbox.attWriteDayMarkOnSheetData(data, 'U1', 5, '');
         expect(data.records.U1[5]).toBeUndefined();
+        expect(data.clearedCells.days.U1['5']).toBe(true);
     });
 });

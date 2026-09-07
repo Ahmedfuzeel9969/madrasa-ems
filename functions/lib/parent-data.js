@@ -115,7 +115,11 @@ async function assertParentViewPermission(tenantId, studentId, viewId) {
 
 async function fetchAttendance(db, tenantId, studentId) {
     const mk = monthKey();
-    const snap = await db.collection('All_Madrasas').doc(tenantId).collection('Attendance').get();
+    const prefix = 'att_rec_' + mk + '_';
+    const snap = await db.collection('All_Madrasas').doc(tenantId).collection('Attendance')
+        .where(admin.firestore.FieldPath.documentId(), '>=', prefix)
+        .where(admin.firestore.FieldPath.documentId(), '<=', prefix + '\uf8ff')
+        .get();
     const finalState = require('./attendance-final-state');
     const sourceDocs = [];
     snap.forEach(function (doc) {

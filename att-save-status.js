@@ -178,7 +178,7 @@
     }
     if (!res) return { cloud: 'failed', error: 'unknown', code: '' };
     if (res.synced) return { cloud: 'synced', error: res.error || '', code: res.code || '' };
-    if (res.code === 'VERSION_CONFLICT') {
+    if (res.code === 'VERSION_CONFLICT' || res.code === 'CELL_CONFLICT') {
       return { cloud: 'conflict', error: res.error || '', code: res.code };
     }
     if (res.code === 'TENANT_PENDING' || res.code === 'TENANT_MISMATCH' || res.code === 'TENANT_REQUIRED') {
@@ -314,7 +314,7 @@
       global.attSaveStatusMarkCloud(detail.docId, detail.cloud, detail);
     } else if (detail.synced) {
       global.attSaveStatusMarkCloud(detail.docId, 'synced');
-    } else if (detail.code === 'VERSION_CONFLICT') {
+    } else if (detail.code === 'VERSION_CONFLICT' || detail.code === 'CELL_CONFLICT') {
       global.attSaveStatusMarkCloud(detail.docId, 'conflict', detail);
     } else if (detail.error || detail.code) {
       global.attSaveStatusMarkCloud(detail.docId, 'failed', detail);
@@ -323,6 +323,37 @@
   };
 
   global.attSaveStatusRefreshQueue = refreshQueueSummary;
+
+  /** Read-only operational health for support/Super Admin diagnostics. */
+  global.emsAttendanceSyncHealth = function () {
+    return refreshQueueSummary().then(function (summary) {
+      var rows = (summary.rows || []).filter(function (row) {
+        return row && isAttQueueType(row.type);
+      });
+      var current = now();
+      var oldestAt = 0;
+      var conflicts = 0;
+      rows.forEach(function (row) {
+        var createdAt = Number(row.ts || (row.meta && row.meta.mutationAt)) || 0;
+        if (createdAt && (!oldestAt || createdAt < oldestAt)) oldestAt = createdAt;
+        if (row.lastErrorCode === 'VERSION_CONFLICT' || row.lastErrorCode === 'CELL_CONFLICT') conflicts++;
+      });
+      var oldestAgeMs = oldestAt ? Math.max(0, current - oldestAt) : 0;
+      var status = 'healthy';
+      if (summary.deadLetter || conflicts || summary.failed) status = 'attention';
+      else if (oldestAgeMs >= 30 * 60 * 1000) status = 'critical';
+      else if (oldestAgeMs >= 5 * 60 * 1000) status = 'delayed';
+      return {
+        status: status,
+        attendancePending: rows.length,
+        attendanceFailed: rows.filter(function (row) { return !!row.failed; }).length,
+        conflicts: conflicts,
+        deadLetter: Number(summary.deadLetter) || 0,
+        oldestAgeMs: oldestAgeMs,
+        checkedAt: current
+      };
+    });
+  };
 
   function setRetryButtonsBusy(busy) {
     if (!global.document) return;

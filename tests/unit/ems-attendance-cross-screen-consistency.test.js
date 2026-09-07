@@ -46,16 +46,32 @@ describe('Attendance cross-screen consistency', function () {
         expect(dash).toMatch(/attDashCollectSheetsAsync[\s\S]*?emsAttCollectMonthSheetsAsync/);
     });
 
-    it('keeps legacy sheets for recovery but excludes them from daily readers once canonical exists', function () {
+    it('uses canonical student month rows for today dashboard and trend', function () {
+        var helper = source('attendance-helper.js');
+        var todayStart = helper.indexOf('global.emsFetchTodayAttendanceStats');
+        var todayEnd = helper.indexOf('/** Fallback:', todayStart);
+        var trendStart = helper.indexOf('global.emsFetchAttendanceTrend');
+        var trendEnd = helper.indexOf('global.emsAttReadSheetByKeyAsync', trendStart);
+        var todayBlock = helper.slice(todayStart, todayEnd);
+        var trendBlock = helper.slice(trendStart, trendEnd);
+        expect(todayBlock).toContain('emsAttCollectMonthSheetsAsync');
+        expect(todayBlock).toContain('attHelperStatsFromCanonicalRows');
+        expect(todayBlock).not.toContain('fetchAttendanceDocsForMonth');
+        expect(trendBlock).toContain('emsAttCollectMonthSheetsAsync');
+        expect(trendBlock).toContain("it.type === 'students'");
+        expect(trendBlock).not.toContain('fetchAttendanceDocsForMonth');
+    });
+
+    it('keeps legacy sheets until an audited migration marks canonical complete', function () {
         var helper = source('attendance-helper.js');
         var sandbox = { console: console, Promise: Promise, Date: Date, Intl: Intl };
         sandbox.global = sandbox;
         sandbox.window = sandbox;
         vm.runInNewContext(helper, sandbox);
         var rows = sandbox.emsAttCanonicalMonthRows([
-            { key: 'teacher-canon', type: 'teachers', classId: '', period: 'all', data: { timestamp: 20 } },
+            { key: 'teacher-canon', type: 'teachers', classId: '', period: 'all', data: { timestamp: 20, canonicalComplete: true } },
             { key: 'teacher-old', type: 'teachers', classId: 'اولی', period: 'all', data: { timestamp: 10 } },
-            { key: 'student-canon', type: 'students', classId: 'اولی', period: 'all', data: { timestamp: 20 } },
+            { key: 'student-canon', type: 'students', classId: 'اولی', period: 'all', data: { timestamp: 20, canonicalComplete: true } },
             { key: 'student-old-hour', type: 'students', classId: 'اولی', period: 'P1', data: { timestamp: 10 } },
             { key: 'legacy-only', type: 'students', classId: 'ثانیہ', period: 'P2', data: { timestamp: 5 } }
         ]);
@@ -75,20 +91,23 @@ describe('Attendance cross-screen consistency', function () {
         expect(att.slice(collectiveStart, collectiveEnd)).toContain("attAdoptLegacyPeriodSheets(keys, month, type, '')");
     });
 
-    it('never lets old period sheets refill an already covered canonical register', function () {
+    it('uses tombstones and completion markers instead of unsafe whole-register suppression', function () {
         var att = source('attendance.js');
         var start = att.indexOf('function attAdoptLegacyPeriodSheets');
         var end = att.indexOf('\nfunction attLoadRegisterLocalFirst', start);
         var block = att.slice(start, end);
-        expect(block).toContain('canonicalHadPeriodCoverage');
-        expect(block).toMatch(/if \(canonicalHadPeriodCoverage\) return/);
+        expect(block).toContain('canon.canonicalComplete === true');
+        expect(block).toContain('attWasDayCleared');
+        expect(block).toContain('attWasPeriodCleared');
+        expect(block).not.toContain('canonicalHadPeriodCoverage');
+        expect(block).not.toContain('attPersistSheetPayload(keys, payload');
         expect(block).toMatch(/legacySheets\.sort[\s\S]*?attRecordTimestamp/);
     });
 
     it('accepts a complete equal-timestamp cloud document during month refresh', async function () {
         var helper = source('attendance-helper.js');
         var start = helper.indexOf('function fetchAttendanceDocsForMonth');
-        var end = helper.indexOf('\n    /** Prefer AttendanceSummary', start);
+        var end = helper.indexOf('\n    function attHelperStatsFromCanonicalRows', start);
         var cached = null;
         var remote = {
             timestamp: 2000,
@@ -134,7 +153,7 @@ describe('Attendance cross-screen consistency', function () {
     it('does not let automatic month refresh overwrite a pending local delete', async function () {
         var helper = source('attendance-helper.js');
         var start = helper.indexOf('function fetchAttendanceDocsForMonth');
-        var end = helper.indexOf('\n    /** Prefer AttendanceSummary', start);
+        var end = helper.indexOf('\n    function attHelperStatsFromCanonicalRows', start);
         var cached = null;
         var remote = { timestamp: 2000, records: { t1: { '5': 'P' } } };
         var local = { timestamp: 2001, records: {} };

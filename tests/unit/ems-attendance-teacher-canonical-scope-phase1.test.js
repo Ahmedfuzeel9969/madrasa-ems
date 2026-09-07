@@ -112,7 +112,7 @@ describe('Phase 1 — legacy teacher/staff sheet discovery', function () {
         ]);
     });
 
-    it('skips already-merged legacy keys on second migration pass', function () {
+    it('does not let an old device-local merge log hide recoverable cloud history', function () {
         var sb = loadScopeHelpers();
         var keys = [
             'att_rec_tenant1_2026-08_teachers__all',
@@ -122,7 +122,7 @@ describe('Phase 1 — legacy teacher/staff sheet discovery', function () {
         var secondPass = sb.attLegacyTeacherStaffSheetKeys(
             keys, '2026-08', 'teachers', 'att_rec_tenant1_2026-08_teachers__all'
         );
-        expect(secondPass).toEqual([]);
+        expect(secondPass).toEqual(['att_rec_tenant1_2026-08_teachers_Class-A_all']);
     });
 
     it('wires class-scoped legacy adoption in attAdoptLegacyPeriodSheets', function () {

@@ -190,17 +190,19 @@ async function applyFinanceSummaryDelta(db, tenantId, before, after) {
     });
 }
 
-async function recomputeAttendanceSummaryForMonth(db, tenantId, monthKey) {
+async function recomputeAttendanceSummaryForMonth(db, tenantId, monthKey, suppliedSourceDocs) {
     if (!monthKey) return null;
-    var prefix = 'att_rec_' + monthKey;
-    var snap = await db.collection('All_Madrasas').doc(tenantId).collection('Attendance')
-        .where(admin.firestore.FieldPath.documentId(), '>=', prefix)
-        .where(admin.firestore.FieldPath.documentId(), '<=', prefix + '\uf8ff')
-        .get();
-
     var finalStateHelper = require('./attendance-final-state');
-    var sourceDocs = [];
-    snap.forEach(function (doc) { sourceDocs.push({ id: doc.id, data: doc.data() || {} }); });
+    var sourceDocs = suppliedSourceDocs || null;
+    if (!sourceDocs) {
+        var prefix = 'att_rec_' + monthKey;
+        var snap = await db.collection('All_Madrasas').doc(tenantId).collection('Attendance')
+            .where(admin.firestore.FieldPath.documentId(), '>=', prefix)
+            .where(admin.firestore.FieldPath.documentId(), '<=', prefix + '\uf8ff')
+            .get();
+        sourceDocs = [];
+        snap.forEach(function (doc) { sourceDocs.push({ id: doc.id, data: doc.data() || {} }); });
+    }
     var finalState = finalStateHelper.buildFinalAttendanceState(sourceDocs, monthKey, {
         includeTypes: ['students']
     });
@@ -347,36 +349,20 @@ async function applyLedgerDelta(db, tenantId, before, after) {
 }
 
 async function refreshTodayAttendance(db, tenantId) {
-    var today = new Date().toISOString().split('T')[0];
+    var today = pakistanDateStr();
     var month = today.substring(0, 7);
-    var dayNum = parseInt(today.substring(8, 10), 10);
-    var prefix = 'att_rec_' + month;
-    var col = db.collection('All_Madrasas').doc(tenantId).collection('Attendance');
-    var snap = await col
-        .where(admin.firestore.FieldPath.documentId(), '>=', prefix)
-        .where(admin.firestore.FieldPath.documentId(), '<=', prefix + '\uf8ff')
-        .get();
-    var finalStateHelper = require('./attendance-final-state');
-    var sourceDocs = [];
-    snap.forEach(function (doc) { sourceDocs.push({ id: doc.id, data: doc.data() || {} }); });
-    var finalState = finalStateHelper.buildFinalAttendanceState(sourceDocs, month, {
-        includeTypes: ['students']
-    });
-    var presentSet = new Set();
-    Object.keys(finalState).forEach(function (key) {
-        var row = finalState[key];
-        if (Number(row.day) === dayNum && row.bucket === 'present') presentSet.add(row.personId);
-    });
+    // One canonical monthly scan feeds both AttendanceSummary and DashboardStats.
+    // The old path scanned the same month twice for every attendance write.
+    var summary = await recomputeAttendanceSummaryForMonth(db, tenantId, month);
     await mergeStatsDelta(db, tenantId, function (stats) {
-        stats.attendance.todayPresent = presentSet.size;
+        stats.attendance.todayPresent = Number(summary && summary.todayPresent) || 0;
         stats.attendance.todayDate = today;
     });
-    await recomputeAttendanceSummaryForMonth(db, tenantId, month);
 }
 
 async function recomputeTenantStats(tenantId) {
     var db = admin.firestore();
-    var today = new Date().toISOString().split('T')[0];
+    var today = pakistanDateStr();
     var stats = defaultStats(today);
     var base = db.collection('All_Madrasas').doc(tenantId);
 
@@ -427,16 +413,19 @@ async function recomputeTenantStats(tenantId) {
         .where(admin.firestore.FieldPath.documentId(), '>=', 'att_rec_' + month)
         .where(admin.firestore.FieldPath.documentId(), '<=', 'att_rec_' + month + '\uf8ff')
         .get();
-    var presentSet = new Set();
+    var attSourceDocs = [];
     attSnap.forEach(function (doc) {
-        var data = doc.data();
-        if (!data || !data.records) return;
-        Object.keys(data.records).forEach(function (uid) {
-            var dayRec = data.records[uid];
-            if (!dayRec) return;
-            var st = dayRec[dayNum] || dayRec[String(dayNum)];
-            if (st === 'P' || st === 'حاضر') presentSet.add(uid);
-        });
+        attSourceDocs.push({ id: doc.id, data: doc.data() || {} });
+    });
+    var finalAttendance = require('./attendance-final-state').buildFinalAttendanceState(
+        attSourceDocs,
+        month,
+        { includeTypes: ['students'] }
+    );
+    var presentSet = new Set();
+    Object.keys(finalAttendance).forEach(function (key) {
+        var row = finalAttendance[key];
+        if (Number(row.day) === dayNum && row.bucket === 'present') presentSet.add(row.personId);
     });
     stats.attendance.todayPresent = presentSet.size;
     stats.attendance.todayDate = today;
@@ -444,7 +433,7 @@ async function recomputeTenantStats(tenantId) {
 
     await statsRef(db, tenantId).set(stats, { merge: true });
     await recomputeFinanceSummaries(db, tenantId, feeSnap);
-    await recomputeAttendanceSummaryForMonth(db, tenantId, month);
+    await recomputeAttendanceSummaryForMonth(db, tenantId, month, attSourceDocs);
     await examCurSummaries.recomputeAllExamCurriculumSummaries(db, tenantId);
     return stats;
 }
@@ -503,7 +492,7 @@ function makeAttendanceHandler() {
             if (docId.indexOf('att_rec_') !== 0) return null;
             var monthKey = monthFromAttDocId(docId);
             if (!monthKey) return null;
-            var todayMonth = new Date().toISOString().split('T')[0].substring(0, 7);
+            var todayMonth = pakistanDateStr().substring(0, 7);
             try {
                 if (monthKey === todayMonth) {
                     await refreshTodayAttendance(admin.firestore(), context.params.tenantId);

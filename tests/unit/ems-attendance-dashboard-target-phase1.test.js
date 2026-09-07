@@ -202,12 +202,12 @@ describe('Phase 1 — TASK 1.2: period targets and legacy dashboard calculations
         var legacy = {
             type: 'students',
             classId: 'A',
-            period: 'all',
+            period: 'PRD-1',
             data: { timestamp: 1, records: { U1: { 5: 'P' } } }
         };
         var canonical = {
             type: 'students',
-            classId: '',
+            classId: 'A',
             period: 'all',
             data: { timestamp: 2, records: { U1: { 5: 'A' } } }
         };

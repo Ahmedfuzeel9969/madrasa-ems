@@ -68,6 +68,7 @@ describe('Attendance local-first save status (Phase 1)', function () {
         sb.attSaveStatusMarkLocal('doc_c', 'saved');
         sb.attSaveStatusOnCloudResult('doc_b', { ok: true, synced: false, offline: true, queued: true });
         sb.attSaveStatusOnCloudResult('doc_c', { ok: false, code: 'VERSION_CONFLICT' });
+        sb.attSaveStatusOnCloudResult('doc_d', { ok: false, code: 'CELL_CONFLICT' });
         expect(typeof sb.attSaveStatusOnCloudResult).toBe('function');
     });
 

@@ -570,8 +570,14 @@
     toast(resultMessage(scope || 'all', kindVal, studentCount, periodCount, _state.registerType), 'success');
   }
 
+  function requireAttendanceEditPermission() {
+    if (typeof global.emsRequireStaffAction !== 'function') return true;
+    return !!global.emsRequireStaffAction('attendance', 'edit');
+  }
+
   function setStatus(status, uid, periodId, actionLabel, scope) {
     if (!_state || _saving) return;
+    if (!requireAttendanceEditPermission()) return;
     if (_state.blocked) {
       toast(_state.blockReason || 'اس دن حاضری نہیں ہو سکتی', 'warning');
       return;
@@ -996,6 +1002,7 @@
   function undoLast() {
     if (!_state || _saving) return;
     if (!_undo) return toast('واپس کرنے کے لیے کوئی تبدیلی نہیں', 'info');
+    if (!requireAttendanceEditPermission()) return;
     setSaving(true);
     var undoEntry = _undo;
     var currentSnapshots = snapshotSheets(Object.keys(undoEntry.snapshots));

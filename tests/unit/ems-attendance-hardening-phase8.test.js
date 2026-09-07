@@ -6,13 +6,16 @@ import { fileURLToPath } from 'url';
 const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 describe('attendance hardening phase 8', function () {
-    it('uses edit time rather than flush time for attendance conflict checks', function () {
+    it('uses edit-time cell baselines inside the Firestore transaction', function () {
         const src = fs.readFileSync(path.join(ROOT, 'ems-offline-write.js'), 'utf8');
         const start = src.indexOf('function flushAttendancePatchRow');
         const end = src.indexOf('\n    function flushModuleItemRow', start);
         const block = src.slice(start, end);
         expect(block).toContain('row.meta && row.meta.mutationAt');
-        expect(block).toMatch(/mutationAt[\s\S]*checkRemoteVersion/);
+        expect(block).toContain('baseValues: (row.meta && row.meta.patchBase) || {}');
+        expect(block).toContain('runAttendancePatchTransaction');
+        expect(block).not.toContain('checkRemoteVersion(ref, patch');
+        expect(src).toContain("conflict.code = 'CELL_CONFLICT'");
         expect(src).toMatch(/stampCloudVersion[\s\S]{0,500}out\.timestamp/);
     });
 

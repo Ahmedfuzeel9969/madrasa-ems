@@ -257,4 +257,13 @@ describe('Collective monthly read-only attendance view', () => {
         expect(src).toContain("global.addEventListener('ems:tenant-changed'");
         expect(src).toContain('مدرسہ تبدیل ہو چکا ہے؛ ماہانہ حاضری دوبارہ لوڈ کریں');
     });
+
+    it('does not query active attendance collections outside the archive window', () => {
+        const attendance = read('attendance.js');
+        const view = read('att-collective-view.js');
+        expect(attendance).toContain('emsArchiveMonthInWindow');
+        expect(attendance).toContain('محفوظ تاریخی ریکارڈ آرکائیو سے دیکھیں');
+        expect(view).toContain('emsArchiveMonthInWindow');
+        expect(view).toContain('محفوظ تاریخی ریکارڈ آرکائیو سے دیکھیں');
+    });
 });

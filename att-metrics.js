@@ -127,10 +127,39 @@
         return out;
     }
 
-    /** Newer ts wins; on tie prefer period=all; clear/tombstone beats stale mark. */
+    function attMetricsIsCanonicalSheet(sheet) {
+        if (!sheet || sheet.period !== 'all') return false;
+        if (sheet.type === 'students') return !!sheet.classId;
+        if (sheet.type === 'teachers' || sheet.type === 'staff') return !sheet.classId;
+        return false;
+    }
+
+    function attMetricsSheetMatchesRoster(sheet, rosterRow) {
+        if (!sheet || !rosterRow) return false;
+        var role = rosterRow.role;
+        if (role === 'student' && sheet.type && sheet.type !== 'students') return false;
+        if (role === 'teacher' && sheet.type && sheet.type !== 'teachers') return false;
+        if (role === 'staff' && sheet.type && sheet.type !== 'staff') return false;
+        if (role === 'student' && sheet.classId && sheet.classId !== rosterRow.classId) return false;
+        return true;
+    }
+
+    function attMetricsDayTombstone(data, uid, dayNum) {
+        var days = data && data.clearedCells && data.clearedCells.days;
+        return !!(days && days[uid] && days[uid][String(dayNum)] === true);
+    }
+
+    function attMetricsPeriodTombstone(data, uid, dayNum, periodId) {
+        var periods = data && data.clearedCells && data.clearedCells.periods;
+        return !!(periods && periods[uid] && periods[uid][String(dayNum)]
+            && periods[uid][String(dayNum)][String(periodId)] === true);
+    }
+
+    /** Canonical wins over legacy; then newer ts; then clear beats stale mark. */
     function attMetricsMarkCandidateBetter(cand, incumbent) {
         if (!incumbent) return true;
         if (!cand) return false;
+        if (!!cand.canonical !== !!incumbent.canonical) return !!cand.canonical;
         if (cand.ts !== incumbent.ts) return cand.ts > incumbent.ts;
         if (cand.isAll !== incumbent.isAll) return !!cand.isAll;
         if (cand.cleared !== incumbent.cleared) return !!cand.cleared;
@@ -342,6 +371,7 @@
             if (!sh || !sh.data) return;
             var sheetTs = attMetricsSheetTimestamp(sh.data);
             var isAll = !sh.period || sh.period === 'all';
+            var isCanonical = attMetricsIsCanonicalSheet(sh);
 
             if (periodId) {
                 if (isAll) {
@@ -362,6 +392,7 @@
                             uid: uid,
                             ts: sheetTs,
                             isAll: true,
+                            canonical: isCanonical,
                             hasObservation: obsP.hasObservation,
                             cleared: obsP.cleared,
                             status: obsP.status,
@@ -371,6 +402,21 @@
                             metric: global.ATT_METRIC_PERIOD
                         };
                         if (attMetricsMarkCandidateBetter(cand, best[uid])) best[uid] = cand;
+                    });
+                    Object.keys(roster).forEach(function (uid) {
+                        if (!attMetricsSheetMatchesRoster(sh, roster[uid])) return;
+                        var dayMap = periodRecs[uid]
+                            && (periodRecs[uid][dayNum] || periodRecs[uid][String(dayNum)]);
+                        if (dayMap && Object.prototype.hasOwnProperty.call(dayMap, periodId)) return;
+                        if (!isCanonical || (!attMetricsDayTombstone(sh.data, uid, dayNum)
+                            && !attMetricsPeriodTombstone(sh.data, uid, dayNum, periodId))) return;
+                        var tombstone = {
+                            uid: uid, ts: sheetTs, isAll: true, canonical: true,
+                            hasObservation: true, cleared: true, status: '', kind: 'UNMARKED',
+                            sheetKey: sh.key || '', period: periodId,
+                            metric: global.ATT_METRIC_PERIOD
+                        };
+                        if (attMetricsMarkCandidateBetter(tombstone, best[uid])) best[uid] = tombstone;
                     });
                     return;
                 }
@@ -392,6 +438,7 @@
                         uid: uid,
                         ts: sheetTs,
                         isAll: false,
+                        canonical: false,
                         hasObservation: obsL.hasObservation,
                         cleared: obsL.cleared,
                         status: obsL.status,
@@ -423,6 +470,7 @@
                         uid: uid,
                         ts: sheetTs,
                         isAll: true,
+                        canonical: isCanonical,
                         hasObservation: state.hasObservation,
                         cleared: state.cleared,
                         status: state.status,
@@ -437,6 +485,7 @@
                         uid: uid,
                         ts: sheetTs,
                         isAll: false,
+                        canonical: false,
                         hasObservation: state.hasObservation,
                         cleared: state.cleared,
                         status: state.status,
@@ -448,6 +497,19 @@
                 }
                 if (attMetricsMarkCandidateBetter(cand, best[uid])) best[uid] = cand;
             });
+            if (isCanonical) {
+                Object.keys(roster).forEach(function (uid) {
+                    if (!attMetricsSheetMatchesRoster(sh, roster[uid])) return;
+                    var obs = attMetricsReadDayObservation(rec[uid], dayNum);
+                    if (obs.hasKey || !attMetricsDayTombstone(sh.data, uid, dayNum)) return;
+                    var tombstone = {
+                        uid: uid, ts: sheetTs, isAll: true, canonical: true,
+                        hasObservation: true, cleared: true, status: '', kind: 'UNMARKED',
+                        sheetKey: sh.key || '', period: 'all', metric: global.ATT_METRIC_DAILY
+                    };
+                    if (attMetricsMarkCandidateBetter(tombstone, best[uid])) best[uid] = tombstone;
+                });
+            }
         });
 
         var marks = Object.create(null);
@@ -710,24 +772,41 @@
     function attMetricsCollectPeriodMapForUserDay(dateStr, sheets, uid) {
         var dayNum = attMetricsDayNumOf(dateStr);
         var bestByPeriod = Object.create(null);
+        var canonicalDayCleared = false;
+        var canonicalPeriodCleared = Object.create(null);
         (sheets || []).forEach(function (sh) {
             if (!sh || !sh.data) return;
             var ts = attMetricsSheetTimestamp(sh.data);
             var isAll = !sh.period || sh.period === 'all';
+            var isCanonical = attMetricsIsCanonicalSheet(sh);
             if (isAll) {
                 var userPeriods = sh.data.periodRecords && sh.data.periodRecords[uid];
                 var dayMap = userPeriods && (userPeriods[dayNum] || userPeriods[String(dayNum)]);
-                if (!dayMap || typeof dayMap !== 'object') return;
-                Object.keys(dayMap).forEach(function (pid) {
+                Object.keys((dayMap && typeof dayMap === 'object') ? dayMap : {}).forEach(function (pid) {
                     var state = attMetricsObservationState(dayMap[pid], true);
-                    var cand = { ts: ts, status: state.status, kind: state.kind, cleared: state.cleared };
+                    var cand = {
+                        ts: ts, isAll: true, canonical: isCanonical,
+                        status: state.status, kind: state.kind, cleared: state.cleared
+                    };
                     if (!bestByPeriod[pid] || attMetricsMarkCandidateBetter(
-                        { ts: ts, isAll: true, cleared: state.cleared },
-                        { ts: bestByPeriod[pid].ts, isAll: true, cleared: bestByPeriod[pid].cleared }
+                        cand,
+                        bestByPeriod[pid]
                     )) {
                         bestByPeriod[pid] = cand;
                     }
                 });
+                if (isCanonical && attMetricsDayTombstone(sh.data, uid, dayNum)) {
+                    canonicalDayCleared = true;
+                }
+                var periodTombs = sh.data.clearedCells && sh.data.clearedCells.periods
+                    && sh.data.clearedCells.periods[uid]
+                    && (sh.data.clearedCells.periods[uid][dayNum]
+                        || sh.data.clearedCells.periods[uid][String(dayNum)]);
+                if (isCanonical && periodTombs && typeof periodTombs === 'object') {
+                    Object.keys(periodTombs).forEach(function (pid) {
+                        if (periodTombs[pid] === true) canonicalPeriodCleared[pid] = true;
+                    });
+                }
                 return;
             }
             var rec = sh.data.records && sh.data.records[uid];
@@ -735,8 +814,28 @@
             if (!obs.hasKey) return;
             var stateL = attMetricsObservationState(obs.status, true);
             var pidL = String(sh.period);
-            var candL = { ts: ts, status: stateL.status, kind: stateL.kind, cleared: stateL.cleared };
-            if (!bestByPeriod[pidL] || ts >= bestByPeriod[pidL].ts) bestByPeriod[pidL] = candL;
+            var candL = {
+                ts: ts, isAll: false, canonical: false,
+                status: stateL.status, kind: stateL.kind, cleared: stateL.cleared
+            };
+            if (!bestByPeriod[pidL] || attMetricsMarkCandidateBetter(candL, bestByPeriod[pidL])) {
+                bestByPeriod[pidL] = candL;
+            }
+        });
+        Object.keys(bestByPeriod).forEach(function (pid) {
+            if (!canonicalDayCleared && !canonicalPeriodCleared[pid]) return;
+            if (bestByPeriod[pid] && bestByPeriod[pid].canonical) return;
+            bestByPeriod[pid] = {
+                ts: Number.MAX_SAFE_INTEGER, isAll: true, canonical: true,
+                status: '', kind: 'UNMARKED', cleared: true
+            };
+        });
+        Object.keys(canonicalPeriodCleared).forEach(function (pid) {
+            if (bestByPeriod[pid] && bestByPeriod[pid].canonical) return;
+            bestByPeriod[pid] = {
+                ts: Number.MAX_SAFE_INTEGER, isAll: true, canonical: true,
+                status: '', kind: 'UNMARKED', cleared: true
+            };
         });
         return bestByPeriod;
     }

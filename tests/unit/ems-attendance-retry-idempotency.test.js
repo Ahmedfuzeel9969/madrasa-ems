@@ -13,16 +13,15 @@ describe('Attendance retry idempotency', function () {
         expect(src).toMatch(/upsertQueueByDocId[\s\S]*?coalesceAttendanceRows/);
     });
 
-    it('retries update/set the same Attendance document and never add a second document', function () {
+    it('retries full writes on the same document and applies patches transactionally', function () {
         var src = fs.readFileSync(path.join(ROOT, 'ems-offline-write.js'), 'utf8');
         var start = src.indexOf('function flushAttendanceRow');
         var end = src.indexOf('\n    function flushModuleItemRow', start);
         var block = src.slice(start, end);
         expect(block).toContain("collection('Attendance').doc(row.docId)");
-        expect(block).toContain('ref.set(payload, { merge: false })');
-        expect(block).toContain('ref.update(patch)');
+        expect(block).toContain('runAttendanceFullTransaction(db, ref, payload');
         expect(block).toContain('applyAttendancePatchToDocument({}, patch)');
-        expect(block).toContain('ref.set(createDocument, { merge: false })');
+        expect(block).toContain('runAttendancePatchTransaction(db, ref, patch, createDocument, {');
         expect(block).not.toContain('ref.set(patch, { merge: true })');
         expect(block).not.toMatch(/\.add\s*\(/);
     });
@@ -53,12 +52,15 @@ describe('Attendance retry idempotency', function () {
         expect(offline).toContain('flushMutationRowAndDequeue(storedRow)');
     });
 
-    it('creates a missing sheet only for Firestore not-found, never for network/permission failure', function () {
+    it('creates or updates a sheet inside one Firestore transaction', function () {
         var src = fs.readFileSync(path.join(ROOT, 'ems-offline-write.js'), 'utf8');
-        var start = src.indexOf('function flushAttendancePatchRow');
-        var end = src.indexOf('\n    function flushModuleItemRow', start);
+        var start = src.indexOf('function runAttendancePatchTransaction');
+        var end = src.indexOf('\n    /** One tenant/document', start);
         var block = src.slice(start, end);
-        expect(block).toContain('isFirestoreNotFoundCode(res && res.code)');
-        expect(block).toMatch(/if\s*\(!isFirestoreNotFoundCode\(res && res\.code\)\)\s*return res/);
+        expect(block).toContain('db.runTransaction');
+        expect(block).toContain('tx.get(ref)');
+        expect(block).toContain('tx.set(ref, createPayload, { merge: false })');
+        expect(block).toContain('tx.update(ref, updatePayload)');
+        expect(block).not.toContain('ref.get(');
     });
 });

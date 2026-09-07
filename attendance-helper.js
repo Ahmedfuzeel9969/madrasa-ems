@@ -109,7 +109,8 @@
         teacherPeriodRecords: true,
         remarks: true,
         late: true,
-        dailyLocks: true
+        dailyLocks: true,
+        clearedCells: true
     };
 
     function attCloneAttendanceMap(value) {
@@ -213,6 +214,8 @@
         if (Object.keys(sheet.records || {}).length) return true;
         if (Object.keys(sheet.dailyLocks || {}).length) return true;
         if (Object.keys(sheet.periodRecords || {}).length) return true;
+        if (Object.keys((sheet.clearedCells && sheet.clearedCells.days) || {}).length) return true;
+        if (Object.keys((sheet.clearedCells && sheet.clearedCells.periods) || {}).length) return true;
         return false;
     }
 
@@ -609,15 +612,15 @@
     };
 
     /**
-     * Once a canonical `all` sheet exists, it is the only daily source for that
-     * register. Historic class/hour sheets remain safely cached for recovery,
-     * but must not re-create a day that was deliberately cleared in canonical.
+     * Legacy rows stay readable until an explicit, audited migration marks the
+     * canonical sheet complete. Canonical values/tombstones still win per cell
+     * in att-metrics; legacy only fills genuinely missing historical cells.
      */
     function attHelperCanonicalMonthRows(rows) {
         rows = (rows || []).filter(Boolean);
         var canonical = Object.create(null);
         rows.forEach(function (row) {
-            if (!row || row.period !== 'all') return;
+            if (!row || row.period !== 'all' || !row.data || row.data.canonicalComplete !== true) return;
             if (row.type === 'students' && row.classId) {
                 canonical['students|' + row.classId] = true;
             } else if ((row.type === 'teachers' || row.type === 'staff') && !row.classId) {
@@ -666,53 +669,79 @@
         });
     };
 
-    /** Prefer AttendanceSummary doc when available (E8) */
+    function attHelperStatsFromCanonicalRows(parts, rows, source) {
+        rows = (rows || []).filter(function (row) {
+            return row && row.type === 'students' && row.data;
+        });
+        if (typeof global.attMetricsBuildFinalMarksForDay === 'function') {
+            var ids = Object.create(null);
+            rows.forEach(function (row) {
+                Object.keys((row.data && row.data.records) || {}).forEach(function (id) { ids[id] = true; });
+                Object.keys((row.data && row.data.periodRecords) || {}).forEach(function (id) { ids[id] = true; });
+            });
+            var roster = Object.keys(ids).map(function (id) { return { id: id, type: 'student' }; });
+            var finalDs = global.attMetricsBuildFinalMarksForDay(parts.todayStr, rows, roster, '');
+            var stats = global.attMetricsStatsFromFinalMarks(finalDs, roster);
+            var presentIds = [];
+            var absentIds = [];
+            var leaveIds = [];
+            Object.keys(finalDs.marks || {}).forEach(function (uid) {
+                var status = finalDs.marks[uid] && finalDs.marks[uid].status;
+                if (status === 'P') presentIds.push(uid);
+                else if (status === 'A') absentIds.push(uid);
+                else if (status === 'L') leaveIds.push(uid);
+            });
+            return {
+                present: stats.present || 0,
+                absent: stats.absent || 0,
+                leave: stats.leave || 0,
+                markedTotal: stats.markedTotal || 0,
+                presentIds: presentIds,
+                absentIds: absentIds,
+                leaveIds: leaveIds,
+                source: source || 'canonical_month'
+            };
+        }
+        var sets = { present: new Set(), absent: new Set(), leave: new Set() };
+        rows.forEach(function (row) {
+            countDayMarksFromDoc(row.data, parts.todayDateNum, sets);
+        });
+        return attHelperStatsFromSets(sets, source || 'canonical_month');
+    }
+
+    /**
+     * Dashboard, details, Smart Register and reports now use the same canonical
+     * month collector. AttendanceSummary remains a last-resort empty-cache
+     * fallback only; it may lag a just-completed register write.
+     */
     global.emsFetchTodayAttendanceStats = function () {
         var parts = todayParts();
-        var summary = typeof global.emsGetAttendanceSummary === 'function'
-            ? global.emsGetAttendanceSummary(parts.todayMonth)
-            : null;
-        if (summary && summary.version >= 1 && summary.todayDate === parts.todayStr) {
-            var sPresent = Number(summary.todayPresent) || 0;
-            var sAbsent = Number(summary.todayAbsent) || 0;
-            var sLeave = Number(summary.todayLeave) || 0;
-            var sMarked = sPresent + sAbsent + sLeave;
-            return Promise.resolve({
-                present: sPresent,
-                absent: sAbsent,
-                leave: sLeave,
-                markedTotal: sMarked,
-                presentIds: [],
-                absentIds: [],
-                leaveIds: [],
-                source: 'summary'
-            });
-        }
-
-        var db = getDb();
-        var uid = getTenantId();
-
-        if (!shouldUseFirestore()) {
-            return global.emsFetchTodayAttendanceFromCache(parts);
-        }
-
         return withTimeout(
-            fetchAttendanceDocsForMonth(db, uid, parts.todayMonth)
-                .then(function (snap) {
-                    var sets = {
-                        present: new Set(),
-                        absent: new Set(),
-                        leave: new Set()
+            global.emsAttCollectMonthSheetsAsync(parts.todayMonth).then(function (rows) {
+                if (rows && rows.length) {
+                    return attHelperStatsFromCanonicalRows(parts, rows, 'canonical_month');
+                }
+                var summary = typeof global.emsGetAttendanceSummary === 'function'
+                    ? global.emsGetAttendanceSummary(parts.todayMonth)
+                    : null;
+                if (summary && summary.version >= 1 && summary.todayDate === parts.todayStr) {
+                    var present = Number(summary.todayPresent) || 0;
+                    var absent = Number(summary.todayAbsent) || 0;
+                    var leave = Number(summary.todayLeave) || 0;
+                    return {
+                        present: present,
+                        absent: absent,
+                        leave: leave,
+                        markedTotal: present + absent + leave,
+                        presentIds: [], absentIds: [], leaveIds: [],
+                        source: 'summary'
                     };
-                    snap.forEach(function (doc) {
-                        countDayMarksFromDoc(doc.data(), parts.todayDateNum, sets);
-                    });
-                    return attHelperStatsFromSets(sets, 'firestore');
-                })
-                .catch(function () {
-                    return global.emsFetchTodayAttendanceFromCache(parts);
-                }),
-            3000,
+                }
+                return attHelperEmptyDayStats('canonical_month_empty');
+            }).catch(function () {
+                return global.emsFetchTodayAttendanceFromCache(parts);
+            }),
+            4000,
             null
         ).then(function (result) {
             if (result) return result;
@@ -723,57 +752,8 @@
     /** Fallback: IndexedDB KV index (no full localStorage scan per refresh). */
     global.emsFetchTodayAttendanceFromCache = function (parts) {
         parts = parts || todayParts();
-
-        return global.emsOfflineListAttendanceKeysAsync(parts.todayMonth).then(function (keys) {
-            return Promise.all(keys.map(attReadSheetByKeyAsync)).then(function (sheets) {
-                if (typeof global.attMetricsBuildFinalMarksForDay === 'function') {
-                    var metricSheets = (sheets || []).filter(Boolean).map(function (sheet, idx) {
-                        return {
-                            key: keys[idx] || ('cache_' + idx),
-                            type: 'students',
-                            classId: '',
-                            period: 'all',
-                            data: sheet
-                        };
-                    });
-                    var ids = Object.create(null);
-                    metricSheets.forEach(function (sh) {
-                        Object.keys((sh.data && sh.data.records) || {}).forEach(function (id) { ids[id] = true; });
-                        Object.keys((sh.data && sh.data.periodRecords) || {}).forEach(function (id) { ids[id] = true; });
-                    });
-                    var roster = Object.keys(ids).map(function (id) { return { id: id, type: 'student' }; });
-                    var finalDs = global.attMetricsBuildFinalMarksForDay(parts.todayStr, metricSheets, roster, '');
-                    var st = global.attMetricsStatsFromFinalMarks(finalDs, roster);
-                    var presentIds = [];
-                    var absentIds = [];
-                    var leaveIds = [];
-                    Object.keys(finalDs.marks || {}).forEach(function (uid) {
-                        var status = finalDs.marks[uid] && finalDs.marks[uid].status;
-                        if (status === 'P') presentIds.push(uid);
-                        else if (status === 'A') absentIds.push(uid);
-                        else if (status === 'L') leaveIds.push(uid);
-                    });
-                    return {
-                        present: st.present,
-                        absent: st.absent,
-                        leave: st.leave,
-                        markedTotal: st.markedTotal,
-                        presentIds: presentIds,
-                        absentIds: absentIds,
-                        leaveIds: leaveIds,
-                        source: 'cache'
-                    };
-                }
-                var sets = {
-                    present: new Set(),
-                    absent: new Set(),
-                    leave: new Set()
-                };
-                sheets.forEach(function (sheet) {
-                    countDayMarksFromDoc(sheet, parts.todayDateNum, sets);
-                });
-                return attHelperStatsFromSets(sets, 'cache');
-            });
+        return global.emsAttCollectMonthSheetsAsync(parts.todayMonth, { cloud: false }).then(function (rows) {
+            return attHelperStatsFromCanonicalRows(parts, rows, 'canonical_cache');
         });
     };
 
@@ -793,8 +773,6 @@
     /** گزشتہ N دن کا حاضری رجحان (لائن چارٹ کے لیے) — حقیقی ڈیٹا */
     global.emsFetchAttendanceTrend = function (days) {
         days = days || 7;
-        var db = getDb();
-        var uid = getTenantId();
         var dateStrs = [];
         var nowParts = todayParts();
         var cursor = new Date(nowParts.todayStr + 'T12:00:00+05:00');
@@ -819,7 +797,9 @@
         function accumulate(docs) {
             return dateStrs.map(function (dateStr) {
                 var ms = dateStr.substring(0, 7);
-                var monthDocs = docs.filter(function (it) { return it.month === ms; });
+                var monthDocs = docs.filter(function (it) {
+                    return it.month === ms && (!it.type || it.type === 'students');
+                });
                 var metricSheets = sheetsToMetric(ms, monthDocs.map(function (it) { return it.data; }));
                 var present = 0;
                 if (typeof global.attMetricsBuildFinalMarksForDay === 'function') {
@@ -842,14 +822,14 @@
             });
         }
 
-        function fromCache() {
+        function collectCanonicalMonths(cloud) {
             var monthsNeeded = {};
             dateStrs.forEach(function (ds) { monthsNeeded[ds.substring(0, 7)] = true; });
             var monthKeys = Object.keys(monthsNeeded);
             return Promise.all(monthKeys.map(function (m) {
-                return global.emsOfflineLoadAttendanceSheetsForMonth(m).then(function (sheets) {
-                    return sheets.map(function (sheet) {
-                        return { month: m, data: sheet };
+                return global.emsAttCollectMonthSheetsAsync(m, { cloud: cloud }).then(function (sheets) {
+                    return (sheets || []).map(function (sheet) {
+                        return Object.assign({}, sheet, { month: m });
                     });
                 });
             })).then(function (groups) {
@@ -859,28 +839,13 @@
             });
         }
 
+        function fromCache() {
+            return collectCanonicalMonths(false);
+        }
+
         if (shouldUseFirestore()) {
-            var monthsNeeded = {};
-            dateStrs.forEach(function (ds) { monthsNeeded[ds.substring(0, 7)] = true; });
-            var monthKeys = Object.keys(monthsNeeded);
             return withTimeout(
-                Promise.all(monthKeys.map(function (m) {
-                    return fetchAttendanceDocsForMonth(db, uid, m).then(function (snap) {
-                        var docs = [];
-                        snap.forEach(function (doc) {
-                            if (doc.id.indexOf('att_rec_') !== 0) return;
-                            docs.push({
-                                month: doc.id.substring(8, 15),
-                                data: attNormalizeAttendanceCloudDocument(doc.data())
-                            });
-                        });
-                        return docs;
-                    });
-                })).then(function (groups) {
-                    var docs = [];
-                    groups.forEach(function (g) { docs = docs.concat(g); });
-                    return accumulate(docs);
-                }).catch(function () { return fromCache(); }),
+                collectCanonicalMonths(true).catch(function () { return fromCache(); }),
                 3500,
                 null
             ).then(function (result) {

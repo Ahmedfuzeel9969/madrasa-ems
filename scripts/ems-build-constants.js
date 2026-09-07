@@ -7,13 +7,13 @@
 module.exports = {
   RELEASE: '20260621-perf5',
   CACHE_BUST: {
-    syncHardening: '20260709_phase_a_drafts',
+    syncHardening: '20260903_att_holiday_joined_vertical_v1',
     cursorIdb: '20260708_cursor_idb_v1',
-    swUpdate: '20260708_sw_update_v1',
+    swUpdate: '20260903_att_holiday_joined_vertical_v1',
     searchIndex: '20260709_phase_a_drafts',
     offline: '20260628offline5',
     postAuthLoader: '20260903_att_holiday_joined_vertical_v1',
-    core: '20260708_sw_update_v1'
+    core: '20260903_att_holiday_joined_vertical_v1'
   },
   /** Resolve script path — cloud/ prefix when file lives under cloud/ */
   resolveScriptPath: function (root, name) {

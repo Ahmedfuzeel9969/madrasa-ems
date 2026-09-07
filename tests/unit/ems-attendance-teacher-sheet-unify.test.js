@@ -87,7 +87,12 @@ describe('Teacher/staff registers share one canonical sheet', function () {
 
         sb.attMarkLegacyPeriodSheetsMerged(['att_rec_tenant1_2026-08_teachers__period-1']);
         var after = sb.attLegacyPeriodSheetKeys(keys, '2026-08', 'teachers', '');
-        expect(after).toEqual(['att_rec_tenant1_2026-08_teachers__period-2']);
+        // Device-local merge logs are no longer trusted to hide cloud history;
+        // only a canonicalComplete marker may suppress legacy recovery.
+        expect(after).toEqual([
+            'att_rec_tenant1_2026-08_teachers__period-1',
+            'att_rec_tenant1_2026-08_teachers__period-2'
+        ]);
     });
 
     it('adopts legacy hours before opening the register', function () {

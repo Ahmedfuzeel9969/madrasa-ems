@@ -30,7 +30,9 @@
 
     function isHardCloudCode(code) {
         return code === 'PERMISSION_DENIED' || code === 'permission-denied'
-            || code === 'VERSION_CONFLICT' || code === 'FLUSH_ERROR' || code === 'INVALID_ROW';
+            || code === 'VERSION_CONFLICT' || code === 'FLUSH_ERROR' || code === 'INVALID_ROW'
+            || code === 'OUTBOX_ENQUEUE_FAILED' || code === 'TRANSACTION_UNAVAILABLE'
+            || code === 'CELL_CONFLICT';
     }
 
     /**
@@ -51,10 +53,10 @@
         var cloudState;
         if (synced) {
             cloudState = 'synced';
-        } else if (code === 'VERSION_CONFLICT') {
+        } else if (code === 'VERSION_CONFLICT' || code === 'CELL_CONFLICT') {
             cloudState = 'conflict';
         } else if (isHardCloudCode(code) && !isSoftCloudCode(code)) {
-            cloudState = code === 'VERSION_CONFLICT' ? 'conflict' : 'failed';
+            cloudState = (code === 'VERSION_CONFLICT' || code === 'CELL_CONFLICT') ? 'conflict' : 'failed';
         } else if (res.ok === false && !isSoftCloudCode(code) && !res.queued && !res.offline && !skipped) {
             cloudState = 'failed';
         } else if (res.offline && !isHardCloudCode(code)) {
@@ -322,13 +324,6 @@
                 tx.onerror = function () { reject(tx.error); };
             });
         });
-    }
-
-    function isFirestoreNotFoundCode(code) {
-        var normalized = String(code == null ? '' : code).toLowerCase();
-        return normalized === 'not-found'
-            || normalized === 'firestore/not-found'
-            || normalized === '5';
     }
 
     function markRowFailed(row, res) {
@@ -832,7 +827,16 @@
             });
         }).catch(function (err) {
             console.warn('[EMS] offline queue enqueue failed', err);
-            return row;
+            // Returning `row` here used to make callers report "queued" even
+            // though IndexedDB had rejected the write.  That is a data-loss
+            // hazard when the tab closes before another save.
+            var queueErr = new Error(
+                'Attendance sync outbox could not be saved: '
+                + (err && err.message ? err.message : String(err))
+            );
+            queueErr.code = 'OUTBOX_ENQUEUE_FAILED';
+            queueErr.cause = err;
+            throw queueErr;
         });
     }
 
@@ -929,12 +933,20 @@
             return global.attMergeCloudPatches(existing, incoming);
         }
         var merged = Object.assign({}, existing, incoming);
-        ['periodRecords', 'records', 'remarks', 'late'].forEach(function (field) {
+        ['periodRecords', 'records', 'remarks', 'late', 'clearedCells'].forEach(function (field) {
             if (!merged[field]) return;
             var hasGranular = Object.keys(merged).some(function (k) {
                 return k.indexOf(field + '.') === 0;
             });
             if (hasGranular) delete merged[field];
+        });
+        return merged;
+    }
+
+    function mergeAttendancePatchBase(existing, incoming) {
+        var merged = Object.assign({}, existing || {});
+        Object.keys(incoming || {}).forEach(function (path) {
+            if (!Object.prototype.hasOwnProperty.call(merged, path)) merged[path] = incoming[path];
         });
         return merged;
     }
@@ -958,6 +970,89 @@
         return out;
     }
 
+    /**
+     * Apply one attendance field-path patch atomically. Firestore retries this
+     * callback when another client changes the same document, so two clients
+     * creating/updating one monthly register cannot replace each other's
+     * unrelated marks through the old read -> update -> set fallback race.
+     */
+    function attendanceFieldPathState(documentData, fieldPath) {
+        var cursor = documentData || {};
+        var parts = String(fieldPath || '').split('.');
+        for (var i = 0; i < parts.length; i++) {
+            if (!cursor || typeof cursor !== 'object'
+                || !Object.prototype.hasOwnProperty.call(cursor, parts[i])) {
+                return { exists: false };
+            }
+            cursor = cursor[parts[i]];
+        }
+        return { exists: true, value: cursor };
+    }
+
+    function attendanceStatesEqual(a, b) {
+        a = a || { exists: false };
+        b = b || { exists: false };
+        if (!!a.exists !== !!b.exists) return false;
+        if (!a.exists) return true;
+        if (a.value === b.value) return true;
+        try { return JSON.stringify(a.value) === JSON.stringify(b.value); }
+        catch (eCompare) { return false; }
+    }
+
+    function attendanceDesiredState(value) {
+        return value == null ? { exists: false } : { exists: true, value: value };
+    }
+
+    function runAttendancePatchTransaction(db, ref, patch, createDocument, opts) {
+        opts = opts || {};
+        if (!db || typeof db.runTransaction !== 'function') {
+            var unsupported = new Error('Firestore transaction API is unavailable');
+            unsupported.code = 'TRANSACTION_UNAVAILABLE';
+            return Promise.reject(unsupported);
+        }
+        return db.runTransaction(function (tx) {
+            return tx.get(ref).then(function (snap) {
+                var remote = snap && snap.exists ? (snap.data() || {}) : {};
+                var nextVersion = (Number(remote._version) || 0) + 1;
+                if (!snap || !snap.exists) {
+                    var createPayload = Object.assign({}, createDocument || {}, {
+                        _version: nextVersion
+                    });
+                    tx.set(ref, createPayload, { merge: false });
+                    return { created: true, version: nextVersion };
+                }
+                if (!opts.forceLocal) {
+                    var conflicts = [];
+                    var baseValues = opts.baseValues || {};
+                    var desiredValues = opts.desiredValues || {};
+                    Object.keys(baseValues).forEach(function (fieldPath) {
+                        if (!Object.prototype.hasOwnProperty.call(desiredValues, fieldPath)) return;
+                        var currentState = attendanceFieldPathState(remote, fieldPath);
+                        var baseState = baseValues[fieldPath] || { exists: false };
+                        var desiredState = attendanceDesiredState(desiredValues[fieldPath]);
+                        if (!attendanceStatesEqual(currentState, baseState)
+                            && !attendanceStatesEqual(currentState, desiredState)) {
+                            conflicts.push(fieldPath);
+                        }
+                    });
+                    if (conflicts.length) {
+                        var conflict = new Error(
+                            'Attendance cells changed on another device: ' + conflicts.slice(0, 5).join(', ')
+                        );
+                        conflict.code = 'CELL_CONFLICT';
+                        conflict.paths = conflicts;
+                        throw conflict;
+                    }
+                }
+                var updatePayload = Object.assign({}, patch || {}, {
+                    _version: nextVersion
+                });
+                tx.update(ref, updatePayload);
+                return { created: false, version: nextVersion };
+            });
+        });
+    }
+
     /** One tenant/document gets one queue row, regardless of full vs patch mutation. */
     function coalesceAttendanceRows(existing, incoming) {
         if (!existing || !incoming || !queueRowsSameIdentity(existing, incoming)) return incoming;
@@ -965,6 +1060,16 @@
         var incomingPatch = incoming.type === 'attendance_patch';
         if (existingPatch && incomingPatch) {
             incoming.payload = mergeAttendancePatchPayload(existing.payload, incoming.payload);
+            incoming.meta = Object.assign({}, existing.meta || {}, incoming.meta || {}, {
+                patchBase: mergeAttendancePatchBase(
+                    existing.meta && existing.meta.patchBase,
+                    incoming.meta && incoming.meta.patchBase
+                ),
+                mutationAt: Math.max(
+                    Number(existing.meta && existing.meta.mutationAt) || 0,
+                    Number(incoming.meta && incoming.meta.mutationAt) || 0
+                )
+            });
             return incoming;
         }
         var full = existingPatch ? incoming : existing;
@@ -1007,6 +1112,67 @@
         });
     }
 
+    function runAttendanceFullTransaction(db, ref, payload, opts) {
+        opts = opts || {};
+        if (!db || typeof db.runTransaction !== 'function') {
+            var unsupported = new Error('Firestore transaction API is unavailable');
+            unsupported.code = 'TRANSACTION_UNAVAILABLE';
+            return Promise.reject(unsupported);
+        }
+        return db.runTransaction(function (tx) {
+            return tx.get(ref).then(function (snap) {
+                var remote = snap && snap.exists ? (snap.data() || {}) : {};
+                var remoteAt = Number(remote.clientUpdatedAt) || 0;
+                var localAt = Number(payload && payload.clientUpdatedAt) || 0;
+                if (!opts.forceLocal && remoteAt > localAt) {
+                    var conflict = new Error(
+                        'Cloud copy is newer (clientUpdatedAt ' + remoteAt + ' > ' + localAt + ')'
+                    );
+                    conflict.code = 'VERSION_CONFLICT';
+                    throw conflict;
+                }
+                var nextPayload = Object.assign({}, payload || {}, {
+                    _version: (Number(remote._version) || 0) + 1
+                });
+                nextPayload.clearedCells = mergeAttendanceClearedCells(
+                    remote.clearedCells || {},
+                    nextPayload.clearedCells || {}
+                );
+                nextPayload.canonicalComplete = remote.canonicalComplete === true
+                    || nextPayload.canonicalComplete === true;
+                if (remote.canonicalMigratedAt && !nextPayload.canonicalMigratedAt) {
+                    nextPayload.canonicalMigratedAt = remote.canonicalMigratedAt;
+                }
+                tx.set(ref, nextPayload, { merge: false });
+                return { created: !(snap && snap.exists), version: nextPayload._version };
+            });
+        });
+    }
+
+    function mergeAttendanceClearedCells(first, second) {
+        var out = { days: {}, periods: {} };
+        [first || {}, second || {}].forEach(function (cleared) {
+            Object.keys(cleared.days || {}).forEach(function (uid) {
+                Object.keys(cleared.days[uid] || {}).forEach(function (day) {
+                    if (cleared.days[uid][day] !== true) return;
+                    if (!out.days[uid]) out.days[uid] = {};
+                    out.days[uid][day] = true;
+                });
+            });
+            Object.keys(cleared.periods || {}).forEach(function (uid) {
+                Object.keys(cleared.periods[uid] || {}).forEach(function (day) {
+                    Object.keys(cleared.periods[uid][day] || {}).forEach(function (periodId) {
+                        if (cleared.periods[uid][day][periodId] !== true) return;
+                        if (!out.periods[uid]) out.periods[uid] = {};
+                        if (!out.periods[uid][day]) out.periods[uid][day] = {};
+                        out.periods[uid][day][periodId] = true;
+                    });
+                });
+            });
+        });
+        return out;
+    }
+
     function flushAttendanceRow(row) {
         var db = getDb();
         var tid = row.tenantId;
@@ -1021,13 +1187,12 @@
         if (row.meta && row.meta.mutationAt) payload.clientUpdatedAt = Number(row.meta.mutationAt);
         var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
         var forceLocal = !!(row.meta && row.meta.forceLocal);
-        return checkRemoteVersion(ref, payload, { forceLocal: forceLocal }).then(function (gate) {
-            if (!gate.proceed) return gate;
-            // merge:false — cleared days must not survive Firestore deep-merge
-            return flushOp(ref.set(payload, { merge: false }), {
-                type: 'attendance', docId: row.docId, tenantId: tid
-            });
-        });
+        // Legacy/full snapshots still replace the complete document, but the
+        // read/version check and write now happen in one retried transaction.
+        return flushOp(
+            runAttendanceFullTransaction(db, ref, payload, { forceLocal: forceLocal }),
+            { type: 'attendance', docId: row.docId, tenantId: tid, mode: 'transaction' }
+        );
     }
 
     function flushAttendancePatchRow(row) {
@@ -1045,7 +1210,7 @@
             return Promise.resolve({ ok: false, error: 'empty_patch', code: 'INVALID_ROW' });
         }
         // If a top-level map is replaced, drop conflicting nested delete paths.
-        ['records', 'remarks', 'late', 'periodRecords'].forEach(function (field) {
+        ['records', 'remarks', 'late', 'periodRecords', 'clearedCells'].forEach(function (field) {
             if (!patch[field] || typeof patch[field] !== 'object') return;
             Object.keys(patch).forEach(function (k) {
                 if (k.indexOf(field + '.') === 0) delete patch[k];
@@ -1056,11 +1221,11 @@
             return k.indexOf('periodRecords.') === 0;
         });
         if (hasGranularPeriod && patch.periodRecords) delete patch.periodRecords;
-        // If update() reports a genuinely missing document, its fallback must be
-        // a normal nested attendance document. Passing dotted patch keys to
-        // set(..., {merge:true}) stores them literally and makes saved marks
-        // invisible to Smart Register/dashboard readers.
+        // A missing document must be created as a normal nested attendance
+        // document. Dotted patch keys cannot be stored literally because Smart
+        // Register/dashboard readers would not see those marks.
         var createDocument = applyAttendancePatchToDocument({}, patch);
+        var desiredValues = Object.assign({}, patch);
         // null sentinel → FieldValue.delete() so cleared cells are removed.
         try {
             if (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) {
@@ -1076,27 +1241,19 @@
         patch.clientUpdatedAt = Number(
             (row.meta && row.meta.mutationAt) || patch.clientUpdatedAt || patch.timestamp
         ) || Date.now();
-        patch._version = (typeof patch._version === 'number' ? patch._version : 0) + 1;
         createDocument.clientUpdatedAt = patch.clientUpdatedAt;
-        createDocument._version = patch._version;
+        createDocument._version = 1;
         if (patch.timestamp != null) createDocument.timestamp = patch.timestamp;
         if (patch.updatedAt != null) createDocument.updatedAt = patch.updatedAt;
         var ref = tenantDocRef(db, tid).collection('Attendance').doc(row.docId);
-        var forceLocal = !!(row.meta && row.meta.forceLocal);
-        return checkRemoteVersion(ref, patch, { forceLocal: forceLocal }).then(function (gate) {
-            if (!gate.proceed) return gate;
-            return flushOp(ref.update(patch), { type: 'attendance_patch', docId: row.docId }).then(function (res) {
-                if (res && res.ok) return res;
-                // Creating a nested document is valid only when update() proves
-                // that the document does not exist. A network/permission error
-                // must remain queued; replacing an existing register from a
-                // partial patch could erase unrelated attendance.
-                if (!isFirestoreNotFoundCode(res && res.code)) return res;
-                return flushOp(ref.set(createDocument, { merge: false }), {
-                    type: 'attendance_patch', docId: row.docId, fallback: 'set_nested_create'
-                });
-            });
-        });
+        return flushOp(
+            runAttendancePatchTransaction(db, ref, patch, createDocument, {
+                forceLocal: !!(row.meta && row.meta.forceLocal),
+                baseValues: (row.meta && row.meta.patchBase) || {},
+                desiredValues: desiredValues
+            }),
+            { type: 'attendance_patch', docId: row.docId, mode: 'transaction' }
+        );
     }
 
     function flushModuleItemRow(row) {
@@ -1486,6 +1643,8 @@
     };
     global.emsOfflineFlushMutationRow = flushMutationRowAndDequeue;
     global.emsOfflineFlushRowInternal = flushRow;
+    global.emsRunAttendanceFullTransaction = runAttendanceFullTransaction;
+    global.emsRunAttendancePatchTransaction = runAttendancePatchTransaction;
     global.emsOutboxQueueMapKey = queueMapKey;
     global.emsOutboxQueueRowsSameIdentity = queueRowsSameIdentity;
 
@@ -1641,12 +1800,15 @@
             global.emsOfflineWriteLocalSync(localKey, data);
         }
 
+        var localDurableSaved = false;
         return writeLocal(localKey, data).then(function () {
+            localDurableSaved = true;
             if (opts.patch && typeof global.emsCloudEmitAttendancePatch === 'function') {
                 return global.emsCloudEmitAttendancePatch(cloudDocId, opts.patch, {
                     localKey: localKey,
                     tenantId: tenantId,
-                    mutationAt: mutationAt
+                    mutationAt: mutationAt,
+                    patchBase: opts.patchBase || {}
                 }).then(function (syncRes) {
                     return Object.assign(normalizeCloudResult(syncRes, { localSaved: true, docId: cloudDocId }), {
                         local: true,
@@ -1675,8 +1837,9 @@
             console.error('[EMS] offline persist attendance failed', err);
             return normalizeCloudResult({
                 ok: false,
-                error: err && err.message ? err.message : String(err)
-            }, { localSaved: false, docId: cloudDocId });
+                error: err && err.message ? err.message : String(err),
+                code: err && err.code ? err.code : 'LOCAL_OR_OUTBOX_WRITE_FAILED'
+            }, { localSaved: localDurableSaved, docId: cloudDocId });
         });
     };
 

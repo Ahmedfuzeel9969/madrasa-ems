@@ -27,7 +27,7 @@ var ACCEPTANCE_MATRIX = [
     { id: 15, item: 'Account switch no leakage', manual: true, auto: ['ems-tenant-local-isolation.test.js'] },
     { id: 16, item: 'Class-scoped teacher sheet adoption', auto: ['ems-attendance-teacher-canonical-scope-phase1.test.js'] },
     { id: 17, item: 'Period-scoped teacher sheet adoption', auto: ['ems-attendance-teacher-sheet-unify.test.js'] },
-    { id: 18, item: 'Migration twice no duplicates', auto: ['skips already-merged legacy keys'] },
+    { id: 18, item: 'Migration twice no duplicates', auto: ['ems-attendance-canonical-migration.test.js'] },
     { id: 19, item: 'Delete/recreate period history preserved', auto: ['ems-attendance-teacher-identity-phase4.test.js'] },
     { id: 20, item: 'Daily dashboard vs Smart Register', auto: ['ems-attendance-print-dedupe.test.js', 'att-metrics.js'] },
     { id: 21, item: 'Period dashboard vs period boxes', auto: ['ems-attendance-print-dedupe.test.js', 'ems-attendance-metrics-phase6.test.js'] },

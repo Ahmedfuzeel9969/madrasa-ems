@@ -72,7 +72,8 @@ describe('Attendance smart-register clear cell', function () {
         expect(js).toContain('immediateCloud: true');
         expect(js).toContain('attRunPendingCloudPersist');
         expect(js).toMatch(/attAppendForcedClearPatch[\s\S]{0,800}periodRecords\.' \+ uid \+ '\.' \+ day/);
-        expect(offline).toMatch(/set\(payload,\s*\{\s*merge:\s*false\s*\}\)/);
+        expect(offline).toContain('runAttendanceFullTransaction');
+        expect(offline).toContain('tx.set(ref, nextPayload, { merge: false })');
         expect(offline).toContain('FieldValue.delete()');
     });
 
@@ -95,6 +96,7 @@ describe('Attendance smart-register clear cell', function () {
             expect(patch['remarks.' + uid + '.7']).toBe(null);
             expect(patch['late.' + uid + '.7']).toBe(null);
             expect(patch['periodRecords.' + uid + '.7']).toBe(null);
+            expect(patch['clearedCells.days.' + uid + '.7']).toBe(true);
         });
         expect(patch.records).toBeUndefined();
         expect(patch.periodRecords).toBeUndefined();
@@ -105,11 +107,14 @@ describe('Attendance smart-register clear cell', function () {
         var src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
         var deleteStart = src.indexOf('function attDeleteDayEntry');
         var deleteEnd = src.indexOf('\n/** Build Firestore field-path patch', deleteStart);
+        var tombstoneStart = src.indexOf('function attEnsureClearedCells');
+        var tombstoneEnd = src.indexOf('\nfunction attReadConfigJson', tombstoneStart);
         var clearStart = src.indexOf('function attClearDayOnSheetData');
         var clearEnd = src.indexOf('\nwindow.attStudentPeriodsForWeekday', clearStart);
         var sandbox = {};
         vm.runInNewContext(
-            src.slice(deleteStart, deleteEnd) + '\n' + src.slice(clearStart, clearEnd)
+            src.slice(tombstoneStart, tombstoneEnd) + '\n'
+            + src.slice(deleteStart, deleteEnd) + '\n' + src.slice(clearStart, clearEnd)
             + '\nthis.attClearDayOnSheetData = attClearDayOnSheetData;',
             sandbox
         );
@@ -124,6 +129,7 @@ describe('Attendance smart-register clear cell', function () {
         expect(data.remarks.S1['8']).toBeUndefined();
         expect(data.late.S1['8']).toBeUndefined();
         expect(data.periodRecords.S1['8']).toBeUndefined();
+        expect(data.clearedCells.days.S1['8']).toBe(true);
         expect(data.records.S1['9']).toBe('A');
         expect(data.periodRecords.S1['9'].active).toBe('A');
     });
