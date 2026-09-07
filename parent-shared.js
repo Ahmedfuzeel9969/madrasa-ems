@@ -163,8 +163,21 @@
         var tenantId = parentGetTenantId();
         var isParentUser = global.CURRENT_USER_TENANT_ROLE === 'parent'
             || (typeof global.emsGetIntendedPortal === 'function' && global.emsGetIntendedPortal() === 'parent');
+        var policy = typeof global.emsGetTenantSecurityPolicy === 'function'
+            ? global.emsGetTenantSecurityPolicy()
+            : { parentMessagingCfOnly: true };
+        var messagingCfOnly = policy.parentMessagingCfOnly !== false;
+
+        if (isParentUser && messagingCfOnly && typeof global.emsCallFunction !== 'function') {
+            console.warn('parentMessagingCfOnly: Cloud Function required');
+            return Promise.resolve(false);
+        }
 
         if (isParentUser && tenantId && typeof global.emsCallFunction === 'function') {
+            if (!global.parentCanView(studentId, 'leave')) {
+                console.warn('parentSubmitMessage: leave view not granted');
+                return Promise.resolve(false);
+            }
             return global.emsCallFunction('submitParentMessage', {
                 tenantId: tenantId,
                 studentId: studentId,
@@ -185,6 +198,10 @@
             });
         }
 
+        if (isParentUser && messagingCfOnly) {
+            return Promise.resolve(false);
+        }
+
         var msg = {
             id: 'MSG-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
             studentId: studentId,
@@ -202,15 +219,20 @@
         msgs.push(msg);
         saveAllMessages(msgs);
 
-        var db = typeof global.getDbOrNull === 'function' ? global.getDbOrNull() : null;
-        if (db && tenantId && typeof firebase !== 'undefined') {
-            db.collection('All_Madrasas').doc(tenantId).collection('ParentMessages').doc(msg.id)
-                .set(Object.assign({}, msg, {
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                }), { merge: true })
-                .catch(function (err) {
-                    console.warn('ParentMessages Firestore write:', err);
-                });
+        if (!messagingCfOnly) {
+            var db = typeof global.getDbOrNull === 'function' ? global.getDbOrNull() : null;
+            if (db && tenantId && typeof firebase !== 'undefined') {
+                db.collection('All_Madrasas').doc(tenantId).collection('ParentMessages').doc(msg.id)
+                    .set(Object.assign({}, msg, {
+                        parentUid: (typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser)
+                            ? firebase.auth().currentUser.uid
+                            : '',
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    }), { merge: true })
+                    .catch(function (err) {
+                        console.warn('ParentMessages Firestore write:', err);
+                    });
+            }
         }
         return Promise.resolve(true);
     };

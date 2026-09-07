@@ -91,9 +91,15 @@ describe('P0 — RegistrationDrafts Firestore rules', function () {
         expect(RULES).toContain('registrationDraftDocMatchesId(docId)');
     });
 
-    it('SSOT Registrations remain owner-only write', function () {
-        expect(RULES).toContain('function canWriteRegistration(madrasaId)');
-        expect(RULES).toMatch(/match \/Registrations\/\{studentId\}[\s\S]*allow write: if canWriteRegistration\(madrasaId\)/);
+    it('SSOT Registrations allow admission staff create/update/delete (not owner-only write)', function () {
+        expect(RULES).toContain('function canCreateRegistration(madrasaId)');
+        expect(RULES).toContain('function canUpdateRegistration(madrasaId)');
+        expect(RULES).toContain('function canDeleteRegistration(madrasaId)');
+        expect(RULES).toContain("canStaffCreate(madrasaId, 'admission')");
+        expect(RULES).toMatch(/match \/Registrations\/\{studentId\}[\s\S]*allow create: if canCreateRegistration\(madrasaId\)/);
+        expect(RULES).toMatch(/match \/Registrations\/\{studentId\}[\s\S]*allow update: if canUpdateRegistration\(madrasaId\)/);
+        expect(RULES).toMatch(/match \/Registrations\/\{studentId\}[\s\S]*allow delete: if canDeleteRegistration\(madrasaId\)/);
+        expect(RULES).not.toMatch(/match \/Registrations\/\{studentId\}[\s\S]{0,220}allow write: if canWriteRegistration/);
     });
 
     describe('access matrix (simulated)', function () {

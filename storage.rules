@@ -18,18 +18,41 @@ service firebase.storage {
       );
     }
 
-    // Registration photos — tenant-scoped path
+    function isActiveParentOf(tenantId) {
+      return isSignedIn()
+        && firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/Parent_Links/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Parent_Links/$(request.auth.uid)).data.status == 'active';
+    }
+
+    function parentLinkStudentIds(tenantId) {
+      return firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Parent_Links/$(request.auth.uid)).data.studentIds;
+    }
+
+    /** registrations/{tenant}/{type}/{userId}.jpg → userId */
+    function registrationUserId(fileName) {
+      return fileName.size() > 4 && fileName[fileName.size() - 4:] == '.jpg'
+        ? fileName[0:fileName.size() - 4]
+        : fileName;
+    }
+
+    function parentCanReadRegistrationFile(tenantId, fileName) {
+      return isActiveParentOf(tenantId)
+        && registrationUserId(fileName) in parentLinkStudentIds(tenantId);
+    }
+
+    // Registration photos — tenant staff/owner, or linked parent for that student only
     match /registrations/{tenantId}/{userType}/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if isTenantStaff(tenantId)
+        || parentCanReadRegistrationFile(tenantId, fileName);
       allow write: if isTenantStaff(tenantId)
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
       allow delete: if isTenantOwner(tenantId);
     }
 
-    // Ledger attachments (existing pattern)
+    // Ledger attachments — tenant staff/owner only (no cross-tenant signed-in read)
     match /ledger/{tenantId}/{entryId}/{fileName} {
-      allow read: if isSignedIn();
+      allow read: if isTenantStaff(tenantId);
       allow write: if isTenantStaff(tenantId)
         && request.resource.size < 10 * 1024 * 1024;
       allow delete: if isTenantOwner(tenantId);

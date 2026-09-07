@@ -100,9 +100,23 @@ service cloud.firestore {
                 || canStaffUpdate(madrasaId, 'ledger')));
     }
 
-    /** رجسٹریشن — صرف owner (MFA when required) */
+    /** رجسٹریشن — owner یا admission create/edit/delete والے عملہ */
     function canWriteRegistration(madrasaId) {
-      return isSuperAdmin() || (isMadrasaActive(madrasaId) && canOwnerAct(madrasaId));
+      return canStaffCreate(madrasaId, 'admission')
+        || canStaffUpdate(madrasaId, 'admission')
+        || canStaffDelete(madrasaId, 'admission');
+    }
+
+    function canCreateRegistration(madrasaId) {
+      return canStaffCreate(madrasaId, 'admission');
+    }
+
+    function canUpdateRegistration(madrasaId) {
+      return canStaffUpdate(madrasaId, 'admission');
+    }
+
+    function canDeleteRegistration(madrasaId) {
+      return canStaffDelete(madrasaId, 'admission');
     }
 
     /** Owner پروفائل اپڈیٹ — لائسنس فیلڈز SA only */
@@ -544,18 +558,23 @@ service cloud.firestore {
       match /Registrations/{studentId} {
         allow read: if canStaffReadModule(madrasaId, 'admission')
           || (isMadrasaActive(madrasaId) && parentHasLinkedStudent(madrasaId, studentId));
-        allow write: if canWriteRegistration(madrasaId);
+        allow create: if canCreateRegistration(madrasaId);
+        allow update: if canUpdateRegistration(madrasaId);
+        allow delete: if canDeleteRegistration(madrasaId);
       }
 
       match /Rejected/{docId} {
         allow read: if canReadTenantStaff(madrasaId);
-        allow write: if canWriteRegistration(madrasaId);
+        allow create: if canCreateRegistration(madrasaId);
+        allow update: if canUpdateRegistration(madrasaId);
+        allow delete: if canDeleteRegistration(madrasaId);
       }
 
       /** Write-trigger sync — clients listen to meta only (Phase A4) */
       match /RegistrationMeta/{docId} {
         allow read: if canReadTenantStaff(madrasaId);
-        allow write: if canWriteRegistration(madrasaId);
+        allow create, update: if canCreateRegistration(madrasaId) || canUpdateRegistration(madrasaId);
+        allow delete: if canDeleteRegistration(madrasaId);
       }
 
       match /DashboardStats/{docId} {
@@ -871,9 +890,25 @@ service cloud.firestore {
           || (isMadrasaActive(madrasaId) && canReadTenantStaff(madrasaId))
           || (isMadrasaActive(madrasaId)
               && isParentOf(madrasaId)
-              && (!('parentUid' in resource.data) || resource.data.parentUid == request.auth.uid));
-        allow create: if isParentOf(madrasaId) || canStaffCreate(madrasaId, 'announcements');
-        allow update: if canStaffUpdate(madrasaId, 'announcements');
+              && parentHasLinkedStudent(madrasaId, resource.data.studentId)
+              && (
+                resource.data.parentUid == request.auth.uid
+                || resource.data.direction == 'out'
+              ));
+        allow create: if (isMadrasaActive(madrasaId) && canStaffCreate(madrasaId, 'announcements'))
+          || (isMadrasaActive(madrasaId)
+              && isParentOf(madrasaId)
+              && request.resource.data.parentUid == request.auth.uid
+              && request.resource.data.studentId is string
+              && parentHasLinkedStudent(madrasaId, request.resource.data.studentId)
+              && parentHasView(madrasaId, request.resource.data.studentId, 'leave'));
+        allow update: if canStaffUpdate(madrasaId, 'announcements')
+          || (isMadrasaActive(madrasaId)
+              && isParentOf(madrasaId)
+              && resource.data.parentUid == request.auth.uid
+              && parentHasLinkedStudent(madrasaId, resource.data.studentId)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['readByParent', 'readByParentAt', 'readByParentUid']));
         allow delete: if canStaffDelete(madrasaId, 'announcements');
       }
 

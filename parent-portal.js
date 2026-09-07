@@ -30,6 +30,12 @@
     }
 
     function callParentData(view, studentId) {
+        var policy = typeof window.emsGetTenantSecurityPolicy === 'function'
+            ? window.emsGetTenantSecurityPolicy()
+            : { parentDataCfOnly: true };
+        if (policy.parentDataCfOnly !== false && typeof window.emsCallFunction !== 'function') {
+            return Promise.reject(cfUnavailableError());
+        }
         if (typeof window.emsCallFunction !== 'function') {
             return Promise.reject(cfUnavailableError());
         }
@@ -346,6 +352,12 @@
     };
 
     function fetchParentMessages(studentId) {
+        var policy = typeof window.emsGetTenantSecurityPolicy === 'function'
+            ? window.emsGetTenantSecurityPolicy()
+            : { parentMessagingCfOnly: true };
+        if (policy.parentMessagingCfOnly !== false && typeof window.emsCallFunction !== 'function') {
+            return Promise.reject(cfUnavailableError());
+        }
         if (typeof window.emsCallFunction !== 'function') {
             return Promise.reject(cfUnavailableError());
         }
