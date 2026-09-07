@@ -4,7 +4,6 @@
  */
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
-const parentData = require('./parent-data');
 
 function normalizeText(str, maxLen) {
     return String(str || '').trim().slice(0, maxLen || 4000);
@@ -24,8 +23,25 @@ async function assertParentStudentLink(tenantId, studentId, uid) {
     return linkSnap.data();
 }
 
+/** Local copy — avoid requiring heavy parent-data during functions analysis. */
 async function assertParentLeaveView(tenantId, studentId) {
-    await parentData.assertParentViewPermission(tenantId, studentId, 'leave');
+    const db = admin.firestore();
+    const permSnap = await db.collection('All_Madrasas').doc(tenantId)
+        .collection('ParentPermissions').doc(studentId).get();
+    if (!permSnap.exists) {
+        throw new functions.https.HttpsError('permission-denied', 'Parent permissions نہیں ملیں۔');
+    }
+    const perm = permSnap.data() || {};
+    if (perm.status && perm.status !== 'active') {
+        throw new functions.https.HttpsError('permission-denied', 'والدین رسائی معطل ہے۔');
+    }
+    const viewId = 'leave';
+    const now = Date.now();
+    if (perm.views && perm.views[viewId] === true) return perm;
+    const temp = perm.temporary && perm.temporary[viewId];
+    if (temp && temp.expiryAt && temp.expiryAt > now) return perm;
+    if (temp && temp.expiry && new Date(temp.expiry).getTime() > now) return perm;
+    throw new functions.https.HttpsError('permission-denied', 'اس view کی اجازت نہیں: ' + viewId);
 }
 
 function messageVisibleToParent(msg, uid, studentIds) {

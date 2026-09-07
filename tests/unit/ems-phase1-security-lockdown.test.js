@@ -40,9 +40,10 @@ describe('Phase 1 — teachers/parents/students security lockdown', function () 
     it('parent-messages CF asserts leave view and filters by parentUid', function () {
         const src = read('functions/lib/parent-messages.js');
         expect(src).toContain('assertParentLeaveView');
-        expect(src).toContain("assertParentViewPermission(tenantId, studentId, 'leave')");
+        expect(src).toContain("const viewId = 'leave'");
         expect(src).toContain('filterMessagesForParent');
         expect(src).toContain('msg.parentUid === uid');
+        expect(src).not.toContain("require('./parent-data')");
     });
 
     it('parent-shared enforces parentMessagingCfOnly and leave gate', function () {
@@ -77,9 +78,6 @@ describe('Phase 1 — teachers/parents/students security lockdown', function () 
                             }
                         }
                     };
-                }
-                if (name === './parent-data') {
-                    return { assertParentViewPermission: function () { return Promise.resolve({}); } };
                 }
                 throw new Error('unexpected require: ' + name);
             },
