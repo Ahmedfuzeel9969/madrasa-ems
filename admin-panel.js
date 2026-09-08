@@ -2173,10 +2173,22 @@
 
         var body = document.getElementById('ap-parent-modal-body');
         body.innerHTML =
+            '<div style="background:#ecfdf5; padding:10px 12px; border-radius:8px; margin-bottom:12px; border:1px solid #a7f3d0;">' +
+            '<h4 style="margin:0 0 6px;font-size:14px;color:#047857;"><i class="fas fa-magic"></i> والدین فعال وزرڈ (ایک قدم)</h4>' +
+            '<p style="margin:0 0 8px;font-size:12px;color:#065f46;">ترتیب: ① Gmail Link → ② Views محفوظ → ③ Access Key۔ نیچے بٹن تینوں ایک ساتھ کر دے گا۔</p>' +
+            '<button type="button" class="btn btn-success" style="width:100%;" onclick="window.apActivateParentWizard(\'' + studentId + '\')">' +
+            '<i class="fas fa-check-double"></i> والدین فعال کریں (Link + Views + Key)</button>' +
+            '<div id="ap-parent-wizard-status" style="margin-top:8px;font-size:12px;color:#64748b;"></div>' +
+            '</div>' +
+
             '<div style="background:#eff6ff; padding:8px 12px; border-radius:6px; margin-bottom:10px; font-size:12px; color:#1e40af;">' +
             '<i class="fas fa-shield-alt"></i> یہ والد صرف اپنے بچے «' + (student.name || '') + '» کی منتخب معلومات دیکھ سکے گا — کسی دوسرے طالبِ علم کی نہیں۔</div>' +
 
-            '<h4 style="margin:6px 0;"><i class="fas fa-eye"></i> مستقل رسائی (Permanent)</h4>' +
+            '<h4 style="margin:6px 0;"><i class="fas fa-link"></i> ① والدین لاگ ان (Parent Link)</h4>' +
+            '<input type="email" id="ap-parent-link-email" class="input-control" placeholder="parent@example.com" value="' + (perm.parentEmail || '') + '" style="direction:ltr; margin-bottom:8px;">' +
+            '<button type="button" class="btn btn-outline btn-sm" onclick="window.apLinkParentAccount(\'' + studentId + '\')"><i class="fas fa-user-check"></i> صرف Link</button>' +
+
+            '<h4 style="margin:14px 0 6px;"><i class="fas fa-eye"></i> ② مستقل رسائی (Views)</h4>' +
             '<div class="ap-mod-grid">' + viewsHTML + '</div>' +
 
             '<div class="ap-temp-section">' +
@@ -2190,24 +2202,96 @@
             '</div>' +
 
             '<div class="ap-temp-section" style="margin-top:14px; border-top:1px dashed #cbd5e1; padding-top:12px;">' +
-            '<h4 style="margin:0 0 8px;"><i class="fas fa-key"></i> Parent Access Key</h4>' +
+            '<h4 style="margin:0 0 8px;"><i class="fas fa-key"></i> ③ Parent Access Key</h4>' +
             '<p style="font-size:12px;color:#64748b;margin:0 0 8px;">ہر طالب علم کی الگ 6 ہندسوں والی Key — والدین لاگ ان پر درکار۔</p>' +
             '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">' +
             '<select id="ap-parent-key-ttl-' + studentId + '" class="input-control" style="max-width:120px;" title="Key کی مدت">' + apKeyTtlOptionsHtml() + '</select>' +
             '<button type="button" class="btn btn-warning" onclick="window.apGenerateParentKey(\'' + studentId + '\')"><i class="fas fa-key"></i> Key بنائیں / Reset</button>' +
             '<span id="ap-parent-key-display-' + studentId + '" style="font-size:12px;color:#64748b;">—</span>' +
-            '</div></div>' +
-
-            '<div class="ap-temp-section" style="margin-top:14px; border-top:1px dashed #cbd5e1; padding-top:12px;">' +
-            '<h4 style="margin:0 0 8px;"><i class="fas fa-link"></i> والدین لاگ ان منسلک کریں (Parent Link)</h4>' +
-            '<input type="email" id="ap-parent-link-email" class="input-control" placeholder="parent@example.com" value="' + (perm.parentEmail || '') + '" style="direction:ltr; margin-bottom:8px;">' +
-            '<button type="button" class="btn btn-success" onclick="window.apLinkParentAccount(\'' + studentId + '\')"><i class="fas fa-user-check"></i> والد منسلک کریں</button>' +
-            '</div>';
+            '</div></div>';
 
         var saveBtn = document.getElementById('ap-parent-save-btn');
         if (saveBtn) saveBtn.onclick = function () { window.apSaveParentPerm(studentId); };
 
         if (typeof window.openModal === 'function') window.openModal('ap-parent-modal');
+    };
+
+    /** P1/C9: one-shot Link + save views + issue Key */
+    window.apActivateParentWizard = function (studentId) {
+        var statusEl = document.getElementById('ap-parent-wizard-status');
+        function setStatus(msg, isErr) {
+            if (!statusEl) return;
+            statusEl.style.color = isErr ? '#dc2626' : '#047857';
+            statusEl.textContent = msg || '';
+        }
+        var emailEl = document.getElementById('ap-parent-link-email');
+        var email = emailEl ? emailEl.value.trim() : '';
+        if (!email) {
+            setStatus('پہلے والدین کا Gmail درج کریں۔', true);
+            apToast('والدین کا Gmail درج کریں۔', 'error');
+            return;
+        }
+
+        var viewChecks = document.querySelectorAll('#ap-parent-modal-body .ap-pview-check');
+        var anyView = false;
+        viewChecks.forEach(function (cb) { if (cb.checked) anyView = true; });
+        if (!anyView) {
+            setStatus('کم از کم ایک View منتخب کریں۔', true);
+            apToast('کم از کم ایک View منتخب کریں۔', 'error');
+            return;
+        }
+
+        var uid = typeof window.emsGetTenantId === 'function' ? window.emsGetTenantId() : null;
+        if (!uid || typeof window.emsCreateParentLink !== 'function' || typeof window.emsResetParentAccessKey !== 'function') {
+            setStatus('کلاؤڈ سروس دستیاب نہیں۔', true);
+            apToast('سروس دستیاب نہیں۔', 'error');
+            return;
+        }
+
+        setStatus('① Link بن رہا ہے...');
+        window.emsCreateParentLink(uid, studentId, email).then(function () {
+            var perms = getAllParentPerms();
+            var oldP = migrateParentPerm(perms[studentId], studentId);
+            var newViews = {};
+            viewChecks.forEach(function (cb) {
+                newViews[cb.getAttribute('data-view')] = !!cb.checked;
+            });
+            oldP.views = newViews;
+            oldP.parentEmail = email.toLowerCase();
+            oldP.updatedAt = apNow();
+            oldP.updatedBy = apCurrentAdmin();
+            oldP.history = oldP.history || [];
+            oldP.history.push({
+                type: 'wizard_activate',
+                detail: 'والدین فعال وزرڈ: Link + Views + Key',
+                by: apCurrentAdmin(),
+                at: apNow()
+            });
+            perms[studentId] = oldP;
+            setStatus('② Views محفوظ / کلاؤڈ...');
+            return Promise.resolve(saveAllParentPerms(perms)).then(function () {
+                return apPushPermissionDoc('ParentPermissions', studentId, oldP);
+            }).then(function () {
+                return apConfirmCloudPushAfterPermSave();
+            }).then(function () {
+                setStatus('③ Access Key جاری...');
+                var ttlMs = apGetKeyTtlMs('ap-parent-key-ttl-' + studentId);
+                return window.emsResetParentAccessKey(uid, studentId, ttlMs).then(function (key) {
+                    var el = document.getElementById('ap-parent-key-display-' + studentId);
+                    var label = typeof window.emsFormatKeyTtlLabel === 'function' ? window.emsFormatKeyTtlLabel(ttlMs) : '365 دن';
+                    if (el) {
+                        el.innerHTML = '<strong style="color:#059669;direction:ltr;">' + key + '</strong> <span style="font-size:11px;color:#64748b;">(' + label + ')</span>';
+                    }
+                    setStatus('مکمل: Link + Views + Key تیار۔ Key ابھی والدین کو دیں: ' + key);
+                    apToast('والدین فعال: Key ' + key, 'success');
+                    window.apRenderParentsTable();
+                    return key;
+                });
+            });
+        }).catch(function (e) {
+            setStatus('ناکام: ' + ((e && e.message) || 'نامعلوم'), true);
+            apToast('وزرڈ ناکام: ' + ((e && e.message) || ''), 'error');
+        });
     };
 
     function apRenderParentTempList(perm) {

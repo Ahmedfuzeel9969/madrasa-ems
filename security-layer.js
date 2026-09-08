@@ -292,8 +292,12 @@
     // --- Staff module/action authorization (Admin Panel permissions) ---
     global.checkStaffModuleAccess = function (modId, action) {
         action = action || 'view';
-        if (global.isSuperAdmin && global.isSuperAdmin()) return true;
-        if (global.isMadrasaAdmin && global.isMadrasaAdmin()) return true;
+        var isStaffRole = global.CURRENT_USER_TENANT_ROLE === 'staff';
+        // P1/C12: staff portal never uses owner/admin fallback.
+        if (!isStaffRole) {
+            if (global.isSuperAdmin && global.isSuperAdmin()) return true;
+            if (global.isMadrasaAdmin && global.isMadrasaAdmin()) return true;
+        }
 
         var staffId = getStaffIdForAccess();
         if (!staffId) {
@@ -301,7 +305,8 @@
             staffId = staff ? staff.id : null;
         }
         if (!staffId) {
-            return global.CURRENT_USER_TENANT_ROLE !== 'staff' && !!global.CURRENT_MADRASA_DATA;
+            if (isStaffRole) return false;
+            return !!global.CURRENT_MADRASA_DATA;
         }
 
         var perm = resolveStaffPerm(staffId);

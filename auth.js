@@ -1084,6 +1084,10 @@ window.navigateToModule = function (tab) {
  */
 window.isMadrasaAdmin = function () {
     if (typeof window.emsIsDemoSandbox === 'function' && window.emsIsDemoSandbox()) return true;
+    // P1/C12: staff/parent must never inherit owner/admin privileges.
+    if (window.CURRENT_USER_TENANT_ROLE === 'staff' || window.CURRENT_USER_TENANT_ROLE === 'parent') {
+        return false;
+    }
     if (window.EMS_OFFLINE_ONLY === true || window.EMS_LOCAL_AUTH === true) {
         if (window.EMS_GUEST_MODE || window.CURRENT_USER_TENANT_ROLE === 'guest') return false;
         return window.CURRENT_USER_TENANT_ROLE === 'owner' || !!window.CURRENT_MADRASA_TENANT_ID;

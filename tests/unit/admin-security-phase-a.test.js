@@ -37,7 +37,7 @@ describe('Admin Security Phase A — IAM lockdown & fail-closed gates', function
         var src = fs.readFileSync(path.join(ROOT, 'identity-gate.js'), 'utf8');
         expect(src).toContain('function haltOnSecurityCheckFailure(user)');
         expect(src).toContain('سیکیورٹی چیک ناکام ہو گیا۔ براہ کرم دوبارہ لاگ ان کریں۔');
-        expect(src).toMatch(/proceedAdminMfaGate[\s\S]{0,1200}haltOnSecurityCheckFailure\(user\)/);
+        expect(src).toMatch(/proceedAdminMfaGate[\s\S]{0,1600}continueOrHaltOnSecurityFail\(user, policyRequiresMfa\('admin'\)/);
         expect(src).not.toMatch(/proceedAdminMfaGate[\s\S]{0,800}\}\)\.catch\(function \(\) \{\s*completeAdmin\(user, ctx\)/);
     });
 

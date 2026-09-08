@@ -194,8 +194,18 @@
         document.body.style.overflow = 'hidden';
     };
 
-    function markVerified(user, portal) {
-        sessionStore(user.uid, { verified: true, portal: portal, at: Date.now() });
+    function markVerified(user, portal, extra) {
+        var prev = sessionLoad(user.uid) || {};
+        var data = {
+            verified: true,
+            portal: portal,
+            at: Date.now(),
+            accessKeyVerified: !!(prev.accessKeyVerified)
+        };
+        if (extra && typeof extra === 'object') {
+            Object.keys(extra).forEach(function (k) { data[k] = extra[k]; });
+        }
+        sessionStore(user.uid, data);
         setIdentity({
             portal: portal,
             authVerified: true,
@@ -203,6 +213,35 @@
             roleVerified: true,
             accessGranted: true
         });
+    }
+
+    function sessionAccessKeyOk(user) {
+        if (!user) return false;
+        var s = sessionLoad(user.uid);
+        return !!(s && s.accessKeyVerified);
+    }
+
+    /** Local MFA policy flags (fail-closed only when policy is ON). */
+    function policyRequiresMfa(portal) {
+        var p = null;
+        if (typeof global.emsGetCachedMfaPolicy === 'function') {
+            p = global.emsGetCachedMfaPolicy();
+        } else if (global._emsMfaPolicyCache) {
+            p = global._emsMfaPolicyCache;
+        }
+        if (!p) return false;
+        if (portal === 'admin') return !!p.requireMfaForAdmin;
+        if (portal === 'staff' || portal === 'teacher') return !!p.requireMfaForStaff;
+        if (portal === 'parent') return !!p.requireMfaForParent;
+        return false;
+    }
+
+    function continueOrHaltOnSecurityFail(user, required, continueFn) {
+        if (required) {
+            haltOnSecurityCheckFailure(user);
+            return;
+        }
+        continueFn();
     }
 
     function completeGuest(user) {
@@ -264,7 +303,9 @@
 
     function completeTeacher(user, ctx) {
         clearLoginSuccessRecord(user, ctx);
-        markVerified(user, 'teacher');
+        var extra = {};
+        if (global.EMS_TEACHER_KEY_OK || sessionAccessKeyOk(user)) extra.accessKeyVerified = true;
+        markVerified(user, 'teacher', extra);
         hideAllGateways();
         if (typeof global.emsAuthContinueAsTeacher === 'function') {
             global.emsAuthContinueAsTeacher(user, ctx);
@@ -273,7 +314,9 @@
 
     function completeParent(user, ctx) {
         clearLoginSuccessRecord(user, ctx);
-        markVerified(user, 'parent');
+        var extra = {};
+        if (global.EMS_PARENT_KEY_OK || sessionAccessKeyOk(user)) extra.accessKeyVerified = true;
+        markVerified(user, 'parent', extra);
         hideAllGateways();
         if (typeof global.emsAuthContinueAsParent === 'function') {
             global.emsAuthContinueAsParent(user, ctx);
@@ -438,6 +481,12 @@
             return;
         }
         global.emsCheckMfaComplianceForPortal(tenantId, 'admin').then(function (state) {
+            if (state && state.loadFailed) {
+                continueOrHaltOnSecurityFail(user, policyRequiresMfa('admin'), function () {
+                    completeAdmin(user, ctx);
+                });
+                return;
+            }
             if (!state || state.compliant) {
                 completeAdmin(user, ctx);
                 return;
@@ -452,7 +501,9 @@
             }
             completeAdmin(user, ctx);
         }).catch(function () {
-            haltOnSecurityCheckFailure(user);
+            continueOrHaltOnSecurityFail(user, policyRequiresMfa('admin'), function () {
+                completeAdmin(user, ctx);
+            });
         });
     }
 
@@ -464,6 +515,12 @@
             return;
         }
         global.emsCheckMfaComplianceForPortal(tenantId, 'staff').then(function (state) {
+            if (state && state.loadFailed) {
+                continueOrHaltOnSecurityFail(user, policyRequiresMfa('staff'), function () {
+                    proceedTeacherKeyGate(user, ctx, tenantId, staffId);
+                });
+                return;
+            }
             if (!state || state.compliant) {
                 proceedTeacherKeyGate(user, ctx, tenantId, staffId);
                 return;
@@ -478,7 +535,9 @@
             }
             proceedTeacherKeyGate(user, ctx, tenantId, staffId);
         }).catch(function () {
-            proceedTeacherKeyGate(user, ctx, tenantId, staffId);
+            continueOrHaltOnSecurityFail(user, policyRequiresMfa('staff'), function () {
+                proceedTeacherKeyGate(user, ctx, tenantId, staffId);
+            });
         });
     }
 
@@ -551,7 +610,9 @@
                     );
                 });
             }).catch(function () {
-                proceedTeacherMfaGate(user, ctx, tenantId, staffId);
+                continueOrHaltOnSecurityFail(user, true, function () {
+                    proceedTeacherMfaGate(user, ctx, tenantId, staffId);
+                });
             });
         }
 
@@ -579,13 +640,20 @@
                 completeTeacher(user, ctx);
                 return;
             }
+            // P1/C7: session short-circuit may skip prompt only after key was verified.
+            if (sessionAccessKeyOk(user) || global.EMS_TEACHER_KEY_OK) {
+                completeTeacher(user, ctx);
+                return;
+            }
             showAccessKeyPrompt(
                 'Teacher Access Key',
                 'یہ Key مدرسہ انتظامیہ نے آپ کو فراہم کی ہے۔',
                 'teacher'
             );
         }).catch(function () {
-            completeTeacher(user, ctx);
+            continueOrHaltOnSecurityFail(user, policyRequiresAccessKey(), function () {
+                completeTeacher(user, ctx);
+            });
         });
     }
 
@@ -627,7 +695,7 @@
                 );
             });
         }).catch(function () {
-            afterTrustedOk();
+            continueOrHaltOnSecurityFail(user, true, afterTrustedOk);
         });
     }
 
@@ -639,6 +707,12 @@
             return;
         }
         global.emsCheckMfaComplianceForPortal(tenantId, 'parent').then(function (state) {
+            if (state && state.loadFailed) {
+                continueOrHaltOnSecurityFail(user, policyRequiresMfa('parent'), function () {
+                    proceedParentKeyGate(user, ctx, tenantId, studentIds);
+                });
+                return;
+            }
             if (!state || state.compliant) {
                 proceedParentKeyGate(user, ctx, tenantId, studentIds);
                 return;
@@ -653,7 +727,9 @@
             }
             proceedParentKeyGate(user, ctx, tenantId, studentIds);
         }).catch(function () {
-            proceedParentKeyGate(user, ctx, tenantId, studentIds);
+            continueOrHaltOnSecurityFail(user, policyRequiresMfa('parent'), function () {
+                proceedParentKeyGate(user, ctx, tenantId, studentIds);
+            });
         });
     }
 
@@ -685,23 +761,27 @@
                 completeParent(user, ctx);
                 return;
             }
+            if (sessionAccessKeyOk(user) || global.EMS_PARENT_KEY_OK) {
+                completeParent(user, ctx);
+                return;
+            }
             showAccessKeyPrompt(
                 'Parent Access Key',
                 'یہ Key مدرسہ انتظامیہ نے فراہم کی ہے (ہر طالب علم کی الگ Key)۔',
                 'parent'
             );
         }).catch(function () {
-            completeParent(user, ctx);
+            continueOrHaltOnSecurityFail(user, policyRequiresAccessKey(), function () {
+                completeParent(user, ctx);
+            });
         });
     }
 
     function handleTeacher(user, ctx) {
         setIdentity({ portal: 'teacher', authVerified: true });
 
-        if (global.emsIsIdentityVerified(user)) {
-            completeTeacher(user, ctx);
-            return;
-        }
+        // P1/C7: do not skip MFA/device/key gates on session short-circuit.
+        // Access key prompt is skipped only when sessionAccessKeyOk (after successful verify).
 
         if (!ctx || ctx.role !== 'staff') {
             // Owner Gmail on Teacher portal is the most common mistake — detect and explain.
@@ -743,30 +823,28 @@
             return;
         }
 
-        if (typeof global.emsEnsureTenantSecurityPolicy === 'function') {
-            global.emsEnsureTenantSecurityPolicy(tenantId).then(function () {
-                withBruteForceCheck(user, ctx, function () {
-                    proceedTeacherTrustedGate(user, ctx, tenantId, staffId);
-                });
-            }).catch(function () {
-                withBruteForceCheck(user, ctx, function () {
-                    proceedTeacherTrustedGate(user, ctx, tenantId, staffId);
-                });
+        global.CURRENT_MADRASA_TENANT_ID = tenantId;
+
+        function startTeacherGates() {
+            withBruteForceCheck(user, ctx, function () {
+                proceedTeacherTrustedGate(user, ctx, tenantId, staffId);
             });
-            return;
         }
-        withBruteForceCheck(user, ctx, function () {
-            proceedTeacherTrustedGate(user, ctx, tenantId, staffId);
-        });
+
+        var policyReady = typeof global.emsEnsureTenantSecurityPolicy === 'function'
+            ? global.emsEnsureTenantSecurityPolicy(tenantId)
+            : Promise.resolve();
+        var mfaReady = typeof global.emsLoadMfaPolicy === 'function'
+            ? global.emsLoadMfaPolicy()
+            : Promise.resolve();
+
+        Promise.all([policyReady, mfaReady]).then(startTeacherGates).catch(startTeacherGates);
     }
 
     function handleParent(user, ctx) {
         setIdentity({ portal: 'parent', authVerified: true });
 
-        if (global.emsIsIdentityVerified(user)) {
-            completeParent(user, ctx);
-            return;
-        }
+        // P1/C7: always re-run security gates; key skipped only if already verified in session.
 
         if (!ctx || ctx.role !== 'parent') {
             global.emsShowAccessDenied(
@@ -785,21 +863,22 @@
             return;
         }
 
-        if (typeof global.emsEnsureTenantSecurityPolicy === 'function') {
-            global.emsEnsureTenantSecurityPolicy(tenantId).then(function () {
-                withBruteForceCheck(user, ctx, function () {
-                    proceedParentDomainGate(user, ctx, tenantId, studentIds);
-                });
-            }).catch(function () {
-                withBruteForceCheck(user, ctx, function () {
-                    proceedParentDomainGate(user, ctx, tenantId, studentIds);
-                });
+        global.CURRENT_MADRASA_TENANT_ID = tenantId;
+
+        function startParentGates() {
+            withBruteForceCheck(user, ctx, function () {
+                proceedParentDomainGate(user, ctx, tenantId, studentIds);
             });
-            return;
         }
-        withBruteForceCheck(user, ctx, function () {
-            proceedParentDomainGate(user, ctx, tenantId, studentIds);
-        });
+
+        var policyReady = typeof global.emsEnsureTenantSecurityPolicy === 'function'
+            ? global.emsEnsureTenantSecurityPolicy(tenantId)
+            : Promise.resolve();
+        var mfaReady = typeof global.emsLoadMfaPolicy === 'function'
+            ? global.emsLoadMfaPolicy()
+            : Promise.resolve();
+
+        Promise.all([policyReady, mfaReady]).then(startParentGates).catch(startParentGates);
     }
 
     global.emsRunIdentityGate = function (user, ctx) {

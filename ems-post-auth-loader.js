@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260908_portal_p0_ready_v1';
+    var CACHE_BUST = '20260908_portal_p1_security_wizard_v1';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;

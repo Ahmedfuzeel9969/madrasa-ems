@@ -74,21 +74,31 @@
         var db = getDb();
         var tenantId = getTenantId();
         if (!db || !tenantId) {
-            return Promise.resolve({ requireMfaForAdmin: false, requireMfaForStaff: false, requireMfaForParent: false });
+            var empty = { requireMfaForAdmin: false, requireMfaForStaff: false, requireMfaForParent: false };
+            global._emsMfaPolicyCache = empty;
+            return Promise.resolve(empty);
         }
         return db.collection('All_Madrasas').doc(tenantId).collection('SecuritySettings').doc('mfa')
             .get()
             .then(function (doc) {
                 var d = doc.exists ? doc.data() : {};
-                return {
+                var policy = {
                     requireMfaForAdmin: !!d.requireMfaForAdmin,
                     requireMfaForStaff: !!d.requireMfaForStaff,
                     requireMfaForParent: !!d.requireMfaForParent
                 };
+                global._emsMfaPolicyCache = policy;
+                return policy;
             })
             .catch(function () {
-                return { requireMfaForAdmin: false, requireMfaForStaff: false, requireMfaForParent: false };
+                var fallback = { requireMfaForAdmin: false, requireMfaForStaff: false, requireMfaForParent: false };
+                global._emsMfaPolicyCache = fallback;
+                return fallback;
             });
+    };
+
+    global.emsGetCachedMfaPolicy = function () {
+        return global._emsMfaPolicyCache || null;
     };
 
     global.emsSaveMfaPolicy = function (patch) {
@@ -132,7 +142,8 @@
                 }
             };
         }).catch(function () {
-            return { compliant: true, skipped: true };
+            // P1/C8: do not pretend compliant — identity-gate fail-closes when policy ON.
+            return { compliant: false, loadFailed: true, server: {} };
         });
     };
 
