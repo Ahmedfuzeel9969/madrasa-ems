@@ -11,7 +11,8 @@
         Finance: ['ems_fee_categories', 'ems_class_fee_structure', 'ems_student_fee_setup', 'ems_fee_collections', 'ems_fee_bills'],
         Ledger: ['ems_full_ledger', 'ems_ledger_master_categories', 'ems_ledger_blackouts', 'ems_payroll_history', 'ems_full_salary', 'ems_ledger_funds', 'ems_ledger_budgets', 'ems_ledger_audit_log', 'ems_ledger_settings', 'ems_ledger_liabilities', 'ems_ledger_employee_dues', 'ems_payroll_special', 'ems_ledger_archive'],
         Announcements: ['ems_announcements', 'ems_full_announcements', 'ems_ann_categories', 'ems_ann_programs', 'ems_ann_poster_templates', 'ems_ann_audit_log', 'ems_ann_settings', 'ems_ann_groups'],
-        SystemSettings: ['ems_sys_config_v2', 'ems_sys_profiles', 'ems_sys_settings_audit', 'ems_sys_dict', 'ems_custom_buttons', 'ems_btn_action_toggles', 'ems_custom_fields', 'ems_field_visibility', 'ems_layout_config', 'ems_sys_permissions', 'ems_sys_auto_rules', 'ems_custom_reports', 'ems_custom_dashboard', 'ems_custom_form_templates']
+        SystemSettings: ['ems_sys_config_v2', 'ems_sys_profiles', 'ems_sys_settings_audit', 'ems_sys_dict', 'ems_custom_buttons', 'ems_btn_action_toggles', 'ems_custom_fields', 'ems_field_visibility', 'ems_layout_config', 'ems_sys_permissions', 'ems_sys_auto_rules', 'ems_custom_reports', 'ems_custom_dashboard', 'ems_custom_form_templates'],
+        Admin: ['ems_staff_permissions', 'ems_parent_permissions', 'ems_parent_messages']
     };
 
     function keysForGroup(groupName) {

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260908_portal_login_gate_fix_v1';
+    var CACHE_BUST = '20260908_portal_unlock_hydrate_v2';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 

@@ -2100,6 +2100,52 @@ window.emsAuthContinueAsAdmin = function (user, ctx) {
     });
 };
 
+/** Login-time StaffPermissions hydrate — bypasses offline-first SSOT group pull. */
+window.emsHydrateStaffPermissionsForLogin = function (tenantId, staffId, firestore) {
+    if (!tenantId || !staffId || !firestore) return Promise.resolve(null);
+    return firestore.collection('All_Madrasas').doc(tenantId)
+        .collection('StaffPermissions').doc(staffId).get()
+        .then(function (doc) {
+            if (!doc.exists) return null;
+            var all = {};
+            try { all = JSON.parse(localStorage.getItem('ems_staff_permissions') || '{}'); }
+            catch (eParse) { all = {}; }
+            if (!all || typeof all !== 'object' || Array.isArray(all)) all = {};
+            all[staffId] = doc.data() || {};
+            try { localStorage.setItem('ems_staff_permissions', JSON.stringify(all)); }
+            catch (eSet) { /* ignore */ }
+            if (typeof window.emsCacheSet === 'function') {
+                try { window.emsCacheSet('ems_staff_permissions', all); } catch (eCache) { /* ignore */ }
+            } else if (typeof window.emsCacheInvalidate === 'function') {
+                try { window.emsCacheInvalidate('ems_staff_permissions'); } catch (eInv) { /* ignore */ }
+            }
+            return all[staffId];
+        });
+};
+
+/** Login-time ParentPermissions hydrate for linked students (CF fallback). */
+window.emsHydrateParentPermissionsForLogin = function (tenantId, studentIds, firestore) {
+    if (!tenantId || !firestore || !studentIds || !studentIds.length) return Promise.resolve(null);
+    var permissions = {};
+    var chain = Promise.resolve();
+    studentIds.forEach(function (sid) {
+        chain = chain.then(function () {
+            return firestore.collection('All_Madrasas').doc(tenantId)
+                .collection('ParentPermissions').doc(sid).get()
+                .then(function (doc) {
+                    if (doc.exists) permissions[sid] = doc.data();
+                })
+                .catch(function () { /* ignore one doc */ });
+        });
+    });
+    return chain.then(function () {
+        if (typeof window.emsApplyParentPermissionsSnapshot === 'function') {
+            window.emsApplyParentPermissionsSnapshot(permissions);
+        }
+        return { permissions: permissions, studentIds: studentIds };
+    });
+};
+
 window.emsAuthContinueAsTeacher = function (user, ctx) {
     if (!ctx) return;
     window.waitForDb(function (firestore) {
@@ -2126,10 +2172,12 @@ window.emsAuthContinueAsTeacher = function (user, ctx) {
                 });
         }
 
-        var pull = typeof window.emsPullModuleGroup === 'function'
-            ? window.emsPullModuleGroup('Admin')
-            : Promise.resolve();
-        pull.then(startListener).catch(startListener);
+        // Direct single-doc read — group Admin pull is blocked under offline-first SSOT.
+        var staffId = (ctx.link && ctx.link.staffId) || null;
+        var hydrate = typeof window.emsHydrateStaffPermissionsForLogin === 'function'
+            ? window.emsHydrateStaffPermissionsForLogin(ctx.tenantId, staffId, firestore)
+            : Promise.resolve(null);
+        hydrate.then(startListener).catch(startListener);
     });
 };
 
@@ -2155,12 +2203,11 @@ window.emsAuthContinueAsParent = function (user, ctx) {
             applyParentTenantProfile(user, ctx, firestore);
         }
 
-        // Prefer CF permissions snapshot so session views match server (Phase 2 SSOT).
+        // Prefer CF permissions snapshot; fall back to direct ParentPermissions docs.
+        var linkedIds = (ctx.link && ctx.link.studentIds) || [];
         var pull = typeof window.emsRefreshParentPermissions === 'function'
             ? window.emsRefreshParentPermissions(ctx.tenantId)
-            : (typeof window.emsPullModuleGroup === 'function'
-                ? window.emsPullModuleGroup('Admin')
-                : Promise.resolve());
+            : Promise.resolve(null);
         pull.then(function (data) {
             if (data && Array.isArray(data.studentIds) && data.studentIds.length) {
                 var mergedLink = Object.assign({}, ctx.link || {}, window.CURRENT_PARENT_LINK || {}, {
@@ -2169,8 +2216,27 @@ window.emsAuthContinueAsParent = function (user, ctx) {
                 ctx.link = mergedLink;
                 window.CURRENT_PARENT_LINK = mergedLink;
             }
+            var hasPerms = data && data.permissions && Object.keys(data.permissions).length;
+            if (hasPerms || (typeof window.emsParentHasAnyView === 'function' && window.emsParentHasAnyView())) {
+                startParentUnlock();
+                return null;
+            }
+            var ids = (window.CURRENT_PARENT_LINK && window.CURRENT_PARENT_LINK.studentIds) || linkedIds;
+            if (typeof window.emsHydrateParentPermissionsForLogin === 'function' && ids.length) {
+                return window.emsHydrateParentPermissionsForLogin(ctx.tenantId, ids, firestore)
+                    .then(function () { startParentUnlock(); });
+            }
             startParentUnlock();
-        }).catch(startParentUnlock);
+            return null;
+        }).catch(function () {
+            var ids = (window.CURRENT_PARENT_LINK && window.CURRENT_PARENT_LINK.studentIds) || linkedIds;
+            if (typeof window.emsHydrateParentPermissionsForLogin === 'function' && ids.length) {
+                window.emsHydrateParentPermissionsForLogin(ctx.tenantId, ids, firestore)
+                    .then(startParentUnlock).catch(startParentUnlock);
+                return;
+            }
+            startParentUnlock();
+        });
     });
 };
 

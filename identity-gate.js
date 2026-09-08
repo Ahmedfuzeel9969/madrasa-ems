@@ -559,12 +559,16 @@
             return;
         }
 
+        // access-keys.js must be in boot; if missing, do not crash the login chain.
+        if (typeof global.emsGetTeacherAccessKeyHash !== 'function') {
+            completeTeacher(user, ctx);
+            return;
+        }
+
         global.emsGetTeacherAccessKeyHash(tenantId, staffId).then(function (hash) {
+            // Enforce only when admin has actually issued a key.
             if (!hash) {
-                global.emsShowAccessDenied(
-                    'Teacher Access Key نہیں ملی',
-                    'منتظم نے ابھی تک Access Key جاری نہیں کی۔ براہ کرم انتظامیہ سے رابطہ کریں۔'
-                );
+                completeTeacher(user, ctx);
                 return;
             }
             showAccessKeyPrompt(
@@ -572,6 +576,8 @@
                 'یہ Key مدرسہ انتظامیہ نے آپ کو فراہم کی ہے۔',
                 'teacher'
             );
+        }).catch(function () {
+            completeTeacher(user, ctx);
         });
     }
 
@@ -660,12 +666,15 @@
             return;
         }
 
+        if (typeof global.emsGetParentAccessKeyHashes !== 'function') {
+            completeParent(user, ctx);
+            return;
+        }
+
         global.emsGetParentAccessKeyHashes(tenantId, studentIds).then(function (hashes) {
-            if (!hashes.length) {
-                global.emsShowAccessDenied(
-                    'Parent Access Key نہیں ملی',
-                    'منتظم نے ابھی تک Access Key جاری نہیں کی۔'
-                );
+            // Enforce only when admin has issued at least one key.
+            if (!hashes || !hashes.length) {
+                completeParent(user, ctx);
                 return;
             }
             showAccessKeyPrompt(
@@ -673,6 +682,8 @@
                 'یہ Key مدرسہ انتظامیہ نے فراہم کی ہے (ہر طالب علم کی الگ Key)۔',
                 'parent'
             );
+        }).catch(function () {
+            completeParent(user, ctx);
         });
     }
 

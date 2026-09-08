@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260908_portal_login_gate_fix_v1';
+  var CACHE_BUST = '20260908_portal_unlock_hydrate_v2';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,
@@ -18,6 +18,7 @@
             'ems-firebase-init.js',
             'security-layer.js',
             'parent-shared.js',
+            'access-keys.js',
             'security-mfa.js',
             'tenant-security.js',
             'tenant-delivery.js',
