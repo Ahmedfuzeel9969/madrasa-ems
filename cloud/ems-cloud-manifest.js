@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260908_portal_p1_security_wizard_v1';
+  var CACHE_BUST = '20260908_portal_p2_student_keys_v1';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,

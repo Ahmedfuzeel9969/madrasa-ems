@@ -40,13 +40,18 @@ async function verifyTeacherAccessKey(data, context) {
         throw new functions.https.HttpsError('permission-denied', 'Staff Link تصدیق ناکام۔');
     }
 
-    const permSnap = await db.collection('All_Madrasas').doc(tenantId)
-        .collection('StaffPermissions').doc(staffId).get();
-    if (!permSnap.exists || !permSnap.data().accessKeyHash) {
-        return { ok: false, reason: 'no_key' };
+    const keySnap = await db.collection('All_Madrasas').doc(tenantId)
+        .collection('StaffAccessKeys').doc(staffId).get();
+    let keyData = keySnap.exists ? keySnap.data() : null;
+    if (!keyData || !keyData.accessKeyHash) {
+        const permSnap = await db.collection('All_Madrasas').doc(tenantId)
+            .collection('StaffPermissions').doc(staffId).get();
+        if (!permSnap.exists || !permSnap.data().accessKeyHash) {
+            return { ok: false, reason: 'no_key' };
+        }
+        keyData = permSnap.data();
     }
 
-    const keyData = permSnap.data();
     if (isKeyExpired(keyData)) {
         return { ok: false, reason: 'expired' };
     }

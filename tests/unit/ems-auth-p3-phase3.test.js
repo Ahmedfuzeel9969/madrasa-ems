@@ -7,16 +7,17 @@ import vm from 'vm';
 var ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 describe('Auth Phase 3 P2 UI/UX + Student Portal foundation', function () {
-    it('portal-access registers student in allowed portals', function () {
+    it('portal-access registers student in allowed portals (gated off)', function () {
         var src = fs.readFileSync(path.join(ROOT, 'portal-access.js'), 'utf8');
-        expect(src).toContain("global.EMS_ALLOWED_PORTALS = ['admin', 'teacher', 'parent', 'student', 'guest']");
+        expect(src).toContain("global.EMS_ALLOWED_PORTALS = ['admin', 'teacher', 'parent', 'student']");
         expect(src).toContain('emsShowStudentPortalComingSoon');
         expect(src).toContain('emsIsStudentPortalAvailable');
+        expect(src).toContain('emsShouldShowStudentPortalCard');
     });
 
-    it('index.html has five portal cards in admin-first order with guest last', function () {
+    it('index.html keeps student card markup but P2 hides it until available', function () {
         var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
-        var gridMatch = html.match(/id="ems-portal-grid"[\s\S]*?<\/div>\s*<\/main>/);
+        var gridMatch = html.match(/id="ems-portal-grid"[\s\S]*?<\/div>\s*<div id="ems-landing-offline-wrap"/);
         expect(gridMatch).toBeTruthy();
         var grid = gridMatch[0];
         var portals = [];
@@ -25,7 +26,7 @@ describe('Auth Phase 3 P2 UI/UX + Student Portal foundation', function () {
         while ((m = re.exec(grid)) !== null) {
             portals.push(m[1]);
         }
-        expect(portals).toEqual(['admin', 'teacher', 'parent', 'student', 'guest']);
+        expect(portals).toEqual(['admin', 'teacher', 'parent', 'student']);
         expect(html).toContain('id="ems-student-coming-soon"');
         expect(html).toContain('id="ems-login-portal-header"');
         expect(html).toContain('id="ems-access-key-format-hint"');

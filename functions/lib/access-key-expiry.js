@@ -19,8 +19,28 @@ async function scanTenantKeyExpiry(tenantId, now) {
     const db = admin.firestore();
     const items = [];
 
+    const staffKeySnap = await db.collection('All_Madrasas').doc(tenantId).collection('StaffAccessKeys').get();
+    const seenStaff = {};
+    staffKeySnap.forEach(function (doc) {
+        const d = doc.data() || {};
+        if (!d.accessKeyHash) return;
+        seenStaff[doc.id] = true;
+        const exp = d.accessKeyExpiresAt || null;
+        const st = expiryStatus(exp, now);
+        if (st.status === 'ok') return;
+        items.push({
+            type: 'teacher',
+            id: doc.id,
+            name: d.staffName || doc.id,
+            expiresAt: exp,
+            status: st.status,
+            daysLeft: st.daysLeft
+        });
+    });
+
     const staffSnap = await db.collection('All_Madrasas').doc(tenantId).collection('StaffPermissions').get();
     staffSnap.forEach(function (doc) {
+        if (seenStaff[doc.id]) return;
         const d = doc.data() || {};
         if (!d.accessKeyHash) return;
         const exp = d.accessKeyExpiresAt || null;

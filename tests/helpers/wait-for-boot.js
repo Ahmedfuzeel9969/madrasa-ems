@@ -69,7 +69,7 @@ async function waitForLandingReady(page, timeoutMs) {
         return !document.documentElement.classList.contains('ems-booting');
     }, null, { timeout: timeoutMs });
     await page.waitForFunction(function () {
-        return document.querySelectorAll('.ems-portal-card').length >= 5;
+        return document.querySelectorAll('.ems-portal-card').length >= 4;
     }, null, { timeout: timeoutMs });
 }
 

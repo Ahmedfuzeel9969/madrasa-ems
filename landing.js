@@ -64,9 +64,9 @@
         studentSoon: { ur: 'جلد آ رہا ہے', en: 'Coming soon', ar: 'قريباً' },
         studentSoonTitle: { ur: 'طالب علم پورٹل', en: 'Student Portal', ar: 'بوابة الطلاب' },
         studentSoonMsg: {
-            ur: 'طالب علم پورٹل جلد ہی دستیاب ہوگا (Coming Soon)',
-            en: 'Student Portal will be available soon (Coming Soon)',
-            ar: 'بوابة الطلاب ستكون متاحة قريباً'
+            ur: 'طالب علم پورٹل ابھی دستیاب نہیں۔ Student_Links اور بیک اینڈ تیار ہونے پر کھلے گا۔',
+            en: 'Student Portal is not available yet. It will open after Student_Links backend is ready.',
+            ar: 'بوابة الطلاب غير متاحة حالياً — ستُفتح بعد جاهزية الخلفية'
         },
         studentSoonOk: { ur: 'ٹھیک ہے', en: 'OK', ar: 'حسناً' },
         parentDesc: {
@@ -406,6 +406,10 @@
 
     function handlePortalCardClick(portal) {
         if (portal === 'student') {
+            if (typeof global.emsIsStudentPortalAvailable === 'function' && global.emsIsStudentPortalAvailable()) {
+                openLogin(portal);
+                return;
+            }
             if (typeof global.emsShowStudentPortalComingSoon === 'function') {
                 global.emsShowStudentPortalComingSoon();
             }
@@ -598,6 +602,9 @@
     function initLanding() {
         applyLang(getLang());
         bindEvents();
+        if (typeof global.emsApplyStudentPortalCardVisibility === 'function') {
+            global.emsApplyStudentPortalCardVisibility();
+        }
         global.emsLandingRefreshBranding();
         if (global.EmsBranding && global.EmsBranding.onChange) {
             global.EmsBranding.onChange(function () {

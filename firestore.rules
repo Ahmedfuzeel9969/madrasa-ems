@@ -770,6 +770,15 @@ service cloud.firestore {
           || (isParentOf(madrasaId) && parentHasLinkedStudent(madrasaId, studentId));
         allow write: if canManageTenantAccess(madrasaId) || isSuperAdmin();
       }
+      match /StaffAccessKeys/{staffId} {
+        allow read: if isSignedIn()
+          && (
+            (isStaffOf(madrasaId) && staffRecordId(madrasaId) == staffId)
+            || canManageTenantAccess(madrasaId)
+            || isSuperAdmin()
+          );
+        allow write: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+      }
       match /ParentPermissions/{studentId} {
         allow read: if canReadTenantStaff(madrasaId) || parentHasLinkedStudent(madrasaId, studentId);
         allow write: if canManageTenantAccess(madrasaId);
@@ -924,6 +933,16 @@ service cloud.firestore {
       match /Parent_Links/{linkId} {
         allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin()
           || (isMadrasaActive(madrasaId) && isParentOf(madrasaId) && request.auth.uid == linkId);
+        allow create: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow update: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow delete: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isSignedIn() && resource.data.email == token().email && resource.data.status == 'pending');
+      }
+
+      // P2 foundation — student self-login links (portal gated off until available).
+      match /Student_Links/{linkId} {
+        allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin()
+          || (isSignedIn() && request.auth.uid == linkId);
         allow create: if canManageTenantAccess(madrasaId) || isSuperAdmin();
         allow update: if canManageTenantAccess(madrasaId) || isSuperAdmin();
         allow delete: if canManageTenantAccess(madrasaId) || isSuperAdmin()

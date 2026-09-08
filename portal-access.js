@@ -50,7 +50,28 @@
     };
 
     global.emsIsStudentPortalAvailable = function () {
+        // P2: backend (Student_Links + student shell) not ready — keep false.
         return false;
+    };
+
+    /** P2/C10: hide tease card until portal is actually available (less login confusion). */
+    global.emsShouldShowStudentPortalCard = function () {
+        return !!global.emsIsStudentPortalAvailable();
+    };
+
+    global.emsApplyStudentPortalCardVisibility = function () {
+        var show = typeof global.emsShouldShowStudentPortalCard === 'function'
+            ? global.emsShouldShowStudentPortalCard()
+            : false;
+        document.querySelectorAll('.ems-portal-card.student[data-portal="student"]').forEach(function (card) {
+            card.style.display = show ? '' : 'none';
+            card.setAttribute('aria-hidden', show ? 'false' : 'true');
+            if (!show) {
+                card.setAttribute('tabindex', '-1');
+            } else {
+                card.setAttribute('tabindex', '0');
+            }
+        });
     };
 
     global.emsShowStudentPortalComingSoon = function () {
@@ -60,7 +81,7 @@
             document.body.style.overflow = 'hidden';
             return;
         }
-        var msg = 'طالب علم پورٹل جلد ہی دستیاب ہوگا (Coming Soon)';
+        var msg = 'طالب علم پورٹل ابھی دستیاب نہیں — بیک اینڈ تیار ہونے پر کھلے گا۔';
         if (typeof global.showToast === 'function') {
             global.showToast(msg, 'info');
         } else if (typeof global.showTopAlert === 'function') {

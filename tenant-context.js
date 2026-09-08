@@ -159,6 +159,28 @@
             }, { merge: true });
     };
 
+    /**
+     * P2 foundation: Student_Links (portal still gated by emsIsStudentPortalAvailable).
+     * Same pending→activate pattern as Staff/Parent links.
+     */
+    global.emsCreateStudentLink = function (madrasaId, studentId, email) {
+        var db = getDb();
+        email = normalizeEmail(email);
+        if (!db || !madrasaId || !studentId || !email) {
+            return Promise.reject(new Error('مکمل معلومات درج کریں'));
+        }
+        return db.collection('All_Madrasas').doc(madrasaId).collection('Student_Links')
+            .doc('pending_' + studentId)
+            .set({
+                studentId: studentId,
+                email: email,
+                authUid: '',
+                status: 'pending',
+                createdAt: Date.now(),
+                createdBy: (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin'
+            }, { merge: true });
+    };
+
     global.emsGetLinkedStudentIds = function () {
         if (global.CURRENT_PARENT_LINK && global.CURRENT_PARENT_LINK.studentIds) {
             return global.CURRENT_PARENT_LINK.studentIds;

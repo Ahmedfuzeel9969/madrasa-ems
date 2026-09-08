@@ -138,22 +138,33 @@
         return Date.now() > keyData.accessKeyExpiresAt;
     };
 
-    /** Teacher key — StaffPermissions/{staffId} */
+    /** Teacher key — StaffAccessKeys/{staffId} (P2) with StaffPermissions dual-write fallback */
     global.emsSaveTeacherAccessKey = function (madrasaId, staffId, plainKey, ttlMs) {
         var db = getDb();
         if (!db || !madrasaId || !staffId || !plainKey) {
             return Promise.reject(new Error('مکمل معلومات درکار ہیں'));
         }
         var expiresAt = Date.now() + (ttlMs || DEFAULT_KEY_TTL_MS);
+        var issuedBy = (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin';
         return global.emsHashAccessKey(plainKey).then(function (hash) {
-            return db.collection('All_Madrasas').doc(madrasaId)
-                .collection('StaffPermissions').doc(staffId)
-                .set({
+            var payload = {
+                staffId: staffId,
+                accessKeyHash: hash,
+                accessKeyIssuedAt: Date.now(),
+                accessKeyExpiresAt: expiresAt,
+                accessKeyIssuedBy: issuedBy
+            };
+            var base = db.collection('All_Madrasas').doc(madrasaId);
+            // Canonical store + legacy StaffPermissions field (compat for older clients/CFs).
+            return Promise.all([
+                base.collection('StaffAccessKeys').doc(staffId).set(payload, { merge: true }),
+                base.collection('StaffPermissions').doc(staffId).set({
                     accessKeyHash: hash,
-                    accessKeyIssuedAt: Date.now(),
+                    accessKeyIssuedAt: payload.accessKeyIssuedAt,
                     accessKeyExpiresAt: expiresAt,
-                    accessKeyIssuedBy: (firebase.auth().currentUser && firebase.auth().currentUser.email) || 'admin'
-                }, { merge: true });
+                    accessKeyIssuedBy: issuedBy
+                }, { merge: true })
+            ]);
         });
     };
 
@@ -167,13 +178,19 @@
     global.emsGetTeacherAccessKeyHash = function (madrasaId, staffId) {
         var db = getDb();
         if (!db || !madrasaId || !staffId) return Promise.resolve(null);
-        return db.collection('All_Madrasas').doc(madrasaId)
-            .collection('StaffPermissions').doc(staffId).get()
+        var base = db.collection('All_Madrasas').doc(madrasaId);
+        return base.collection('StaffAccessKeys').doc(staffId).get()
             .then(function (doc) {
-                if (!doc.exists) return null;
-                var d = doc.data();
-                if (global.emsIsAccessKeyExpired(d)) return null;
-                return d.accessKeyHash || null;
+                if (doc.exists) {
+                    var d = doc.data() || {};
+                    if (!global.emsIsAccessKeyExpired(d) && d.accessKeyHash) return d.accessKeyHash;
+                }
+                return base.collection('StaffPermissions').doc(staffId).get().then(function (permDoc) {
+                    if (!permDoc.exists) return null;
+                    var pd = permDoc.data() || {};
+                    if (global.emsIsAccessKeyExpired(pd)) return null;
+                    return pd.accessKeyHash || null;
+                });
             });
     };
 
