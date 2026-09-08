@@ -704,6 +704,29 @@
         }
 
         if (!ctx || ctx.role !== 'staff') {
+            // Owner Gmail on Teacher portal is the most common mistake — detect and explain.
+            var db = typeof global.getDbOrNull === 'function' ? global.getDbOrNull() : null;
+            if (db && user && user.uid) {
+                db.collection('All_Madrasas').doc(user.uid).get().then(function (doc) {
+                    if (doc.exists && doc.data() && doc.data().madrasaName) {
+                        global.emsShowAccessDenied(
+                            'یہ Gmail انتظامیہ (ایڈمن) کا ہے',
+                            'مدرسہ بنانے والا Gmail صرف «انتظامیہ پورٹل» سے کھلتا ہے۔ اساتذہ پورٹل کے لیے الگ استاد کا Gmail لیں، ایڈمن پینل میں اس استاد سے Staff Link بنائیں، Access Key جاری کریں، پھر وہی استاد والا Gmail اور Key استعمال کریں۔'
+                        );
+                        return;
+                    }
+                    global.emsShowAccessDenied(
+                        'رسائی مسترد — Access Denied',
+                        'یہ Gmail کسی استاد سے منسلک نہیں۔ ایڈمن پینل → عملہ → «لاگ ان اکاؤنٹ منسلک کریں» سے استاد کا الگ Gmail جوڑیں، پھر اسی Gmail سے اساتذہ پورٹل کھولیں۔'
+                    );
+                }).catch(function () {
+                    global.emsShowAccessDenied(
+                        'رسائی مسترد — Access Denied',
+                        'یہ Gmail کسی مدرسہ کے Teacher Profile میں موجود نہیں۔'
+                    );
+                });
+                return;
+            }
             global.emsShowAccessDenied(
                 'رسائی مسترد — Access Denied',
                 'یہ Gmail کسی مدرسہ کے Teacher Profile میں موجود نہیں۔'

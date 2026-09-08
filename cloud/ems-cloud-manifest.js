@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260908_access_key_6_digits_unlock_v1';
+  var CACHE_BUST = '20260908_teacher_portal_owner_msg_v1';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,
