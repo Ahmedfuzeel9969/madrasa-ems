@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260907_phase2_ssot_v1';
+    var CACHE_BUST = '20260908_portal_login_gate_fix_v1';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;

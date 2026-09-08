@@ -2137,6 +2137,10 @@ window.emsAuthContinueAsParent = function (user, ctx) {
     if (!ctx) return;
     window.waitForDb(function (firestore) {
         subscribeGlobalSettings(firestore);
+        // Set tenant + link BEFORE refresh/gate — otherwise emsParentHasAnyView always fails.
+        window.CURRENT_MADRASA_TENANT_ID = ctx.tenantId;
+        window.CURRENT_USER_TENANT_ROLE = 'parent';
+        window.CURRENT_PARENT_LINK = ctx.link || {};
 
         function startParentUnlock() {
             if (typeof window.emsParentHasAnyView === 'function' && !window.emsParentHasAnyView()) {
@@ -2153,11 +2157,20 @@ window.emsAuthContinueAsParent = function (user, ctx) {
 
         // Prefer CF permissions snapshot so session views match server (Phase 2 SSOT).
         var pull = typeof window.emsRefreshParentPermissions === 'function'
-            ? window.emsRefreshParentPermissions()
+            ? window.emsRefreshParentPermissions(ctx.tenantId)
             : (typeof window.emsPullModuleGroup === 'function'
                 ? window.emsPullModuleGroup('Admin')
                 : Promise.resolve());
-        pull.then(startParentUnlock).catch(startParentUnlock);
+        pull.then(function (data) {
+            if (data && Array.isArray(data.studentIds) && data.studentIds.length) {
+                var mergedLink = Object.assign({}, ctx.link || {}, window.CURRENT_PARENT_LINK || {}, {
+                    studentIds: data.studentIds
+                });
+                ctx.link = mergedLink;
+                window.CURRENT_PARENT_LINK = mergedLink;
+            }
+            startParentUnlock();
+        }).catch(startParentUnlock);
     });
 };
 

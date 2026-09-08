@@ -107,6 +107,35 @@
 
     global.emsGetStaffIdForAccess = getStaffIdForAccess;
 
+    var STAFF_PERM_KEY = 'ems_staff_permissions';
+
+    /** Boot-safe staff perm reader — works before lazy admin-panel.js loads apGetStaffPerm. */
+    function resolveStaffPerm(staffId) {
+        if (!staffId) return null;
+        if (typeof global.apGetStaffPerm === 'function') {
+            try { return global.apGetStaffPerm(staffId); } catch (eAp) { /* fall through */ }
+        }
+        var all = null;
+        if (typeof global.emsCacheGet === 'function') {
+            try { all = global.emsCacheGet(STAFF_PERM_KEY, null); } catch (eCache) { all = null; }
+        }
+        if (!all || typeof all !== 'object') {
+            all = readJson(STAFF_PERM_KEY, {});
+        }
+        if (!all || typeof all !== 'object') return null;
+        var raw = all[staffId];
+        if (!raw || typeof raw !== 'object') return null;
+        return {
+            staffId: staffId,
+            status: raw.status || 'active',
+            modules: raw.modules || {},
+            actions: raw.actions || {},
+            temporary: raw.temporary || {}
+        };
+    }
+
+    global.emsResolveStaffPerm = resolveStaffPerm;
+
     function localCheckLoginAllowed(key) {
         if (!key) return { allowed: true };
         var attempts = readJson(LOGIN_ATTEMPTS_KEY, {});
@@ -224,8 +253,8 @@
         if (global.isSuperAdmin && global.isSuperAdmin()) return true;
         if (global.isMadrasaAdmin && global.isMadrasaAdmin()) return true;
         var staffId = getStaffIdForAccess();
-        if (!staffId || typeof global.apGetStaffPerm !== 'function') return false;
-        var perm = global.apGetStaffPerm(staffId);
+        if (!staffId) return false;
+        var perm = resolveStaffPerm(staffId);
         if (!perm || perm.status === 'suspended') return false;
         var mods = perm.modules || {};
         var keys = Object.keys(mods);
@@ -246,8 +275,8 @@
     /** Staff کے لیے اجازت یافتہ modules کی فہرست */
     global.emsGetStaffAllowedModules = function () {
         var staffId = getStaffIdForAccess();
-        if (!staffId || typeof global.apGetStaffPerm !== 'function') return [];
-        var perm = global.apGetStaffPerm(staffId);
+        if (!staffId) return [];
+        var perm = resolveStaffPerm(staffId);
         if (!perm || perm.status === 'suspended') return [];
         var out = [];
         var catalogue = global.ADMIN_STAFF_MODULES || [];
@@ -275,8 +304,7 @@
             return global.CURRENT_USER_TENANT_ROLE !== 'staff' && !!global.CURRENT_MADRASA_DATA;
         }
 
-        if (typeof global.apGetStaffPerm !== 'function') return false;
-        var perm = global.apGetStaffPerm(staffId);
+        var perm = resolveStaffPerm(staffId);
         if (!perm || perm.status === 'suspended') return false;
 
         if (perm.modules && perm.modules[modId] === true) {

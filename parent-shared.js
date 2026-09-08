@@ -150,8 +150,9 @@
         catch (e) { /* ignore */ }
     };
 
-    global.emsRefreshParentPermissions = function () {
-        var tenantId = parentGetTenantId();
+    /** @param {string} [explicitTenantId] optional — use when CURRENT_MADRASA_TENANT_ID not set yet */
+    global.emsRefreshParentPermissions = function (explicitTenantId) {
+        var tenantId = explicitTenantId || parentGetTenantId();
         if (!tenantId || typeof global.emsCallFunction !== 'function') {
             if (typeof global.emsPullModuleGroup === 'function') {
                 return global.emsPullModuleGroup('Admin').catch(function () { return null; });
@@ -162,6 +163,11 @@
             .then(function (data) {
                 if (data && data.permissions) {
                     global.emsApplyParentPermissionsSnapshot(data.permissions);
+                }
+                if (data && Array.isArray(data.studentIds) && data.studentIds.length) {
+                    global.CURRENT_PARENT_LINK = Object.assign({}, global.CURRENT_PARENT_LINK || {}, {
+                        studentIds: data.studentIds
+                    });
                 }
                 return data;
             })
