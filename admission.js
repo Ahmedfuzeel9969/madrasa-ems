@@ -1963,17 +1963,51 @@ window.clearRejectedHistory = function () {
 // =========================================================
 // 10. یونیورسل ایڈیٹ اور ڈیلیٹ لاجک (Firebase Cloud Delete)
 // =========================================================
+
+/** Phase 3: warn about related data before hard-delete (checklist, not auto-cascade). */
+window.emsRegBuildDeleteCascadeChecklist = function (record) {
+  var lines = [];
+  if (!record) return lines;
+  var type = record.type || '';
+  var name = record.name || record.id || 'ریکارڈ';
+  lines.push('نام: ' + name + ' (' + (record.id || '-') + ')');
+  if (type === 'teacher' || type === 'staff') {
+    lines.push('• StaffPermissions / Access Key — الگ سے چیک کریں');
+    lines.push('• Staff_Links — منسلک Gmail غیر فعال ہو سکتا ہے');
+    lines.push('• نظام الاوقات (periods) — استاد ID سے منسلک گھنٹے');
+    lines.push('• حاضری / پے رول — متعلقہ اندراجات باقی رہ سکتے ہیں');
+  } else if (type === 'student') {
+    lines.push('• ParentPermissions / Parent Access Key / Parent_Links');
+    lines.push('• حاضری (canonical sheets) — ریکارڈز باقی رہ سکتے ہیں');
+    lines.push('• امتحانات / فیس setup — متعلقہ اندراجات');
+  } else {
+    lines.push('• متعلقہ ماڈیول ڈیٹا دستی طور پر چیک کریں');
+  }
+  lines.push('نوٹ: یہ حذف خودکار cascade نہیں کرتا — صرف متنبہہ۔');
+  return lines;
+};
+
 window.deleteRegistration = function (id, fromRejected = false) {
   if (typeof window.emsRegRequire === 'function' && !window.emsRegRequire('delete', { id: id, fromRejected: fromRejected })) {
     return;
   }
-  if (confirm('کیا آپ واقعی یہ ریکارڈ مستقل طور پر حذف (Delete) کرنا چاہتے ہیں؟')) {
+
+  var beforeDeletePromise = (typeof window.emsRegGetRecordById === 'function')
+    ? window.emsRegGetRecordById(id, { fromRejected: fromRejected })
+    : Promise.resolve(null);
+
+  beforeDeletePromise.then(function (before) {
+    var checklist = (typeof window.emsRegBuildDeleteCascadeChecklist === 'function')
+      ? window.emsRegBuildDeleteCascadeChecklist(before)
+      : [];
+    var msg = 'کیا آپ واقعی یہ ریکارڈ مستقل طور پر حذف (Delete) کرنا چاہتے ہیں؟';
+    if (checklist.length) {
+      msg += '\n\nمتعلقہ ڈیٹا چیک لسٹ:\n' + checklist.join('\n');
+    }
+    if (!confirm(msg)) return;
+
     let uid = getAdmissionTenantId();
     if (!uid) return alert("خرابی: جی میل کنکشن موجود نہیں!");
-
-    var beforeDeletePromise = (typeof window.emsRegGetRecordById === 'function')
-      ? window.emsRegGetRecordById(id, { fromRejected: fromRejected })
-      : Promise.resolve(null);
 
     function afterLocalDelete(res) {
       if (fromRejected && document.getElementById('reg-rejected-table')) window.renderRejectedTable();
@@ -1984,59 +2018,59 @@ window.deleteRegistration = function (id, fromRejected = false) {
       alert('ریکارڈ کامیابی سے ڈیلیٹ کر دیا گیا!');
     }
 
-    function logDeleteAudit(before) {
+    function logDeleteAudit(rec) {
       if (typeof window.emsRegLogAudit !== 'function') return;
       window.emsRegLogAudit('delete', id, {
-        entityType: before && before.type,
+        entityType: rec && rec.type,
         source: 'form',
         fromRejected: fromRejected,
         beforeSummary: typeof window.emsRegAuditSummarizeRecord === 'function'
-          ? window.emsRegAuditSummarizeRecord(before)
+          ? window.emsRegAuditSummarizeRecord(rec)
           : null
       });
     }
 
     if (admissionRegistrationSsotEnabled() && typeof window.emsRegRepoDeleteRegistration === 'function') {
-      beforeDeletePromise.then(function (before) {
-        window.emsRegRepoDeleteRegistration(id, fromRejected).then(function (res) {
-          if (!res || !res.ok) {
-            alert('ڈیلیٹ نہیں ہوا — دوبارہ کوشش کریں۔');
-            return;
-          }
-          logDeleteAudit(before);
-          afterLocalDelete(res);
-        }).catch(function (error) {
-          alert('ڈیلیٹ کرنے میں مسئلہ آیا: ' + (error && error.message ? error.message : error));
-        });
+      window.emsRegRepoDeleteRegistration(id, fromRejected).then(function (res) {
+        if (!res || !res.ok) {
+          alert('ڈیلیٹ نہیں ہوا — دوبارہ کوشش کریں۔');
+          return;
+        }
+        logDeleteAudit(before);
+        afterLocalDelete(res);
+      }).catch(function (error) {
+        alert('ڈیلیٹ کرنے میں مسئلہ آیا: ' + (error && error.message ? error.message : error));
       });
       return;
     }
 
-    function afterLegacyRepoDelete(before) {
+    function afterLegacyRepoDelete(rec) {
       if (typeof window.emsRegRepoRemove === 'function') {
         window.emsRegRepoRemove(id, fromRejected);
       }
-      logDeleteAudit(before);
+      logDeleteAudit(rec);
       afterLocalDelete();
     }
 
     if (typeof window.emsOfflineDeleteRegistration === 'function') {
-      beforeDeletePromise.then(function (before) {
-        window.emsOfflineDeleteRegistration(id, fromRejected).then(function (res) {
-          if (!res || !res.ok) {
-            alert('ڈیلیٹ نہیں ہوا — دوبارہ کوشش کریں۔');
-            return;
-          }
-          afterLegacyRepoDelete(before);
-        }).catch(function (error) {
-          alert('ڈیلیٹ کرنے میں مسئلہ آیا: ' + (error && error.message ? error.message : error));
-        });
+      window.emsOfflineDeleteRegistration(id, fromRejected).then(function (res) {
+        if (!res || !res.ok) {
+          alert('ڈیلیٹ نہیں ہوا — دوبارہ کوشش کریں۔');
+          return;
+        }
+        afterLegacyRepoDelete(before);
+      }).catch(function (error) {
+        alert('ڈیلیٹ کرنے میں مسئلہ آیا: ' + (error && error.message ? error.message : error));
       });
       return;
     }
 
     alert('خرابی: سنک outbox تیار نہیں — صفحہ دوبارہ لوڈ کریں۔');
-  }
+  }).catch(function () {
+    if (confirm('کیا آپ واقعی یہ ریکارڈ مستقل طور پر حذف (Delete) کرنا چاہتے ہیں؟')) {
+      alert('ریکارڈ لوڈ نہیں ہوا — دوبارہ کوشش کریں۔');
+    }
+  });
 };
 
 window.editRegistration = function (id, type, fromRejected = false) {

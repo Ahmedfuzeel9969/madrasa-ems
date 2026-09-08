@@ -19,9 +19,16 @@ function uniqueUids(list) {
 
 async function findParentUidsForStudent(db, tenantId, studentId) {
     const uids = [];
-    const permSnap = await db.collection('ParentPermissions').doc(studentId).get();
-    if (permSnap.exists && permSnap.data().tenantId === tenantId && permSnap.data().parentUid) {
-        uids.push(permSnap.data().parentUid);
+    // ParentPermissions live under All_Madrasas/{tenantId}/ParentPermissions/{studentId}
+    const permSnap = await db.collection('All_Madrasas').doc(tenantId)
+        .collection('ParentPermissions').doc(studentId).get();
+    if (permSnap.exists) {
+        const pd = permSnap.data() || {};
+        if (pd.status && pd.status !== 'active') {
+            /* suspended parent perm — still resolve via links below */
+        } else if (pd.parentUid) {
+            uids.push(pd.parentUid);
+        }
     }
     const linksSnap = await db.collection('All_Madrasas').doc(tenantId).collection('Parent_Links').get();
     linksSnap.forEach(function (doc) {

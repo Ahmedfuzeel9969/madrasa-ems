@@ -2139,6 +2139,10 @@
                 ? '<span class="ap-badge ap-badge-on">فعال</span>'
                 : '<span class="ap-badge ap-badge-off">بند</span>';
 
+            var toggleBtn = perm.status === 'active'
+                ? '<button type="button" class="btn btn-danger btn-sm" onclick="window.apToggleParentStatus(\'' + apEscAttr(s.id) + '\')" title="رسائی بند کریں"><i class="fas fa-ban"></i></button>'
+                : '<button type="button" class="btn btn-success btn-sm" onclick="window.apToggleParentStatus(\'' + apEscAttr(s.id) + '\')" title="رسائی فعال کریں"><i class="fas fa-check"></i></button>';
+
             return '<tr>' +
                 '<td><strong style="color:#0f766e;">' + apEsc(s.name || 'نامعلوم') + '</strong>' +
                 '<br><small style="color:#64748b;">' + apEsc(s.id || '-') + ' • ' + apEsc(s.class || '-') + '</small></td>' +
@@ -2147,9 +2151,38 @@
                 '<td>' + chips + '</td>' +
                 '<td class="ap-row-actions">' +
                 '<button type="button" class="btn btn-primary btn-sm" onclick="window.apOpenParentModal(\'' + apEscAttr(s.id) + '\')" title="رسائی کنٹرول"><i class="fas fa-sliders-h"></i></button> ' +
-                '<button type="button" class="btn btn-outline btn-sm" onclick="window.apOpenParentHistory(\'' + apEscAttr(s.id) + '\')" title="ہسٹری"><i class="fas fa-history"></i></button>' +
+                '<button type="button" class="btn btn-outline btn-sm" onclick="window.apOpenParentHistory(\'' + apEscAttr(s.id) + '\')" title="ہسٹری"><i class="fas fa-history"></i></button> ' +
+                toggleBtn +
                 '</td></tr>';
         }).join('');
+    };
+
+    /** Phase 3: parent portal access on/off without deleting views */
+    window.apToggleParentStatus = function (studentId) {
+        var perms = getAllParentPerms();
+        var p = migrateParentPerm(perms[studentId], studentId);
+        p.status = (p.status === 'active') ? 'disabled' : 'active';
+        p.updatedAt = apNow();
+        p.updatedBy = apCurrentAdmin();
+        p.history = p.history || [];
+        p.history.push({
+            type: 'status_changed',
+            detail: 'اسٹیٹس: ' + (p.status === 'active' ? 'فعال' : 'بند'),
+            by: apCurrentAdmin(),
+            at: apNow()
+        });
+        perms[studentId] = p;
+        Promise.resolve(saveAllParentPerms(perms)).then(function () {
+            return apPushPermissionDoc('ParentPermissions', studentId, p);
+        }).then(function () {
+            return apConfirmCloudPushAfterPermSave();
+        }).then(function () {
+            apToast(p.status === 'active' ? 'والدین رسائی فعال۔' : 'والدین رسائی بند۔', p.status === 'active' ? 'success' : 'warning');
+            window.apRenderParentsTable();
+        }).catch(function () {
+            apToast('اسٹیٹس محفوظ ہوا؛ کلاؤڈ سنک چیک کریں۔', 'warning');
+            window.apRenderParentsTable();
+        });
     };
 
     window.apOpenParentModal = function (studentId) {
