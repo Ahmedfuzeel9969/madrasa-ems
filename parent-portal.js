@@ -417,11 +417,15 @@
         return window.emsCallFunction('getParentLinkedStudents', { tenantId: tenantId })
             .then(function (data) {
                 if (!data || !data.students) return data;
-                if (typeof window.emsRegRepoUpsert === 'function') {
-                    data.students.forEach(function (s) {
-                        if (s && s.id) window.emsRegRepoUpsert(s);
-                    });
-                }
+                window._ppLinkedStudentsById = window._ppLinkedStudentsById || {};
+                data.students.forEach(function (s) {
+                    if (s && s.id) {
+                        window._ppLinkedStudentsById[s.id] = s;
+                        if (typeof window.emsRegRepoUpsert === 'function') {
+                            window.emsRegRepoUpsert(s);
+                        }
+                    }
+                });
                 if (data.permissions && typeof window.emsApplyParentPermissionsSnapshot === 'function') {
                     window.emsApplyParentPermissionsSnapshot(data.permissions);
                 }
@@ -429,10 +433,17 @@
             });
     }
 
-    function renderParentPortalCards(container, studentIds) {
+    function ppResolveStudent(sid) {
+        if (window._ppLinkedStudentsById && window._ppLinkedStudentsById[sid]) {
+            return window._ppLinkedStudentsById[sid];
+        }
         var users = getUsers();
+        return users.find(function (u) { return u.id === sid; }) || { id: sid, name: sid };
+    }
+
+    function renderParentPortalCards(container, studentIds) {
         container.innerHTML = studentIds.map(function (sid) {
-            var student = users.find(function (u) { return u.id === sid; }) || { id: sid, name: sid };
+            var student = ppResolveStudent(sid);
             var views = (window.PARENT_VIEWS || []).filter(function (pv) {
                 if (typeof window.parentCanView === 'function') return window.parentCanView(sid, pv.id);
                 if (typeof window.checkParentViewAccess === 'function') return window.checkParentViewAccess(sid, pv.id);
@@ -544,7 +555,7 @@
             return;
         }
 
-        var student = getUsers().find(function (u) { return u.id === studentId; }) || {};
+        var student = ppResolveStudent(studentId);
         var viewName = viewId;
         (window.PARENT_VIEWS || []).forEach(function (pv) {
             if (pv.id === viewId) viewName = pv.name;

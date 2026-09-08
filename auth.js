@@ -2202,24 +2202,42 @@ window.emsAuthContinueAsParent = function (user, ctx) {
         window.CURRENT_USER_TENANT_ROLE = 'parent';
         window.CURRENT_PARENT_LINK = ctx.link || {};
 
-        function startParentUnlock() {
+        function denyNoViews() {
+            if (typeof window.emsShowAccessDenied === 'function') {
+                window.emsShowAccessDenied(
+                    'کوئی Parent View Access نہیں',
+                    'منتظم نے ابھی تک آپ کو کوئی view اجازت نہیں دی۔ Admin Panel → Parent Permissions چیک کریں۔'
+                );
+            }
+        }
+
+        function denyLoadFailed() {
+            if (typeof window.emsShowAccessDenied === 'function') {
+                window.emsShowAccessDenied(
+                    'اجازتیں لوڈ نہیں ہوئیں',
+                    'سرور/نیٹ ورک سے Parent Permissions نہیں مل سکیں۔ کنکشن چیک کر کے دوبارہ لاگ اِن کریں۔'
+                );
+            }
+        }
+
+        function finishParentUnlock(opts) {
+            opts = opts || {};
+            if (opts.loadFailed) {
+                denyLoadFailed();
+                return;
+            }
             if (typeof window.emsParentHasAnyView === 'function' && !window.emsParentHasAnyView()) {
-                if (typeof window.emsShowAccessDenied === 'function') {
-                    window.emsShowAccessDenied(
-                        'کوئی Parent View Access نہیں',
-                        'منتظم نے ابھی تک آپ کو کوئی view اجازت نہیں دی۔ Admin Panel → Parent Permissions چیک کریں۔'
-                    );
-                }
+                denyNoViews();
                 return;
             }
             applyParentTenantProfile(user, ctx, firestore);
         }
 
-        // Prefer CF permissions snapshot; fall back to direct ParentPermissions docs.
         var linkedIds = (ctx.link && ctx.link.studentIds) || [];
         var pull = typeof window.emsRefreshParentPermissions === 'function'
             ? window.emsRefreshParentPermissions(ctx.tenantId)
-            : Promise.resolve(null);
+            : Promise.resolve({ loadFailed: true });
+
         pull.then(function (data) {
             if (data && Array.isArray(data.studentIds) && data.studentIds.length) {
                 var mergedLink = Object.assign({}, ctx.link || {}, window.CURRENT_PARENT_LINK || {}, {
@@ -2228,26 +2246,35 @@ window.emsAuthContinueAsParent = function (user, ctx) {
                 ctx.link = mergedLink;
                 window.CURRENT_PARENT_LINK = mergedLink;
             }
+            if (data && data.loadFailed) {
+                var idsFail = (window.CURRENT_PARENT_LINK && window.CURRENT_PARENT_LINK.studentIds) || linkedIds;
+                if (typeof window.emsHydrateParentPermissionsForLogin === 'function' && idsFail.length) {
+                    return window.emsHydrateParentPermissionsForLogin(ctx.tenantId, idsFail, firestore)
+                        .then(function (hyd) {
+                            var got = hyd && hyd.permissions && Object.keys(hyd.permissions).length;
+                            finishParentUnlock({ loadFailed: !got && !(typeof window.emsParentHasAnyView === 'function' && window.emsParentHasAnyView()) });
+                        })
+                        .catch(function () { finishParentUnlock({ loadFailed: true }); });
+                }
+                finishParentUnlock({ loadFailed: true });
+                return null;
+            }
             var hasPerms = data && data.permissions && Object.keys(data.permissions).length;
             if (hasPerms || (typeof window.emsParentHasAnyView === 'function' && window.emsParentHasAnyView())) {
-                startParentUnlock();
+                finishParentUnlock({ loadFailed: false });
                 return null;
             }
             var ids = (window.CURRENT_PARENT_LINK && window.CURRENT_PARENT_LINK.studentIds) || linkedIds;
             if (typeof window.emsHydrateParentPermissionsForLogin === 'function' && ids.length) {
                 return window.emsHydrateParentPermissionsForLogin(ctx.tenantId, ids, firestore)
-                    .then(function () { startParentUnlock(); });
+                    .then(function () { finishParentUnlock({ loadFailed: false }); })
+                    .catch(function () { finishParentUnlock({ loadFailed: true }); });
             }
-            startParentUnlock();
+            // Linked students exist but no permission docs → configured as no views.
+            finishParentUnlock({ loadFailed: false });
             return null;
         }).catch(function () {
-            var ids = (window.CURRENT_PARENT_LINK && window.CURRENT_PARENT_LINK.studentIds) || linkedIds;
-            if (typeof window.emsHydrateParentPermissionsForLogin === 'function' && ids.length) {
-                window.emsHydrateParentPermissionsForLogin(ctx.tenantId, ids, firestore)
-                    .then(startParentUnlock).catch(startParentUnlock);
-                return;
-            }
-            startParentUnlock();
+            finishParentUnlock({ loadFailed: true });
         });
     });
 };

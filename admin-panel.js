@@ -1244,6 +1244,28 @@
         return savePromise;
     }
 
+    /** P0: write one permission doc to Firestore so teacher/parent login hydrate sees it immediately. */
+    function apPushPermissionDoc(collectionName, docId, data) {
+        var tenantId = (typeof window.emsGetTenantId === 'function' ? window.emsGetTenantId() : null) || apGetUid();
+        var db = typeof window.getDbOrNull === 'function' ? window.getDbOrNull() : null;
+        if (!tenantId || !db || !docId || !data) return Promise.resolve({ skipped: true });
+        var payload = Object.assign({}, data);
+        payload.updatedAt = payload.updatedAt || apNow();
+        payload.updatedBy = payload.updatedBy || apCurrentAdmin();
+        return apTenantSubCol(db, tenantId, collectionName).doc(docId)
+            .set(payload, { merge: true })
+            .then(function () { return { ok: true, collection: collectionName, docId: docId }; })
+            .catch(function (err) {
+                console.warn('apPushPermissionDoc:', collectionName, docId, err && err.message);
+                return { ok: false, error: err && err.message };
+            });
+    }
+
+    function apConfirmCloudPushAfterPermSave() {
+        if (typeof window.emsCloudPushNow !== 'function') return Promise.resolve({ skipped: true });
+        return window.emsCloudPushNow().catch(function () { return { ok: false }; });
+    }
+
     function apPushStaffClaimsForStaffId(staffId) {
         var tenantId = typeof window.emsGetTenantId === 'function' ? window.emsGetTenantId() : null;
         var db = typeof window.getDbOrNull === 'function' ? window.getDbOrNull() : null;
@@ -1807,11 +1829,22 @@
 
         perms[staffId] = oldP;
         saveAllPerms(perms).then(function () {
-            return apPushStaffClaimsForStaffId(staffId);
-        }).then(function (syncRes) {
-            var msg = changes.length > 0 ? 'اجازتیں محفوظ (' + changes.length + ' تبدیلیاں)۔' : 'محفوظ ہو گیا (کوئی تبدیلی نہیں)۔';
-            if (syncRes && syncRes.synced) msg += ' JWT claims تازہ۔';
-            apToast(msg, 'success');
+            return apPushPermissionDoc('StaffPermissions', staffId, oldP);
+        }).then(function (docRes) {
+            return apPushStaffClaimsForStaffId(staffId).then(function (syncRes) {
+                return { docRes: docRes, syncRes: syncRes };
+            });
+        }).then(function (pack) {
+            return apConfirmCloudPushAfterPermSave().then(function (pushRes) {
+                var msg = changes.length > 0 ? 'اجازتیں محفوظ (' + changes.length + ' تبدیلیاں)۔' : 'محفوظ ہو گیا (کوئی تبدیلی نہیں)۔';
+                if (pack && pack.docRes && pack.docRes.ok) msg += ' کلاؤڈ پر بھی بھیج دیا۔';
+                else if (pack && pack.docRes && pack.docRes.ok === false) msg += ' ⚠️ کلاؤڈ دستاویز ناکام — سنک چیک کریں۔';
+                if (pack && pack.syncRes && pack.syncRes.synced) msg += ' JWT claims تازہ۔';
+                if (pushRes && pushRes.ok === false) msg += ' قطار سنک زیر التواء۔';
+                apToast(msg, (pack && pack.docRes && pack.docRes.ok === false) ? 'warning' : 'success');
+            });
+        }).catch(function () {
+            apToast('اجازتیں مقامی محفوظ ہوئیں؛ کلاؤڈ سنک ناکام۔', 'warning');
         });
         if (typeof window.closeModal === 'function') window.closeModal('ap-staff-modal');
         window.apRenderStaffTable();
@@ -2171,8 +2204,19 @@
             oldP.history.push({ type: 'views_changed', detail: changes.join(' | '), by: apCurrentAdmin(), at: apNow() });
         }
         perms[studentId] = oldP;
-        saveAllParentPerms(perms);
-        apToast(changes.length > 0 ? 'رسائی محفوظ (' + changes.length + ' تبدیلیاں)۔' : 'محفوظ ہو گیا۔', 'success');
+        Promise.resolve(saveAllParentPerms(perms)).then(function () {
+            return apPushPermissionDoc('ParentPermissions', studentId, oldP);
+        }).then(function (docRes) {
+            return apConfirmCloudPushAfterPermSave().then(function (pushRes) {
+                var msg = changes.length > 0 ? 'رسائی محفوظ (' + changes.length + ' تبدیلیاں)۔' : 'محفوظ ہو گیا۔';
+                if (docRes && docRes.ok) msg += ' کلاؤڈ پر بھی بھیج دیا۔';
+                else if (docRes && docRes.ok === false) msg += ' ⚠️ کلاؤڈ دستاویز ناکام — سنک چیک کریں۔';
+                if (pushRes && pushRes.ok === false) msg += ' قطار سنک زیر التواء۔';
+                apToast(msg, (docRes && docRes.ok === false) ? 'warning' : 'success');
+            });
+        }).catch(function () {
+            apToast('رسائی مقامی محفوظ ہوئی؛ کلاؤڈ سنک ناکام۔', 'warning');
+        });
         if (typeof window.closeModal === 'function') window.closeModal('ap-parent-modal');
         window.apRenderParentsTable();
     };

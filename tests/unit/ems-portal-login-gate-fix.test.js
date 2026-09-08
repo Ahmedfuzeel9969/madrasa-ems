@@ -15,10 +15,10 @@ describe('Portal login gate fixes (parent + teacher)', function () {
         const src = read('auth.js');
         const fnStart = src.indexOf('window.emsAuthContinueAsParent');
         expect(fnStart).toBeGreaterThan(-1);
-        const slice = src.slice(fnStart, fnStart + 1800);
+        const slice = src.slice(fnStart, fnStart + 3200);
         expect(slice).toContain('CURRENT_MADRASA_TENANT_ID = ctx.tenantId');
         expect(slice).toContain('CURRENT_PARENT_LINK = ctx.link');
-        expect(slice.indexOf('CURRENT_MADRASA_TENANT_ID')).toBeLessThan(slice.indexOf('startParentUnlock'));
+        expect(slice.indexOf('CURRENT_MADRASA_TENANT_ID')).toBeLessThan(slice.indexOf('finishParentUnlock'));
         expect(slice).toContain('emsRefreshParentPermissions(ctx.tenantId)');
     });
 

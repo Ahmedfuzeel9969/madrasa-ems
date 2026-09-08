@@ -154,10 +154,7 @@
     global.emsRefreshParentPermissions = function (explicitTenantId) {
         var tenantId = explicitTenantId || parentGetTenantId();
         if (!tenantId || typeof global.emsCallFunction !== 'function') {
-            if (typeof global.emsPullModuleGroup === 'function') {
-                return global.emsPullModuleGroup('Admin').catch(function () { return null; });
-            }
-            return Promise.resolve(null);
+            return Promise.resolve({ loadFailed: true, reason: 'no_cf_or_tenant' });
         }
         return global.emsCallFunction('getParentLinkedStudents', { tenantId: tenantId })
             .then(function (data) {
@@ -169,13 +166,10 @@
                         studentIds: data.studentIds
                     });
                 }
-                return data;
+                return data || { loadFailed: false };
             })
-            .catch(function () {
-                if (typeof global.emsPullModuleGroup === 'function') {
-                    return global.emsPullModuleGroup('Admin');
-                }
-                return null;
+            .catch(function (err) {
+                return { loadFailed: true, reason: (err && err.message) || 'cf_error' };
             });
     };
 

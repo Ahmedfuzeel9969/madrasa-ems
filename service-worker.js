@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260908_teacher_portal_owner_msg_v1';
+var EMS_SW_BUILD_TAG = '20260908_portal_p0_perm_cloud_v1';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260908_teacher_portal_owner_msg_v1';
+  var CACHE_BUST = '20260908_portal_p0_perm_cloud_v1';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,
