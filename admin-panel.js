@@ -1599,6 +1599,88 @@
         window.apRenderHistory();
     };
 
+    // ------------------------ استاد پورٹل readiness چیک لسٹ -----------------------------
+    function apOwnerEmailLower() {
+        try {
+            var u = typeof firebase !== 'undefined' && firebase.auth && firebase.auth().currentUser;
+            return ((u && u.email) || '').trim().toLowerCase();
+        } catch (e) { return ''; }
+    }
+
+    function apStaffPortalReadinessSync(staff, perm) {
+        var email = ((staff && (staff.email || staff.gmail)) || '').trim().toLowerCase();
+        var owner = apOwnerEmailLower();
+        var mods = assignedModulesSummary(perm || {});
+        return [
+            { id: 'email', ok: !!email, label: 'استاد کا الگ Gmail درج ہے' },
+            { id: 'not_owner', ok: !email || !owner || email !== owner, label: 'مالک Gmail نہیں (Teacher ≠ Admin)' },
+            { id: 'active', ok: (perm && perm.status) === 'active', label: 'اجازت اسٹیٹس فعال' },
+            { id: 'modules', ok: mods.length > 0, label: 'کم از کم ایک ماڈیول تفویض' }
+        ];
+    }
+
+    function apReadinessRowHtml(item) {
+        var icon = item.ok === true ? 'fa-check-circle' : (item.ok === false ? 'fa-times-circle' : 'fa-spinner fa-spin');
+        var color = item.ok === true ? '#059669' : (item.ok === false ? '#dc2626' : '#64748b');
+        return '<li data-ready="' + item.id + '" style="display:flex;gap:8px;align-items:center;margin:4px 0;color:' + color + ';">' +
+            '<i class="fas ' + icon + '"></i><span>' + apEsc(item.label) + '</span></li>';
+    }
+
+    function apRenderStaffReadinessBox(staffId, staff, perm) {
+        var sync = apStaffPortalReadinessSync(staff, perm);
+        var pending = [
+            { id: 'key', ok: null, label: 'Access Key جاری (6 ہندسے)' },
+            { id: 'link', ok: null, label: 'Staff Link کلاؤڈ پر فعال' }
+        ];
+        var all = sync.concat(pending);
+        var html = '<div id="ap-staff-readiness" class="ap-temp-section" style="margin-bottom:14px;padding:10px 12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">' +
+            '<h4 style="margin:0 0 6px;font-size:14px;"><i class="fas fa-clipboard-check"></i> استاد پورٹل readiness</h4>' +
+            '<p style="margin:0 0 8px;font-size:12px;color:#64748b;">سب سبز ہونے کے بعد استاد پورٹل اس Gmail + Key سے کھلے گا۔</p>' +
+            '<ul style="list-style:none;padding:0;margin:0;">' + all.map(apReadinessRowHtml).join('') + '</ul></div>';
+
+        // Async: key hash + active Staff_Links
+        var tenantId = (typeof window.emsGetTenantId === 'function' ? window.emsGetTenantId() : null) || apGetUid();
+        var db = typeof window.getDbOrNull === 'function' ? window.getDbOrNull() : null;
+
+        function setReady(id, ok) {
+            var li = document.querySelector('#ap-staff-readiness li[data-ready="' + id + '"]');
+            if (!li) return;
+            li.style.color = ok ? '#059669' : '#dc2626';
+            var ic = li.querySelector('i');
+            if (ic) ic.className = 'fas ' + (ok ? 'fa-check-circle' : 'fa-times-circle');
+        }
+
+        if (tenantId && typeof window.emsGetTeacherAccessKeyHash === 'function') {
+            window.emsGetTeacherAccessKeyHash(tenantId, staffId)
+                .then(function (hash) { setReady('key', !!hash); })
+                .catch(function () { setReady('key', false); });
+        } else {
+            setTimeout(function () { setReady('key', false); }, 0);
+        }
+
+        if (tenantId && db) {
+            apTenantSubCol(db, tenantId, 'Staff_Links')
+                .where('staffId', '==', staffId)
+                .limit(10)
+                .get()
+                .then(function (snap) {
+                    var ok = false;
+                    if (snap && !snap.empty) {
+                        snap.forEach(function (doc) {
+                            var st = (doc.data() && doc.data().status) || '';
+                            if (st === 'active' || st === 'pending') ok = true;
+                        });
+                    }
+                    setReady('link', ok);
+                })
+                .catch(function () { setReady('link', false); });
+        } else {
+            setTimeout(function () { setReady('link', false); }, 0);
+        }
+
+        return html;
+    }
+
     // ------------------------ تفصیلی اجازت ماڈل -----------------------------
     window.apOpenStaffModal = function (staffId) {
         var staff = getStaffList().filter(function (s) { return s.id === staffId; })[0];
@@ -1638,8 +1720,11 @@
         var actOptions = window.ADMIN_ACTIONS.map(function (a) { return '<option value="' + a.id + '">' + a.name + '</option>'; }).join('');
         var durOptions = window.ADMIN_TEMP_DURATIONS.map(function (d) { return '<option value="' + d.id + '">' + d.name + '</option>'; }).join('');
 
+        var readinessHtml = apRenderStaffReadinessBox(staffId, staff, perm);
+
         var body = document.getElementById('ap-staff-modal-body');
         body.innerHTML =
+            readinessHtml +
             '<div class="input-group" style="margin-bottom:12px;">' +
             '<label><i class="fas fa-layer-group"></i> تیار شدہ ٹیمپلیٹ لاگو کریں</label>' +
             '<div style="display:flex; gap:8px;">' +

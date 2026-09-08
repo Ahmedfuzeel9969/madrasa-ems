@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const CACHE = '20260908_portal_p0_perm_cloud_v1';
+const CACHE = '20260908_portal_p0_ready_v1';
 
 function read(name) {
     return fs.readFileSync(path.join(ROOT, name), 'utf8');
@@ -18,6 +18,14 @@ describe('Portal P0 — perm cloud push + parent hydrate gate', function () {
         expect(src).toContain("apPushPermissionDoc('ParentPermissions'");
         expect(src).toContain('function apConfirmCloudPushAfterPermSave');
         expect(src).toContain('emsCloudPushNow');
+    });
+
+    it('admin staff modal shows portal readiness checklist', function () {
+        const src = read('admin-panel.js');
+        expect(src).toContain('function apRenderStaffReadinessBox');
+        expect(src).toContain('استاد پورٹل readiness');
+        expect(src).toContain('apStaffPortalReadinessSync');
+        expect(src).toContain('readinessHtml');
     });
 
     it('emsRefreshParentPermissions fails closed (no Admin module pull fallback)', function () {
