@@ -8,7 +8,7 @@ const crypto = require('crypto');
 function hashAccessKey(plainKey) {
     const raw = String(plainKey || '').trim();
     const digits = raw.replace(/\D/g, '');
-    const key = digits.length === 12 ? digits : raw.toUpperCase().replace(/\s+/g, '');
+    const key = (digits.length === 6 || digits.length === 12) ? digits : raw.toUpperCase().replace(/\s+/g, '');
     return crypto.createHash('sha256').update('ems-ak-v1:' + key).digest('hex');
 }
 

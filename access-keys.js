@@ -5,7 +5,7 @@
 (function (global) {
     'use strict';
 
-    var ACCESS_KEY_LENGTH = 12;
+    var ACCESS_KEY_LENGTH = 6;
     var CHARSET = '0123456789';
     /** Default key validity: 365 days */
     var DEFAULT_KEY_TTL_MS = 365 * 86400000;
@@ -81,7 +81,7 @@
         return (email || '').toLowerCase().trim();
     }
 
-    /** Generate numeric access key (12 digits, e.g. 482910374651) */
+    /** Generate numeric access key (6 digits, e.g. 482910) */
     global.emsGenerateAccessKey = function () {
         var len = ACCESS_KEY_LENGTH;
         var out = '';
@@ -99,11 +99,11 @@
         return out;
     };
 
-    /** Normalize key for hash — digits-only preferred; keep legacy alnum support */
+    /** Normalize key for hash — digits-only preferred; keep legacy alnum / 12-digit support */
     function normalizeAccessKeyPlain(plainKey) {
         var raw = String(plainKey || '').trim();
         var digits = raw.replace(/\D/g, '');
-        if (digits.length === ACCESS_KEY_LENGTH) return digits;
+        if (digits.length === ACCESS_KEY_LENGTH || digits.length === 12) return digits;
         return raw.toUpperCase().replace(/\s+/g, '');
     }
 
@@ -223,59 +223,50 @@
     };
 
     global.emsVerifyParentAccessKey = function (madrasaId, studentIds, plainKey) {
+        function localVerify() {
+            return global.emsGetParentAccessKeyHashes(madrasaId, studentIds).then(function (hashes) {
+                if (!hashes.length) return false;
+                return global.emsHashAccessKey(plainKey).then(function (h) {
+                    return hashes.indexOf(h) >= 0;
+                });
+            }).catch(function () { return false; });
+        }
         if (typeof global.emsCallFunction === 'function') {
             return global.emsCallFunction('verifyParentAccessKey', {
                 tenantId: madrasaId,
                 studentIds: studentIds,
                 plainKey: plainKey
             }).then(function (res) {
-                if (res && typeof res.ok === 'boolean') return res.ok;
-                return global.emsGetParentAccessKeyHashes(madrasaId, studentIds).then(function (hashes) {
-                    if (!hashes.length) return false;
-                    return global.emsHashAccessKey(plainKey).then(function (h) {
-                        return hashes.indexOf(h) >= 0;
-                    });
-                });
+                if (res && res.ok === true) return true;
+                return localVerify();
             }).catch(function () {
-                return global.emsGetParentAccessKeyHashes(madrasaId, studentIds).then(function (hashes) {
-                    if (!hashes.length) return false;
-                    return global.emsHashAccessKey(plainKey).then(function (h) {
-                        return hashes.indexOf(h) >= 0;
-                    });
-                });
+                return localVerify();
             });
         }
-        return global.emsGetParentAccessKeyHashes(madrasaId, studentIds).then(function (hashes) {
-            if (!hashes.length) return false;
-            return global.emsHashAccessKey(plainKey).then(function (h) {
-                return hashes.indexOf(h) >= 0;
-            });
-        });
+        return localVerify();
     };
 
     global.emsVerifyTeacherAccessKey = function (madrasaId, staffId, plainKey) {
+        function localVerify() {
+            return global.emsGetTeacherAccessKeyHash(madrasaId, staffId).then(function (hash) {
+                if (!hash) return false;
+                return global.emsVerifyAccessKey(plainKey, hash);
+            }).catch(function () { return false; });
+        }
         if (typeof global.emsCallFunction === 'function') {
             return global.emsCallFunction('verifyTeacherAccessKey', {
                 tenantId: madrasaId,
                 staffId: staffId,
                 plainKey: plainKey
             }).then(function (res) {
-                if (res && typeof res.ok === 'boolean') return res.ok;
-                return global.emsGetTeacherAccessKeyHash(madrasaId, staffId).then(function (hash) {
-                    if (!hash) return false;
-                    return global.emsVerifyAccessKey(plainKey, hash);
-                });
+                if (res && res.ok === true) return true;
+                // CF may fail on link edge-cases — confirm against StaffPermissions hash locally.
+                return localVerify();
             }).catch(function () {
-                return global.emsGetTeacherAccessKeyHash(madrasaId, staffId).then(function (hash) {
-                    if (!hash) return false;
-                    return global.emsVerifyAccessKey(plainKey, hash);
-                });
+                return localVerify();
             });
         }
-        return global.emsGetTeacherAccessKeyHash(madrasaId, staffId).then(function (hash) {
-            if (!hash) return false;
-            return global.emsVerifyAccessKey(plainKey, hash);
-        });
+        return localVerify();
     };
 
 })(window);

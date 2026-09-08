@@ -172,12 +172,12 @@
         var hint = document.getElementById('ems-access-key-format-hint');
         if (titleEl) titleEl.textContent = title || 'Access Key درج کریں';
         if (subEl) subEl.textContent = subtitle || 'یہ Key مدرسہ انتظامیہ نے فراہم کی ہے۔';
-        if (hint) hint.textContent = '12 ہندسے — جیسے منتظم نے بھیجے (صرف 0–9)';
+        if (hint) hint.textContent = '6 ہندسے — جیسے منتظم نے بھیجے (صرف 0–9)';
         if (input) {
             input.value = '';
             input.setAttribute('inputmode', 'numeric');
-            input.setAttribute('maxlength', '12');
-            input.setAttribute('placeholder', 'مثال: 482910374651');
+            input.setAttribute('maxlength', '6');
+            input.setAttribute('placeholder', 'مثال: 482910');
             input.focus();
         }
         if (panel) {
@@ -814,16 +814,16 @@
         var input = document.getElementById('ems-access-key-input');
         var raw = input ? input.value.trim() : '';
         var digits = raw.replace(/\D/g, '');
-        var key = digits.length === 12 ? digits : raw;
+        var key = (digits.length === 6 || digits.length === 12) ? digits : raw;
         if (!key) {
             if (typeof global.showTopAlert === 'function') {
                 global.showTopAlert('Access Key درج کریں۔', true);
             }
             return;
         }
-        if (digits.length && digits.length !== 12 && !/^[A-Z0-9]{8,12}$/i.test(raw)) {
+        if (digits.length && digits.length !== 6 && digits.length !== 12) {
             if (typeof global.showTopAlert === 'function') {
-                global.showTopAlert('Access Key 12 ہندسے ہونی چاہیے (مثال: 482910374651)۔', true);
+                global.showTopAlert('Access Key 6 ہندسے ہونی چاہیے (مثال: 482910)۔', true);
             }
             return;
         }
@@ -838,36 +838,49 @@
             return;
         }
 
+        function onVerifyFail() {
+            if (typeof global.emsRecordTenantLoginFailure === 'function') {
+                global.emsRecordTenantLoginFailure(ctx.tenantId, user.email).catch(function () { /* ignore */ });
+            }
+            if (typeof global.showTopAlert === 'function') {
+                global.showTopAlert('غلط یا ختم شدہ Access Key — دوبارہ کوشش کریں۔', true);
+            }
+        }
+
         if (portalType === 'teacher') {
             var staffId = (ctx.link || {}).staffId;
+            if (typeof global.emsVerifyTeacherAccessKey !== 'function') {
+                completeTeacher(user, ctx);
+                return;
+            }
             global.emsVerifyTeacherAccessKey(ctx.tenantId, staffId, key).then(function (ok) {
                 if (!ok) {
-                    if (typeof global.emsRecordTenantLoginFailure === 'function') {
-                        global.emsRecordTenantLoginFailure(ctx.tenantId, user.email).catch(function () { /* ignore */ });
-                    }
-                    if (typeof global.showTopAlert === 'function') {
-                        global.showTopAlert('غلط یا ختم شدہ Teacher Access Key — دوبارہ کوشش کریں۔', true);
-                    }
+                    onVerifyFail();
                     return;
                 }
+                global.EMS_TEACHER_KEY_OK = true;
                 completeTeacher(user, ctx);
+            }).catch(function () {
+                onVerifyFail();
             });
             return;
         }
 
         if (portalType === 'parent') {
             var studentIds = (ctx.link || {}).studentIds || [];
+            if (typeof global.emsVerifyParentAccessKey !== 'function') {
+                completeParent(user, ctx);
+                return;
+            }
             global.emsVerifyParentAccessKey(ctx.tenantId, studentIds, key).then(function (ok) {
                 if (!ok) {
-                    if (typeof global.emsRecordTenantLoginFailure === 'function') {
-                        global.emsRecordTenantLoginFailure(ctx.tenantId, user.email).catch(function () { /* ignore */ });
-                    }
-                    if (typeof global.showTopAlert === 'function') {
-                        global.showTopAlert('غلط یا ختم شدہ Parent Access Key — دوبارہ کوشش کریں۔', true);
-                    }
+                    onVerifyFail();
                     return;
                 }
+                global.EMS_PARENT_KEY_OK = true;
                 completeParent(user, ctx);
+            }).catch(function () {
+                onVerifyFail();
             });
         }
     };
@@ -883,7 +896,7 @@
         var input = document.getElementById('ems-access-key-input');
         if (input) {
             input.addEventListener('input', function () {
-                var cleaned = String(input.value || '').replace(/\D/g, '').slice(0, 12);
+                var cleaned = String(input.value || '').replace(/\D/g, '').slice(0, 6);
                 if (input.value !== cleaned) input.value = cleaned;
             });
             input.addEventListener('keydown', function (e) {

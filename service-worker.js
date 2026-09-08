@@ -1,4 +1,4 @@
-var EMS_SW_BUILD_TAG = '20260908_access_key_12_digits_v1';
+var EMS_SW_BUILD_TAG = '20260908_access_key_6_digits_unlock_v1';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

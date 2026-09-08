@@ -145,14 +145,14 @@
         },
         loginLoading: { ur: 'لاگ ان جاری ہے…', en: 'Signing in…', ar: 'جاري تسجيل الدخول…' },
         accessKeyHint: {
-            ur: '12 ہندسے — جیسے منتظم نے بھیجے (صرف 0–9)',
-            en: '12 digits — as issued by admin (0–9 only)',
-            ar: '12 رقماً — كما أصدرها المشرف'
+            ur: '6 ہندسے — جیسے منتظم نے بھیجے (صرف 0–9)',
+            en: '6 digits — as issued by admin (0–9 only)',
+            ar: '6 أرقام — كما أصدرها المشرف'
         },
         accessKeyPlaceholder: {
-            ur: 'مثال: 482910374651',
-            en: 'Example: 482910374651',
-            ar: 'مثال: 482910374651'
+            ur: 'مثال: 482910',
+            en: 'Example: 482910',
+            ar: 'مثال: 482910'
         },
         profileSetupTitle: { ur: 'مدرسہ پروفائل بنائیں', en: 'Create Madrasa Profile', ar: 'إنشاء ملف المدرسة' },
         profileSetupSubtitle: {

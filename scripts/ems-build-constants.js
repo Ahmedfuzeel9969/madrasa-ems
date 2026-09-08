@@ -12,7 +12,7 @@ module.exports = {
     swUpdate: '20260708_sw_update_v1',
     searchIndex: '20260709_phase_a_drafts',
     offline: '20260628offline5',
-    postAuthLoader: '20260908_access_key_12_digits_v1',
+    postAuthLoader: '20260908_access_key_6_digits_unlock_v1',
     core: '20260708_sw_update_v1'
   },
   /** Resolve script path — cloud/ prefix when file lives under cloud/ */

@@ -2158,14 +2158,25 @@ window.emsAuthContinueAsTeacher = function (user, ctx) {
 
         function startListener() {
             var link = ctx.link || {};
-            if (link.staffId && typeof window.emsStaffHasAnyModule === 'function' && !window.emsStaffHasAnyModule()) {
+            var staffIdGate = link.staffId;
+            var perm = (staffIdGate && typeof window.emsResolveStaffPerm === 'function')
+                ? window.emsResolveStaffPerm(staffIdGate)
+                : null;
+            // Hard-deny only when suspended. Missing module grants used to block the whole portal
+            // even after a valid Access Key — allow shell unlock so admin can still grant later.
+            if (perm && perm.status === 'suspended') {
                 if (typeof window.emsShowAccessDenied === 'function') {
                     window.emsShowAccessDenied(
-                        'کوئی Module Access نہیں',
-                        'منتظم نے ابھی تک آپ کو کوئی module اجازت نہیں دی۔'
+                        'اکاؤنٹ معطل',
+                        'منتظم نے اس عملہ اکاؤنٹ کو معطل کر دیا ہے۔'
                     );
                 }
                 return;
+            }
+            if (staffIdGate && typeof window.emsStaffHasAnyModule === 'function' && !window.emsStaffHasAnyModule()) {
+                if (typeof window.showTopAlert === 'function') {
+                    window.showTopAlert('⚠️ ابھی کوئی ماڈیول تفویض نہیں — ایڈمن پینل سے شعبے فعال کریں۔', true);
+                }
             }
             unsubMadrasa = firestore.collection('All_Madrasas').doc(ctx.tenantId)
                 .onSnapshot({ includeMetadataChanges: true }, function (doc) {
