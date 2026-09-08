@@ -1645,7 +1645,7 @@
 
             '<div class="ap-temp-section" style="margin-top:14px; border-top:1px dashed #cbd5e1; padding-top:12px;">' +
             '<h4 style="margin:0 0 8px;"><i class="fas fa-key"></i> Teacher Access Key</h4>' +
-            '<p style="font-size:12px; color:#64748b; margin:0 0 8px;">استاد لاگ ان کے بعد یہ Key درکار ہوگی۔</p>' +
+            '<p style="font-size:12px; color:#64748b; margin:0 0 8px;">استاد لاگ ان کے بعد یہ 12 ہندسوں والی Key درکار ہوگی۔</p>' +
             '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">' +
             '<select id="ap-teacher-key-ttl" class="input-control" style="max-width:120px;" title="Key کی مدت">' + apKeyTtlOptionsHtml() + '</select>' +
             '<button type="button" class="btn btn-warning" onclick="window.apGenerateTeacherKey(\'' + staffId + '\')"><i class="fas fa-key"></i> Key بنائیں / Reset</button>' +
@@ -2073,7 +2073,7 @@
 
             '<div class="ap-temp-section" style="margin-top:14px; border-top:1px dashed #cbd5e1; padding-top:12px;">' +
             '<h4 style="margin:0 0 8px;"><i class="fas fa-key"></i> Parent Access Key</h4>' +
-            '<p style="font-size:12px;color:#64748b;margin:0 0 8px;">ہر طالب علم کی الگ Key — والدین لاگ ان پر درکار۔</p>' +
+            '<p style="font-size:12px;color:#64748b;margin:0 0 8px;">ہر طالب علم کی الگ 12 ہندسوں والی Key — والدین لاگ ان پر درکار۔</p>' +
             '<div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">' +
             '<select id="ap-parent-key-ttl-' + studentId + '" class="input-control" style="max-width:120px;" title="Key کی مدت">' + apKeyTtlOptionsHtml() + '</select>' +
             '<button type="button" class="btn btn-warning" onclick="window.apGenerateParentKey(\'' + studentId + '\')"><i class="fas fa-key"></i> Key بنائیں / Reset</button>' +

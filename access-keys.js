@@ -5,7 +5,8 @@
 (function (global) {
     'use strict';
 
-    var CHARSET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    var ACCESS_KEY_LENGTH = 12;
+    var CHARSET = '0123456789';
     /** Default key validity: 365 days */
     var DEFAULT_KEY_TTL_MS = 365 * 86400000;
 
@@ -80,26 +81,35 @@
         return (email || '').toLowerCase().trim();
     }
 
-    /** Generate human-readable access key (8 chars) */
+    /** Generate numeric access key (12 digits, e.g. 482910374651) */
     global.emsGenerateAccessKey = function () {
+        var len = ACCESS_KEY_LENGTH;
         var out = '';
-        var arr = new Uint8Array(8);
+        var arr = new Uint8Array(len);
         if (global.crypto && global.crypto.getRandomValues) {
             global.crypto.getRandomValues(arr);
-            for (var i = 0; i < 8; i++) {
+            for (var i = 0; i < len; i++) {
                 out += CHARSET[arr[i] % CHARSET.length];
             }
             return out;
         }
-        for (var j = 0; j < 8; j++) {
+        for (var j = 0; j < len; j++) {
             out += CHARSET[Math.floor(Math.random() * CHARSET.length)];
         }
         return out;
     };
 
+    /** Normalize key for hash — digits-only preferred; keep legacy alnum support */
+    function normalizeAccessKeyPlain(plainKey) {
+        var raw = String(plainKey || '').trim();
+        var digits = raw.replace(/\D/g, '');
+        if (digits.length === ACCESS_KEY_LENGTH) return digits;
+        return raw.toUpperCase().replace(/\s+/g, '');
+    }
+
     /** SHA-256 hex hash of normalized key */
     global.emsHashAccessKey = function (plainKey) {
-        var key = String(plainKey || '').trim().toUpperCase();
+        var key = normalizeAccessKeyPlain(plainKey);
         if (!key) return Promise.reject(new Error('Key خالی ہے'));
         if (!global.crypto || !global.crypto.subtle) {
             var fallback = (global.EmsUtils && global.EmsUtils.simpleHash)

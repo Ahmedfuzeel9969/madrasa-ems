@@ -169,9 +169,17 @@
         var titleEl = document.getElementById('ems-access-key-title');
         var subEl = document.getElementById('ems-access-key-subtitle');
         var input = document.getElementById('ems-access-key-input');
+        var hint = document.getElementById('ems-access-key-format-hint');
         if (titleEl) titleEl.textContent = title || 'Access Key درج کریں';
         if (subEl) subEl.textContent = subtitle || 'یہ Key مدرسہ انتظامیہ نے فراہم کی ہے۔';
-        if (input) { input.value = ''; input.focus(); }
+        if (hint) hint.textContent = '12 ہندسے — جیسے منتظم نے بھیجے (صرف 0–9)';
+        if (input) {
+            input.value = '';
+            input.setAttribute('inputmode', 'numeric');
+            input.setAttribute('maxlength', '12');
+            input.setAttribute('placeholder', 'مثال: 482910374651');
+            input.focus();
+        }
         if (panel) {
             panel.setAttribute('data-portal-type', portalType || '');
             panel.style.display = 'flex';
@@ -804,10 +812,18 @@
 
     global.emsSubmitAccessKey = function () {
         var input = document.getElementById('ems-access-key-input');
-        var key = input ? input.value.trim() : '';
+        var raw = input ? input.value.trim() : '';
+        var digits = raw.replace(/\D/g, '');
+        var key = digits.length === 12 ? digits : raw;
         if (!key) {
             if (typeof global.showTopAlert === 'function') {
                 global.showTopAlert('Access Key درج کریں۔', true);
+            }
+            return;
+        }
+        if (digits.length && digits.length !== 12 && !/^[A-Z0-9]{8,12}$/i.test(raw)) {
+            if (typeof global.showTopAlert === 'function') {
+                global.showTopAlert('Access Key 12 ہندسے ہونی چاہیے (مثال: 482910374651)۔', true);
             }
             return;
         }
@@ -866,6 +882,10 @@
         }
         var input = document.getElementById('ems-access-key-input');
         if (input) {
+            input.addEventListener('input', function () {
+                var cleaned = String(input.value || '').replace(/\D/g, '').slice(0, 12);
+                if (input.value !== cleaned) input.value = cleaned;
+            });
             input.addEventListener('keydown', function (e) {
                 if (e.key === 'Enter') global.emsSubmitAccessKey();
             });

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260908_admin_panel_people_ssot_v1';
+    var CACHE_BUST = '20260908_access_key_12_digits_v1';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 
