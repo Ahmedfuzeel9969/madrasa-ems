@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260908_portal_unlock_hydrate_v2';
+    var CACHE_BUST = '20260908_admin_panel_people_ssot_v1';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 
@@ -97,7 +97,7 @@
             if (modId === 'admission' && global.RegistrationModule && typeof global.RegistrationModule.init === 'function') {
                 global.RegistrationModule.init();
             }
-            var userMods = { admission: 1, attendance: 1, finance: 1, exams: 1, curriculum: 1, training: 1, complaints: 1, ledger: 1, announcements: 1, 'ai-studio': 1 };
+            var userMods = { admission: 1, attendance: 1, finance: 1, exams: 1, curriculum: 1, training: 1, complaints: 1, ledger: 1, announcements: 1, 'ai-studio': 1, 'admin-panel': 1 };
             if (userMods[modId] && typeof global.emsEnsureUsersReady === 'function') {
                 return global.emsEnsureUsersReady().then(function () {
                     return { modId: modId, scripts: list.length };

@@ -1043,7 +1043,8 @@ window.navigateToModule = function (tab) {
         : Promise.resolve();
     var REGISTRATION_MODULES = {
         admission: 1, attendance: 1, finance: 1, ledger: 1, exams: 1,
-        curriculum: 1, training: 1, complaints: 1, 'parent-portal': 1, 'ai-studio': 1
+        curriculum: 1, training: 1, complaints: 1, 'parent-portal': 1, 'ai-studio': 1,
+        'admin-panel': 1
     };
     var usersReady = REGISTRATION_MODULES[modId] && typeof window.emsEnsureRepositoryReady === 'function'
         ? window.emsEnsureRepositoryReady()

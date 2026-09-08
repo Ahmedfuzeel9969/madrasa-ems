@@ -1165,17 +1165,31 @@
         if (typeof window.emsGetUsersMerged === 'function') {
             try {
                 var merged = window.emsGetUsersMerged();
-                if (Array.isArray(merged) && merged.length) return merged;
+                if (Array.isArray(merged)) return merged;
             } catch (eMerged) { /* fall through */ }
         }
         if (typeof window.emsRegRepoGetListReadonly === 'function') {
             try {
                 var repo = window.emsRegRepoGetListReadonly();
-                if (Array.isArray(repo) && repo.length) return repo;
+                if (Array.isArray(repo)) return repo;
             } catch (eRepo) { /* fall through */ }
         }
         try { return JSON.parse(localStorage.getItem(DB_USERS)) || []; }
         catch (e) { return []; }
+    }
+
+    function apRefreshPeopleLists() {
+        window.apLoadStaff();
+        if (typeof window.apRenderParentsTable === 'function') window.apRenderParentsTable();
+        var dd = document.getElementById('main-ap-dropdown');
+        if (dd && dd.value === 'ap-win-comm' && typeof window.apRenderCommThreads === 'function') {
+            window.apRenderCommThreads();
+        }
+    }
+
+    function apIsAdminPanelVisible() {
+        var mod = document.getElementById('module-admin-panel');
+        return !!(mod && mod.style.display !== 'none');
     }
 
     function apPersistUserEmail(userId, email) {
@@ -1867,9 +1881,8 @@
         var type = (document.getElementById('ap-new-type') || {}).value || 'teacher';
         var templateKey = (document.getElementById('ap-new-template') || {}).value || '';
 
-        var users = getUsers();
         var newId = apGenerateStaffId(type);
-        users.push({
+        var newUser = {
             id: newId,
             type: type,
             name: name,
@@ -1878,8 +1891,19 @@
             status: 'approved',
             date: new Date().toISOString().split('T')[0],
             createdVia: 'admin-panel'
-        });
-        localStorage.setItem(DB_USERS, JSON.stringify(users));
+        };
+        if (typeof window.emsRegRepoUpsert === 'function') {
+            try {
+                var upsertRes = window.emsRegRepoUpsert(newUser);
+                if (upsertRes && typeof upsertRes.then === 'function') {
+                    upsertRes.catch(function () { /* ignore */ });
+                }
+            } catch (eUpsert) { /* fall through to legacy */ }
+        } else {
+            var users = getUsers().slice();
+            users.push(newUser);
+            try { localStorage.setItem(DB_USERS, JSON.stringify(users)); } catch (eSet) { /* ignore */ }
+        }
 
         var perms = getAllPerms();
         var p = defaultPerm(newId);
@@ -2759,7 +2783,17 @@
 
     // ------------------------------ اِنٹ -------------------------------------
     window.initAdminPanel = function () {
-        window.apLoadStaff();
+        function afterPeopleReady() {
+            apRefreshPeopleLists();
+            if (typeof window.emsOfflineModuleStoreHydrateGroup === 'function') {
+                try { window.emsOfflineModuleStoreHydrateGroup('Admin'); } catch (eHydrate) { /* ignore */ }
+            }
+        }
+        if (typeof window.emsEnsureRepositoryReady === 'function') {
+            window.emsEnsureRepositoryReady().then(afterPeopleReady).catch(afterPeopleReady);
+        } else {
+            afterPeopleReady();
+        }
         if (typeof window.apLoadTenantKeySettings === 'function') {
             window.apLoadTenantKeySettings();
         }
@@ -2841,8 +2875,13 @@
 
         if (typeof window.addEventListener === 'function') {
             window.addEventListener('ems:sync-failure', function () {
-                var mod = document.getElementById('module-admin-panel');
-                if (mod && mod.style.display !== 'none') apRenderSyncStatus();
+                if (apIsAdminPanelVisible()) apRenderSyncStatus();
+            });
+            window.addEventListener('ems:users-changed', function () {
+                if (apIsAdminPanelVisible()) apRefreshPeopleLists();
+            });
+            window.addEventListener('ems:repository-ready', function () {
+                if (apIsAdminPanelVisible()) apRefreshPeopleLists();
             });
         }
 

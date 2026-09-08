@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260908_portal_unlock_hydrate_v2';
+  var CACHE_BUST = '20260908_admin_panel_people_ssot_v1';
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,
