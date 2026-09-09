@@ -2669,6 +2669,7 @@ body.theme-style-3d .premium-card {
 }
 .evt-bulk-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .evt-bulk-label { font-weight: 700; font-size: 13px; color: var(--primary); }
+.evt-bulk-classes { margin-top: 4px; padding-top: 8px; border-top: 1px dashed #cbd5e1; }
 .btn-sm { padding: 5px 11px !important; font-size: 12px !important; }
 .input-sm { padding: 6px 9px !important; font-size: 12px !important; }
 .evt-status-bar {

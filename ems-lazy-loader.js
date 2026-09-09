@@ -1,10 +1,10 @@
-// ============================================================================
+﻿// ============================================================================
 // EMS Lazy Module Loader — defer heavy scripts until tab open (Phase 2 S4)
 // ============================================================================
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260909_people_phase4_ux_v1';
+    var CACHE_BUST = '20260909_att_evt_class_v1';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 

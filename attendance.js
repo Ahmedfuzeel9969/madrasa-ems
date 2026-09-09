@@ -6992,6 +6992,101 @@ function evtPopulateExcludeClass() {
     groups.map((c) => `<option value="${c}">${c}</option>`).join('');
 }
 
+function evtPopulateIncludeClasses() {
+  var sel = document.getElementById('evt-include-classes');
+  if (!sel) return;
+  var prevSelected = {};
+  Array.prototype.forEach.call(sel.selectedOptions || [], function (o) {
+    if (o && o.value) prevSelected[o.value] = true;
+  });
+  var classes = typeof attListAttendanceClasses === 'function' ? attListAttendanceClasses() : [];
+  if (!classes.length) {
+    var seen = Object.create(null);
+    evtGetUsers().forEach(function (u) {
+      var c = typeof attGetUserClass === 'function' ? attGetUserClass(u) : (u && u.class);
+      c = String(c || '').trim();
+      if (c && c !== 'نامعلوم' && !seen[c]) {
+        seen[c] = true;
+        classes.push(c);
+      }
+    });
+    classes.sort();
+  }
+  sel.innerHTML = classes.map(function (c) {
+    var esc = String(c).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    return '<option value="' + esc + '"' + (prevSelected[c] ? ' selected' : '') + '>' + esc + '</option>';
+  }).join('');
+  var allCb = document.getElementById('evt-class-all');
+  if (allCb && allCb.checked) {
+    Array.prototype.forEach.call(sel.options, function (o) { o.selected = true; });
+  }
+}
+
+window.evtToggleAllClasses = function (checked) {
+  var sel = document.getElementById('evt-include-classes');
+  if (!sel) return;
+  Array.prototype.forEach.call(sel.options, function (o) { o.selected = !!checked; });
+};
+
+function evtTeacherIdsForClasses(classSet) {
+  var ids = Object.create(null);
+  var periods = [];
+  try {
+    periods = typeof attReadTimetablePeriods === 'function'
+      ? (attReadTimetablePeriods() || [])
+      : (JSON.parse(localStorage.getItem('ems_att_periods') || '[]') || []);
+  } catch (ePer) {
+    periods = [];
+  }
+  (periods || []).forEach(function (p) {
+    if (!p) return;
+    var cn = String(p.className || '').trim();
+    if (!cn || !classSet[cn]) return;
+    var tid = String(p.teacherId || '').trim();
+    if (tid) ids[tid] = true;
+  });
+  return ids;
+}
+
+window.evtBulkSelectByClasses = function () {
+  var sel = document.getElementById('evt-include-classes');
+  var allCb = document.getElementById('evt-class-all');
+  if (!sel) return;
+  var classes = [];
+  if (allCb && allCb.checked) {
+    Array.prototype.forEach.call(sel.options, function (o) {
+      if (o && o.value) classes.push(o.value);
+    });
+  } else {
+    Array.prototype.forEach.call(sel.selectedOptions || [], function (o) {
+      if (o && o.value) classes.push(o.value);
+    });
+  }
+  if (!classes.length) {
+    return window.showToast('کم از کم ایک درجہ منتخب کریں (یا «تمام درجات»)', 'warning');
+  }
+  var classSet = Object.create(null);
+  classes.forEach(function (c) { classSet[c] = true; });
+  var teacherIds = evtTeacherIdsForClasses(classSet);
+  var users = evtGetUsers().filter(function (u) {
+    if (!u) return false;
+    var t = typeof attNormalizeUserType === 'function' ? attNormalizeUserType(u) : String(u.type || '').toLowerCase();
+    var cls = typeof attGetUserClass === 'function' ? attGetUserClass(u) : String(u.class || '');
+    cls = String(cls || '').trim();
+    if (t === 'student') return !!(cls && classSet[cls]);
+    if (t === 'teacher') {
+      if (cls && classSet[cls]) return true;
+      var uid = typeof attGetUserId === 'function' ? attGetUserId(u) : String(u.id || '');
+      return !!(uid && teacherIds[uid]);
+    }
+    return false;
+  });
+  window.currentEventParticipants = users.map(evtToParticipant);
+  evtPopulateExcludeClass();
+  renderEventParticipants();
+  window.showToast(classes.length + ' درجہ — ' + window.currentEventParticipants.length + ' اساتذہ/طلباء منتخب', 'info');
+};
+
 document.getElementById('btn-create-event')?.addEventListener('click', () => {
   const name = document.getElementById('evt-name').value.trim();
   const date = document.getElementById('evt-date').value;
@@ -7004,6 +7099,9 @@ document.getElementById('btn-create-event')?.addEventListener('click', () => {
 
   evtEnsureParticipantSearchBound();
   evtInitParticipantSearch();
+  evtPopulateIncludeClasses();
+  var allCbNew = document.getElementById('evt-class-all');
+  if (allCbNew) allCbNew.checked = false;
 
   document.getElementById('evt-participants-panel').style.display = 'block';
   renderEventParticipants();
@@ -7016,7 +7114,20 @@ window.evtBulkSelect = function (group) {
     window.currentEventParticipants = [];
   } else {
     const users = evtGetUsers();
-    const filtered = group === 'all' ? users : users.filter((u) => u.type === group);
+    var filtered;
+    if (group === 'all') {
+      filtered = users;
+    } else if (group === 'teachers_students_staff') {
+      filtered = users.filter(function (u) {
+        var t = typeof attNormalizeUserType === 'function' ? attNormalizeUserType(u) : String(u.type || '').toLowerCase();
+        return t === 'teacher' || t === 'student' || t === 'staff';
+      });
+    } else {
+      filtered = users.filter(function (u) {
+        var t = typeof attNormalizeUserType === 'function' ? attNormalizeUserType(u) : String(u.type || '').toLowerCase();
+        return t === group || u.type === group;
+      });
+    }
     window.currentEventParticipants = filtered.map(evtToParticipant);
   }
   evtPopulateExcludeClass();
@@ -7242,6 +7353,7 @@ window.editEvent = function (id) {
 
   evtEnsureParticipantSearchBound();
   evtInitParticipantSearch();
+  evtPopulateIncludeClasses();
 
   evtPopulateExcludeClass();
   document.getElementById('evt-participants-panel').style.display = 'block';
