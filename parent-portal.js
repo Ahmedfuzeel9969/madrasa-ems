@@ -29,7 +29,7 @@
         return new Error('سرور ڈیٹا سروس دستیاب نہیں — براہ کرم دوبارہ کوشش کریں۔');
     }
 
-    function callParentData(view, studentId) {
+    function callParentData(view, studentId, extra) {
         var policy = typeof window.emsGetTenantSecurityPolicy === 'function'
             ? window.emsGetTenantSecurityPolicy()
             : { parentDataCfOnly: true };
@@ -39,17 +39,23 @@
         if (typeof window.emsCallFunction !== 'function') {
             return Promise.reject(cfUnavailableError());
         }
-        return window.emsCallFunction('getParentStudentData', {
+        var payload = {
             tenantId: getTenantId(),
             studentId: studentId,
             view: view
-        });
+        };
+        if (extra && typeof extra === 'object') {
+            Object.keys(extra).forEach(function (k) {
+                if (extra[k] != null && extra[k] !== '') payload[k] = extra[k];
+            });
+        }
+        return window.emsCallFunction('getParentStudentData', payload);
     }
 
-    /** All parent views — server only (Phase 4) */
-    function fetchStudentAttendance(studentId) {
-        var mk = monthKey();
-        return callParentData('attendance', studentId).then(function (data) {
+    /** All parent views — server only (Phase 4); attendance supports month YYYY-MM */
+    function fetchStudentAttendance(studentId, month) {
+        var mk = month || monthKey();
+        return callParentData('attendance', studentId, { month: mk }).then(function (data) {
             return data || { days: [], summary: {}, source: 'server', month: mk };
         });
     }
@@ -224,14 +230,22 @@
         return html;
     }
 
-    function renderAttendanceHtml(data) {
+    function renderAttendanceHtml(data, studentId) {
         var s = data.summary || {};
-        var html = '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">';
+        var mk = data.month || monthKey();
+        var sid = studentId || window._ppAttStudentId || '';
+        var html = '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">';
+        html += '<label style="font-size:13px;color:#475569;">مہینہ: ';
+        html += '<input type="month" id="pp-att-month" value="' + esc(mk) + '" ';
+        html += 'onchange="window.ppReloadAttendanceMonth(' + JSON.stringify(String(sid)) + ', this.value)" ';
+        html += 'style="margin-right:6px;padding:4px 8px;border:1px solid #cbd5e1;border-radius:6px;"></label>';
+        html += '<span style="font-size:12px;color:#94a3b8;">ماخذ: سرور</span>';
+        html += '</div>';
+        html += '<div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:12px;">';
         html += '<span class="badge" style="background:#dcfce7;color:#166534;padding:6px 10px;border-radius:6px;">حاضر: ' + (s.present || 0) + '</span>';
         html += '<span class="badge" style="background:#fee2e2;color:#991b1b;padding:6px 10px;border-radius:6px;">غائب: ' + (s.absent || 0) + '</span>';
         html += '<span class="badge" style="background:#fef3c7;color:#92400e;padding:6px 10px;border-radius:6px;">رخصت: ' + (s.leave || 0) + '</span>';
         html += '</div>';
-        html += '<p style="font-size:12px;color:#64748b;">مہینہ: ' + esc(data.month) + ' | ماخذ: سرور</p>';
         if (!data.days || !data.days.length) {
             html += '<p>اس ماہ کی کوئی حاضری ریکارڈ نہیں۔</p>';
             return html;
@@ -243,6 +257,19 @@
         html += '</tbody></table>';
         return html;
     }
+
+    window.ppReloadAttendanceMonth = function (studentId, month) {
+        var dyn = document.getElementById('pp-view-dynamic');
+        if (!dyn || !studentId) return;
+        window._ppAttStudentId = studentId;
+        window._ppAttMonth = month || monthKey();
+        dyn.innerHTML = '<p><i class="fas fa-spinner fa-spin"></i> لوڈ ہو رہا ہے...</p>';
+        fetchStudentAttendance(studentId, window._ppAttMonth).then(function (data) {
+            dyn.innerHTML = renderAttendanceHtml(data, studentId);
+        }).catch(function (err) {
+            dyn.innerHTML = '<p style="color:#b91c1c;">' + esc(err && err.message ? err.message : 'لوڈ ناکام') + '</p>';
+        });
+    };
 
     window._ppExamCache = window._ppExamCache || {};
     window._ppFeeCache = window._ppFeeCache || {};
@@ -576,8 +603,10 @@
         var chain = Promise.resolve();
 
         if (viewId === 'attendance') {
-            chain = fetchStudentAttendance(studentId).then(function (data) {
-                dyn.innerHTML = renderAttendanceHtml(data);
+            window._ppAttStudentId = studentId;
+            window._ppAttMonth = monthKey();
+            chain = fetchStudentAttendance(studentId, window._ppAttMonth).then(function (data) {
+                dyn.innerHTML = renderAttendanceHtml(data, studentId);
             });
         } else if (viewId === 'results' || viewId === 'progress') {
             chain = fetchStudentExamResults(studentId).then(function (rows) {

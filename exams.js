@@ -4095,7 +4095,10 @@
       if (!fromClass) return showToast("موجودہ درجہ منتخب کریں!", "error");
       var dbMarks = exmReadJson(DB.exams, []);
       var users = exmGetUsers();
-      var students = users.filter(function (u) { return u.type === 'student' && u.class === fromClass; });
+      var students = users.filter(function (u) {
+          return u.type === 'student' && u.class === fromClass &&
+              String(u.enrollmentStatus || 'active').toLowerCase() === 'active';
+      });
       if (!students.length) return showToast("اس درجے میں کوئی طالب علم نہیں!", "error");
 
       window._promoRows = students.map(function (std) {
@@ -4209,7 +4212,8 @@
                       class: toClass,
                       prevClass: fromClass,
                       promotedAt: ts,
-                      promotedFrom: fromClass
+                      promotedFrom: fromClass,
+                      enrollmentStatus: 'active'
                   });
                   try {
                       var res = await window.emsRegRepoPersistRegistration(updated, {
@@ -4237,7 +4241,7 @@
                   var col = fdb.collection('All_Madrasas').doc(tenantId).collection('Registrations');
                   var batch = fdb.batch();
                   selected.forEach(function (r) {
-                      batch.set(col.doc(String(r.id)), { class: toClass, prevClass: fromClass, promotedAt: ts, promotedFrom: fromClass }, { merge: true });
+                      batch.set(col.doc(String(r.id)), { class: toClass, prevClass: fromClass, promotedAt: ts, promotedFrom: fromClass, enrollmentStatus: 'active' }, { merge: true });
                   });
                   await batch.commit();
               } else {

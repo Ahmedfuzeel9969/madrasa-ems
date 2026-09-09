@@ -50,9 +50,9 @@
         },
         teacherTitle: { ur: 'اساتذہ', en: 'Teachers', ar: 'المعلمون' },
         teacherDesc: {
-            ur: 'حاضری، نصاب، امتحانات، اعلانات اور تدریسی اندراج',
-            en: 'Attendance, curriculum, exams, announcements and daily teaching logs',
-            ar: 'الحضور والمنهج والامتحانات والإعلانات والسجلات اليومية'
+            ur: 'صرف وہ ماڈیولز جو ایڈمن نے تفویض کیے — Access Key سے محفوظ لاگ ان',
+            en: 'Only modules assigned by admin — secure login with Access Key',
+            ar: 'فقط الوحدات التي عيّنها المشرف — دخول آمن بمفتاح الوصول'
         },
         parentTitle: { ur: 'والدین', en: 'Parents', ar: 'أولياء الأمور' },
         studentTitle: { ur: 'طالب علم / طالبات', en: 'Students', ar: 'الطلاب' },

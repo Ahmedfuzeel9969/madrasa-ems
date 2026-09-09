@@ -58,6 +58,7 @@
             value: value,
             existingId: rec.id,
             existingName: rec.name || '',
+            existingType: rec.type || '',
             existingClass: rec.class || rec.designation || rec.position || '',
             listKind: listKind || 'approved'
         };

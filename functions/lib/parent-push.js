@@ -150,7 +150,7 @@ async function dispatchParentReplyNotification(db, tenantId, msg, now) {
         .set({
             title: title,
             details: body,
-            audience: 'parent',
+            audience: 'parents',
             studentId: studentId,
             category: 'message',
             timestamp: now,

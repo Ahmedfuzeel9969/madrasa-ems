@@ -426,6 +426,14 @@ function regDupRuleLabel(rule) {
   return labels[rule] || rule;
 }
 
+function regDupTypeLabel(t) {
+  t = String(t || '').toLowerCase();
+  if (t === 'student') return 'طالب علم';
+  if (t === 'teacher') return 'استاذ';
+  if (t === 'staff') return 'عملہ';
+  return t || '—';
+}
+
 function regShowDuplicateModal(dupResult, user, onProceed) {
   var existing = document.getElementById('reg-dup-modal');
   if (existing) existing.remove();
@@ -439,7 +447,8 @@ function regShowDuplicateModal(dupResult, user, onProceed) {
   var rows = (isHard ? hard : soft).map(function (m) {
     return '<tr><td>' + regDupEsc(regDupRuleLabel(m.rule)) + '</td>' +
       '<td><b>' + regDupEsc(m.existingId) + '</b><br>' + regDupEsc(m.existingName) +
-      (m.existingClass ? '<br><small>' + regDupEsc(m.existingClass) + '</small>' : '') + '</td>' +
+      '<br><small>' + regDupEsc(regDupTypeLabel(m.existingType)) +
+      (m.existingClass ? ' · ' + regDupEsc(m.existingClass) : '') + '</small></td>' +
       '<td>' + regDupEsc(m.value) + '</td></tr>';
   }).join('');
 
@@ -454,7 +463,7 @@ function regShowDuplicateModal(dupResult, user, onProceed) {
     '</h3>' +
     '<p style="color:#64748b;font-size:14px;">' +
     (isHard
-      ? 'یہ شناخت پہلے سے رجسٹرڈ ہے۔ عام عملہ override نہیں کر سکتا۔'
+      ? 'یہ شناخت پہلے سے رجسٹرڈ ہے۔ CNIC/فون کراس-ٹائپ (طالب↔استاذ) بھی بلاک ہوتے ہیں — ایک شخص = ایک ریکارڈ۔ عام عملہ override نہیں کر سکتا۔'
       : 'ملتی جلتی معلومات موجود ہیں۔ جاری رکھنے سے پہلے چیک کریں۔') +
     '</p>' +
     '<table class="data-table" style="width:100%;margin:12px 0;font-size:13px;"><thead><tr>' +
@@ -651,6 +660,7 @@ window.processRegistration = function (type, status) {
     user.dob = document.getElementById('stu-dob').value;
     user.bloodGroup = document.getElementById('stu-blood-group').value;
     user.class = document.getElementById('stu-req-class').value || 'نامعلوم';
+    user.enrollmentStatus = 'active';
     user.branch = document.getElementById('stu-branch').value;
     user.admType = document.getElementById('stu-adm-type').value;
     user.resType = document.getElementById('stu-res-type').value;
@@ -1172,8 +1182,8 @@ function buildRegFilteredUsers() {
     return window.emsFilterByDepartment(list);
   }
 
-  // Department-scoped views must filter before pagination so totals stay correct.
-  if (needDept || typeof window.emsRegRepoGetListPage !== 'function') {
+  // Department / alumni / active-enrollment views must filter before pagination.
+  if (needDept || filterVal === 'alumni' || filterVal === 'all' || filterVal === 'student' || typeof window.emsRegRepoGetListPage !== 'function') {
     let users = typeof window.emsRegRepoGetListReadonly === 'function'
       ? window.emsRegRepoGetListReadonly().slice()
       : (typeof window.emsRegRepoGetList === 'function'
@@ -1181,8 +1191,19 @@ function buildRegFilteredUsers() {
         : (typeof window.emsGetUsersMerged === 'function' ? window.emsGetUsersMerged() : []));
     if (!Array.isArray(users)) users = [];
 
-    if (filterVal !== 'all') {
+    if (filterVal === 'alumni') {
+      users = users.filter(function (u) { return u.type === 'student' && regEnrollmentStatus(u) === 'alumni'; });
+    } else if (filterVal !== 'all') {
       users = users.filter((u) => u.type === filterVal);
+      users = users.filter(function (u) {
+        if (u.type !== 'student') return true;
+        return regEnrollmentStatus(u) === 'active';
+      });
+    } else {
+      users = users.filter(function (u) {
+        if (u.type !== 'student') return true;
+        return regEnrollmentStatus(u) === 'active';
+      });
     }
 
     if (st.q) {
@@ -1210,10 +1231,78 @@ function buildRegFilteredUsers() {
   };
 }
 
+function regEnrollmentStatus(user) {
+  if (!user) return 'active';
+  var s = String(user.enrollmentStatus || 'active').toLowerCase();
+  if (s === 'alumni' || s === 'withdrawn' || s === 'graduated') return s === 'graduated' ? 'alumni' : s;
+  return 'active';
+}
+
+function regEnrollmentLabel(status) {
+  if (status === 'alumni') return 'سابق طالب';
+  if (status === 'withdrawn') return 'منسوخ داخلہ';
+  return 'فعال';
+}
+
+window.regMarkEnrollmentStatus = function (userId, status) {
+  status = String(status || '').toLowerCase();
+  if (status !== 'active' && status !== 'alumni' && status !== 'withdrawn') {
+    if (typeof window.showToast === 'function') window.showToast('غلط اسٹیٹس', 'error');
+    return;
+  }
+  var users = typeof window.emsGetUsersMerged === 'function' ? window.emsGetUsersMerged() : [];
+  var user = users.filter(function (u) { return String(u.id) === String(userId); })[0];
+  if (!user || user.type !== 'student') {
+    if (typeof window.showToast === 'function') window.showToast('طالب علم نہیں ملا', 'error');
+    return;
+  }
+  var label = regEnrollmentLabel(status);
+  if (!confirm('«' + (user.name || userId) + '» کو «' + label + '» نشان زد کریں؟')) return;
+
+  var updated = Object.assign({}, user, {
+    enrollmentStatus: status,
+    alumniAt: status === 'alumni' ? Date.now() : (user.alumniAt || null),
+    finalClass: status === 'alumni' ? (user.class || user.finalClass || '') : (user.finalClass || null),
+    withdrawnAt: status === 'withdrawn' ? Date.now() : (user.withdrawnAt || null)
+  });
+  var tenantId = typeof getAdmissionTenantId === 'function' ? getAdmissionTenantId() : null;
+
+  function done() {
+    if (typeof window.showToast === 'function') window.showToast('اسٹیٹس: ' + label, 'success');
+    if (typeof window.renderRegTable === 'function') window.renderRegTable();
+  }
+
+  if (typeof window.emsRegRepoPersistRegistration === 'function') {
+    Promise.resolve(window.emsRegRepoPersistRegistration(updated, {
+      tenantId: tenantId,
+      status: 'approved',
+      type: 'student',
+      currentEditingId: userId,
+      isEditingRejected: false
+    })).then(function (res) {
+      if (res && res.ok === false) throw new Error(res.reason || 'save_failed');
+      done();
+    }).catch(function (err) {
+      if (typeof window.showToast === 'function') {
+        window.showToast('محفوظ ناکام: ' + (err && err.message ? err.message : ''), 'error');
+      }
+    });
+    return;
+  }
+  done();
+};
+
 function regUserTypeMeta(user) {
   if (user.type === 'student') {
+    var enr = regEnrollmentStatus(user);
+    var badge = '<span style="background:var(--accent);color:white;padding:2px 8px;border-radius:4px;font-size:11px;">طالب علم</span>';
+    if (enr === 'alumni') {
+      badge += ' <span style="background:#64748b;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">سابق</span>';
+    } else if (enr === 'withdrawn') {
+      badge += ' <span style="background:#b45309;color:white;padding:2px 8px;border-radius:4px;font-size:11px;">منسوخ</span>';
+    }
     return {
-      badge: '<span style="background:var(--accent);color:white;padding:2px 8px;border-radius:4px;font-size:11px;">طالب علم</span>',
+      badge: badge,
       position: user.class || '-'
     };
   }
@@ -1247,6 +1336,11 @@ function renderRegRowHtml(user) {
                 <button class="icon-btn reg-m-action-btn icon-only" data-reg-perm="print" style="color: var(--accent); background: #e3f2fd;" onclick="window.openIDCardModal('${user.id}')" title="شناختی کارڈ اور QR"><i class="fas fa-id-badge"></i></button>
                 <button class="icon-btn reg-m-action-btn icon-only" data-reg-perm="print" style="color: var(--success); background: #e8f5e9;" onclick="window.openLetterModal('${user.id}')" title="بطاقۃ القبول / تقرر نامہ"><i class="fas fa-envelope-open-text"></i></button>
                 <button class="icon-btn edit reg-m-action-btn icon-only" data-reg-perm="edit" style="color: var(--warning); background: #fff3cd;" onclick="window.editRegistration('${user.id}', '${user.type}', false)" title="ترمیم کریں"><i class="fas fa-edit"></i></button>
+                ${user.type === 'student' && regEnrollmentStatus(user) === 'active'
+                  ? `<button class="icon-btn reg-m-action-btn icon-only" data-reg-perm="edit" style="color:#475569;background:#f1f5f9;" onclick="window.regMarkEnrollmentStatus('${user.id}', 'alumni')" title="سابق طالب (Alumni)"><i class="fas fa-user-graduate"></i></button>`
+                  : (user.type === 'student' && regEnrollmentStatus(user) === 'alumni'
+                    ? `<button class="icon-btn reg-m-action-btn icon-only" data-reg-perm="edit" style="color:#166534;background:#dcfce7;" onclick="window.regMarkEnrollmentStatus('${user.id}', 'active')" title="فعال بحال کریں"><i class="fas fa-user-check"></i></button>`
+                    : '')}
                 <button class="icon-btn delete reg-m-action-btn icon-only" data-reg-perm="delete" style="color: var(--danger); background: #ffebee;" onclick="window.deleteRegistration('${user.id}', false)" title="حذف کریں"><i class="fas fa-trash-alt"></i></button>
             </td>
         `;
@@ -1267,6 +1361,11 @@ function renderRegMobileCardHtml(user) {
     '<button type="button" class="reg-m-action-btn" data-reg-perm="print" style="color:var(--accent);background:#e3f2fd;" onclick="window.openIDCardModal(\'' + user.id + '\')"><i class="fas fa-id-badge"></i> کارڈ</button>' +
     '<button type="button" class="reg-m-action-btn" data-reg-perm="print" style="color:var(--success);background:#e8f5e9;" onclick="window.openLetterModal(\'' + user.id + '\')"><i class="fas fa-envelope-open-text"></i> خط</button>' +
     '<button type="button" class="reg-m-action-btn" data-reg-perm="edit" style="color:var(--warning);background:#fff3cd;" onclick="window.editRegistration(\'' + user.id + '\', \'' + user.type + '\', false)"><i class="fas fa-edit"></i> ترمیم</button>' +
+    (user.type === 'student' && regEnrollmentStatus(user) === 'active'
+      ? '<button type="button" class="reg-m-action-btn" data-reg-perm="edit" style="color:#475569;background:#f1f5f9;" onclick="window.regMarkEnrollmentStatus(\'' + user.id + '\', \'alumni\')"><i class="fas fa-user-graduate"></i> سابق</button>'
+      : (user.type === 'student' && regEnrollmentStatus(user) === 'alumni'
+        ? '<button type="button" class="reg-m-action-btn" data-reg-perm="edit" style="color:#166534;background:#dcfce7;" onclick="window.regMarkEnrollmentStatus(\'' + user.id + '\', \'active\')"><i class="fas fa-user-check"></i> فعال</button>'
+        : '')) +
     '<button type="button" class="reg-m-action-btn" data-reg-perm="delete" style="color:var(--danger);background:#ffebee;" onclick="window.deleteRegistration(\'' + user.id + '\', false)"><i class="fas fa-trash-alt"></i> حذف</button>' +
     '</div></article>';
 }

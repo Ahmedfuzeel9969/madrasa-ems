@@ -15,9 +15,9 @@
   var ANN_TYPES = [
     { id: 'general', name: 'عمومی' }, { id: 'emergency', name: 'ہنگامی' }, { id: 'admin', name: 'انتظامی' },
     { id: 'educational', name: 'تعلیمی' }, { id: 'exam', name: 'امتحانی' }, { id: 'financial', name: 'مالیاتی' },
-    { id: 'program', name: 'پروگرام' }, { id: 'teachers', name: 'اساتذہ' }, { id: 'students', name: 'طلبہ' },
-    { id: 'parents', name: 'والدین' }, { id: 'staff', name: 'عملہ' }
+    { id: 'program', name: 'پروگرام' }
   ];
+  /** type = content category; audience = delivery target (ANN_AUDIENCES) */
 
   var ANN_KINDS = [
     { id: 'announcement', name: 'اعلان' }, { id: 'decision', name: 'فیصلہ' }, { id: 'meeting', name: 'اجلاس کا فیصلہ' },
@@ -223,7 +223,7 @@
     } else if (audience === 'teachers') {
       users.filter(function (u) { return u.role === 'teacher' || u.type === 'teacher'; }).forEach(function (u) { add(u, 'teacher'); });
     } else if (audience === 'staff') {
-      users.filter(function (u) { return u.role === 'staff' || u.type === 'staff' || u.role === 'teacher'; }).forEach(function (u) { add(u, 'staff'); });
+      users.filter(function (u) { return u.role === 'staff' || u.type === 'staff'; }).forEach(function (u) { add(u, 'staff'); });
     } else if (audience === 'parents') {
       users.filter(function (u) { return u.role === 'student' || u.type === 'student'; }).forEach(function (u) {
         if (u.fatherPhone || u.guardianPhone) add({ name: (u.name || '') + ' (ولی)', phone: u.fatherPhone || u.guardianPhone, id: u.id + '-p' }, 'parent');

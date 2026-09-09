@@ -113,8 +113,14 @@ async function assertParentViewPermission(tenantId, studentId, viewId) {
     throw new functions.https.HttpsError('permission-denied', 'اس view کی اجازت نہیں: ' + viewId);
 }
 
-async function fetchAttendance(db, tenantId, studentId) {
-    const mk = monthKey();
+function parseMonthKey(raw) {
+    var s = String(raw || '').trim();
+    if (/^\d{4}-\d{2}$/.test(s)) return s;
+    return monthKey();
+}
+
+async function fetchAttendance(db, tenantId, studentId, requestedMonth) {
+    const mk = parseMonthKey(requestedMonth);
     const prefix = 'att_rec_' + mk + '_';
     const snap = await db.collection('All_Madrasas').doc(tenantId).collection('Attendance')
         .where(admin.firestore.FieldPath.documentId(), '>=', prefix)
@@ -239,7 +245,23 @@ function announcementVisibleToParent(a, studentId, profile) {
         return true;
     }
 
-    if (aud === 'students') return true;
+    if (aud === 'students') {
+        // Scoped student notices: only the matching child's class/dept/id
+        if (meta.className || meta.class) {
+            const targetClass = meta.className || meta.class || '';
+            const studentClass = profile.className || profile.class || '';
+            return !!targetClass && targetClass === studentClass;
+        }
+        if (meta.dept || meta.department) {
+            const targetDept = meta.dept || meta.department || '';
+            const studentDept = profile.department || profile.dept || '';
+            return !!targetDept && targetDept === studentDept;
+        }
+        if (Array.isArray(meta.ids) && meta.ids.length) {
+            return meta.ids.some(function (id) { return String(id) === String(studentId); });
+        }
+        return true;
+    }
 
     if (aud === 'class') {
         const targetClass = meta.className || meta.class || '';
@@ -441,7 +463,7 @@ async function fetchTrainingForStudent(db, tenantId, studentId) {
 }
 
 /**
- * data = { tenantId, studentId, view: 'attendance'|'results'|'fee'|'announcements' }
+ * data = { tenantId, studentId, view: 'attendance'|'results'|'fee'|'announcements', month?: 'YYYY-MM' }
  */
 const getParentStudentData = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
@@ -451,6 +473,7 @@ const getParentStudentData = functions.https.onCall(async (data, context) => {
     const tenantId = String((data && data.tenantId) || '').trim();
     const studentId = String((data && data.studentId) || '').trim();
     const view = String((data && data.view) || 'attendance').trim();
+    const month = data && data.month != null ? String(data.month).trim() : '';
 
     if (!tenantId || !studentId) {
         throw new functions.https.HttpsError('invalid-argument', 'tenantId اور studentId درکار ہیں۔');
@@ -463,7 +486,7 @@ const getParentStudentData = functions.https.onCall(async (data, context) => {
 
     const db = admin.firestore();
 
-    if (view === 'attendance') return fetchAttendance(db, tenantId, studentId);
+    if (view === 'attendance') return fetchAttendance(db, tenantId, studentId, month);
     if (view === 'results' || view === 'progress') return fetchExamResults(db, tenantId, studentId);
     if (view === 'fee') return fetchFeeSummary(db, tenantId, studentId);
     if (view === 'announcements') return fetchAnnouncements(db, tenantId, studentId, context.auth.uid);

@@ -1318,6 +1318,42 @@
         return a;
     }
 
+    function applyTemplateActions(p, templateKey) {
+        var tpl = window.ADMIN_TEMPLATES[templateKey];
+        if (!tpl || !tpl.actions) return p;
+        Object.keys(tpl.actions).forEach(function (mod) {
+            p.modules[mod] = true;
+            tpl.actions[mod].forEach(function (act) {
+                if (p.actions[mod]) p.actions[mod][act] = true;
+            });
+        });
+        p.template = templateKey;
+        return p;
+    }
+
+    function staffHasAnyModule(p) {
+        if (!p || !p.modules) return false;
+        return Object.keys(p.modules).some(function (k) { return !!p.modules[k]; });
+    }
+
+    /** Phase 4: empty teacher perms → apply teacher template once */
+    function ensureTeacherDefaultPerm(staffId, staff, perm) {
+        if (!staff || staff.type !== 'teacher') return perm;
+        if (staffHasAnyModule(perm) || (perm.template && perm.template !== '')) return perm;
+        applyTemplateActions(perm, 'teacher');
+        perm.history = Array.isArray(perm.history) ? perm.history : [];
+        perm.history.push({
+            type: 'template_applied',
+            detail: 'خودکار: استاد ڈیفالٹ ٹیمپلیٹ',
+            by: apCurrentAdmin(),
+            at: apNow()
+        });
+        var perms = getAllPerms();
+        perms[staffId] = perm;
+        saveAllPerms(perms);
+        return perm;
+    }
+
     function defaultPerm(staffId) {
         var modules = {};
         var actions = {};
@@ -1686,6 +1722,7 @@
         var staff = getStaffList().filter(function (s) { return s.id === staffId; })[0];
         if (!staff) return;
         var perm = window.apGetStaffPerm(staffId);
+        perm = ensureTeacherDefaultPerm(staffId, staff, perm);
 
         var nameEl = document.getElementById('ap-modal-staff-name');
         if (nameEl) nameEl.textContent = staff.name || staffId;
@@ -2026,14 +2063,10 @@
         var perms = getAllPerms();
         var p = defaultPerm(newId);
         p.history.push({ type: 'created', detail: 'اکاؤنٹ ایڈمن پینل سے بنایا', by: apCurrentAdmin(), at: apNow() });
+        if (!templateKey && type === 'teacher') templateKey = 'teacher';
         if (templateKey && window.ADMIN_TEMPLATES[templateKey]) {
-            var tpl = window.ADMIN_TEMPLATES[templateKey];
-            Object.keys(tpl.actions).forEach(function (mod) {
-                p.modules[mod] = true;
-                tpl.actions[mod].forEach(function (act) { if (p.actions[mod]) p.actions[mod][act] = true; });
-            });
-            p.template = templateKey;
-            p.history.push({ type: 'template_applied', detail: 'ٹیمپلیٹ: ' + tpl.name, by: apCurrentAdmin(), at: apNow() });
+            applyTemplateActions(p, templateKey);
+            p.history.push({ type: 'template_applied', detail: 'ٹیمپلیٹ: ' + window.ADMIN_TEMPLATES[templateKey].name, by: apCurrentAdmin(), at: apNow() });
         }
         perms[newId] = p;
         saveAllPerms(perms);
@@ -2946,6 +2979,10 @@
         }
         window.emsCreateStaffLink(uid, staffId, email).then(function () {
             apPersistUserEmail(staffId, email);
+            var staff = getStaffList().filter(function (s) { return s.id === staffId; })[0];
+            if (staff && staff.type === 'teacher') {
+                ensureTeacherDefaultPerm(staffId, staff, window.apGetStaffPerm(staffId));
+            }
             apToast('Staff Link بھیج دیا — عملہ لاگ ان پر فعال ہوگا۔', 'success');
         }).catch(function (e) { apToast('Link ناکام: ' + e.message, 'error'); });
     };

@@ -322,8 +322,12 @@
 
             var dashTab = document.getElementById('tab-dashboard');
             var routeTab = null;
-            if (portal === 'teacher' && typeof global.emsFindFirstAllowedModuleTab === 'function') {
-                routeTab = global.emsFindFirstAllowedModuleTab();
+            if (portal === 'teacher') {
+                if (dashTab && global.emsRoleAllowsModule('dashboard')) {
+                    routeTab = dashTab;
+                } else if (typeof global.emsFindFirstAllowedModuleTab === 'function') {
+                    routeTab = global.emsFindFirstAllowedModuleTab();
+                }
             } else if (dashTab && global.emsRoleAllowsModule('dashboard')) {
                 routeTab = dashTab;
             } else if (typeof global.emsFindFirstAllowedModuleTab === 'function') {
