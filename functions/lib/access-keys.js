@@ -4,6 +4,7 @@
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 const crypto = require('crypto');
+const { assertSharedPortalSessionActive } = require('./shared-portal-session');
 
 function hashAccessKey(plainKey) {
     const raw = String(plainKey || '').trim();
@@ -39,6 +40,7 @@ async function verifyTeacherAccessKey(data, context) {
     if (!linkSnap.exists || linkSnap.data().status !== 'active' || linkSnap.data().staffId !== staffId) {
         throw new functions.https.HttpsError('permission-denied', 'Staff Link تصدیق ناکام۔');
     }
+    await assertSharedPortalSessionActive(db, tenantId, context, linkSnap.data() || {}, 'teacher');
 
     const keySnap = await db.collection('All_Madrasas').doc(tenantId)
         .collection('StaffAccessKeys').doc(staffId).get();
@@ -75,11 +77,15 @@ async function verifyParentAccessKey(data, context) {
     if (!linkSnap.exists || linkSnap.data().status !== 'active') {
         throw new functions.https.HttpsError('permission-denied', 'Parent Link تصدیق ناکام۔');
     }
+    await assertSharedPortalSessionActive(db, tenantId, context, linkSnap.data() || {}, 'parent');
 
     const hash = hashAccessKey(plainKey);
+    const linkedIds = Array.isArray(linkSnap.data().studentIds)
+        ? linkSnap.data().studentIds.map(function (id) { return String(id || '').trim(); }).filter(Boolean)
+        : [];
     for (let i = 0; i < studentIds.length; i++) {
         const sid = String(studentIds[i] || '').trim();
-        if (!sid) continue;
+        if (!sid || linkedIds.indexOf(sid) === -1) continue;
         const keySnap = await db.collection('All_Madrasas').doc(tenantId)
             .collection('ParentAccessKeys').doc(sid).get();
         if (!keySnap.exists) continue;

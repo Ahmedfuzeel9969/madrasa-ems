@@ -43,7 +43,7 @@ describe('Announcements Phase A — Firestore lockdown & server-side targeting',
         var rules = fs.readFileSync(path.join(ROOT, 'firestore.rules'), 'utf8');
         var block = rules.match(/match \/Announcements\/\{docId\}\s*\{[\s\S]*?\n      \}/);
         expect(block).toBeTruthy();
-        expect(block[0]).toContain('allow read: if canReadTenantStaff(madrasaId)');
+        expect(block[0]).toContain("canTenantModuleRead(madrasaId, 'announcements')");
         expect(block[0]).not.toContain('isParentOf(madrasaId)');
     });
 

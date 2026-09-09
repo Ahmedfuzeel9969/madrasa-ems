@@ -1614,6 +1614,64 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
   border: 1px solid #cbd5e1; border-radius: 9px; background: #f8fafc;
 }
 .att-col-mode-switch .btn { min-width: 170px; }
+.att-col-rep-subswitch {
+  display: inline-flex; gap: 6px; padding: 4px; margin: 0 0 14px;
+  border: 1px solid #e2e8f0; border-radius: 8px; background: #fff;
+}
+.att-col-browse-layout {
+  display: flex; flex-direction: row; gap: 12px; align-items: stretch;
+  min-height: 62vh; border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; overflow: hidden;
+}
+.att-col-browse-sidebar {
+  flex: 0 0 280px; max-width: 320px; border-left: 1px solid #e2e8f0;
+  background: #f8fafc; display: flex; flex-direction: column; min-height: 0;
+}
+.att-col-browse-side-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border-bottom: 1px solid #e2e8f0; background: #fff;
+}
+.att-col-browse-class-list { flex: 1; overflow: auto; padding: 8px; }
+.att-col-browse-class {
+  border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; margin-bottom: 8px; overflow: hidden;
+}
+.att-col-browse-class-btn {
+  display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 10px 12px; border: none; background: transparent; cursor: pointer; text-align: right;
+  font: inherit; color: #0f172a;
+}
+.att-col-browse-class-btn:hover { background: #eff6ff; }
+.att-col-browse-class.open > .att-col-browse-class-btn { background: #dbeafe; font-weight: 700; }
+.att-col-browse-class-btn .chev { color: #64748b; transition: transform .15s ease; }
+.att-col-browse-class.open .chev { transform: rotate(-90deg); }
+.att-col-browse-students { display: none; border-top: 1px solid #e2e8f0; background: #fff; }
+.att-col-browse-class.open .att-col-browse-students { display: block; }
+.att-col-browse-student {
+  display: block; width: 100%; padding: 8px 12px 8px 10px; border: none; border-bottom: 1px solid #f1f5f9;
+  background: transparent; cursor: pointer; text-align: right; font: inherit; color: #1e293b;
+}
+.att-col-browse-student:hover { background: #f0fdf4; }
+.att-col-browse-student.active { background: #ecfdf5; border-right: 3px solid #16a34a; font-weight: 700; }
+.att-col-browse-student small { display: block; color: #64748b; font-size: 11px; margin-top: 2px; }
+.att-col-browse-detail { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #fff; }
+.att-col-browse-detail-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 14px; border-bottom: 1px solid #e2e8f0; background: #f8fafc;
+}
+.att-col-browse-student-meta strong { display: block; font-size: 16px; color: #0f172a; }
+.att-col-browse-student-meta small { color: #64748b; }
+.att-col-browse-cal-switch { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.att-col-browse-cal-label { font-size: 12px; color: #475569; font-weight: 700; }
+.att-col-browse-record-wrap { flex: 1; overflow: auto; padding: 12px 14px; }
+.att-col-browse-month-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.att-col-browse-month-table th,
+.att-col-browse-month-table td { padding: 8px 10px; border-bottom: 1px solid #e2e8f0; text-align: center; }
+.att-col-browse-month-table th { background: #0f766e; color: #fff; position: sticky; top: 0; z-index: 1; }
+.att-col-browse-month-table td.month-cell { text-align: right; font-weight: 700; white-space: nowrap; }
+.att-col-browse-month-table td.month-cell small { display: block; font-weight: 500; color: #64748b; margin-top: 2px; }
+@media (max-width: 900px) {
+  .att-col-browse-layout { flex-direction: column; min-height: 0; }
+  .att-col-browse-sidebar { flex: none; max-width: none; border-left: none; border-bottom: 1px solid #e2e8f0; max-height: 42vh; }
+}
 .att-col-view-note {
   margin-bottom: 12px; padding: 10px 13px; border: 1px solid #bfdbfe;
   border-radius: 8px; background: #eff6ff; color: #1e40af; font-size: 13px;
@@ -2661,7 +2719,7 @@ body.theme-style-3d .premium-card {
 /* رجسٹر اسکرول ایریا اونچا */
 #att-register-print-area { max-height: 62vh !important; }
 
-/* تقریباتی حاضری — bulk select bar */
+/* حاضری مطالعہ — bulk select bar */
 .evt-bulk-bar {
     display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
     justify-content: space-between; background: #f1f5f9;

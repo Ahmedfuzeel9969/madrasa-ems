@@ -2,6 +2,7 @@
 
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const { assertSharedPortalStaffAction } = require('../shared-portal-session');
 
 /**
  * Tenant staff gate — owner OR active Staff_Links.
@@ -31,6 +32,9 @@ async function assertTenantStaffAccess(context, tenantId) {
     var staffSnap = await db.collection('All_Madrasas').doc(tenantId)
         .collection('Staff_Links').doc(uid).get();
     if (staffSnap.exists && staffSnap.data().status === 'active') {
+        await assertSharedPortalStaffAction(
+            db, tenantId, context, staffSnap.data() || {}, 'dashboard', 'view'
+        );
         return { role: 'staff', uid: uid, staffId: staffSnap.data().staffId || '' };
     }
 

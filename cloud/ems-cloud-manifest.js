@@ -4,7 +4,13 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260909_att_evt_sheet_flow_v1';
+  var CACHE_BUST = '20260909_att_evt_browse_v1';
+
+    // Fail closed until Functions + Firestore + Storage rules are released
+    // together. The controlled release flips this only after verification.
+    if (typeof global.EMS_SHARED_PORTAL_GATEWAY_ENABLED !== 'boolean') {
+        global.EMS_SHARED_PORTAL_GATEWAY_ENABLED = false;
+    }
 
     global.EmsCloudManifest = {
         cacheBust: CACHE_BUST,
@@ -17,6 +23,7 @@
         boot: [
             'ems-firebase-init.js',
             'security-layer.js',
+            'shared-portal-gateway.js',
             'parent-shared.js',
             'access-keys.js',
             'security-mfa.js',

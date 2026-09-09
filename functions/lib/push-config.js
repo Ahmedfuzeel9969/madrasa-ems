@@ -3,13 +3,18 @@
  */
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const { assertSharedPortalSessionActive } = require('./shared-portal-session');
 
-async function assertParentOrOwner(db, tenantId, uid) {
+async function assertParentOrOwner(db, tenantId, context) {
+    const uid = context.auth.uid;
     const madrasaSnap = await db.collection('All_Madrasas').doc(tenantId).get();
     if (madrasaSnap.exists && madrasaSnap.data().ownerUid === uid) return 'owner';
     const linkSnap = await db.collection('All_Madrasas').doc(tenantId)
         .collection('Parent_Links').doc(uid).get();
-    if (linkSnap.exists && linkSnap.data().status === 'active') return 'parent';
+    if (linkSnap.exists && linkSnap.data().status === 'active') {
+        await assertSharedPortalSessionActive(db, tenantId, context, linkSnap.data() || {}, 'parent');
+        return 'parent';
+    }
     throw new functions.https.HttpsError('permission-denied', 'رسائی نہیں۔');
 }
 
@@ -22,7 +27,7 @@ const getTenantPushConfig = functions.https.onCall(async function (data, context
         throw new functions.https.HttpsError('invalid-argument', 'tenantId درکار ہے۔');
     }
     const db = admin.firestore();
-    await assertParentOrOwner(db, tenantId, context.auth.uid);
+    await assertParentOrOwner(db, tenantId, context);
 
     const policySnap = await db.collection('All_Madrasas').doc(tenantId)
         .collection('TenantSettings').doc('securityPolicy').get();

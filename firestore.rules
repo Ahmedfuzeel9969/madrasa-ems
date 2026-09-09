@@ -22,7 +22,7 @@ service cloud.firestore {
 
     /** SuperAdmins/{email_with_underscores} — seed convention (see scripts/seed-super-admin.js) */
     function saEmailDocKey() {
-      let e = token().email.lower();
+      let e = token().get('email', '').lower();
       return e.replace('@', '_').replace('.', '_');
     }
 
@@ -67,16 +67,82 @@ service cloud.firestore {
         && madrasaProfile(madrasaId).get('subStatus', 'default') != 'suspended';
     }
 
+    function isSharedPortalToken() {
+      return isSignedIn() && token().get('sharedPortal', false) == true;
+    }
+
+    function sharedPortalMfaAllowed(madrasaId, portal) {
+      let mfaPath = /databases/$(database)/documents/All_Madrasas/$(madrasaId)/SecuritySettings/mfa;
+      let mfa = get(mfaPath).data;
+      return !exists(mfaPath)
+        || (portal == 'teacher' && mfa.get('requireMfaForStaff', false) != true)
+        || (portal == 'parent' && mfa.get('requireMfaForParent', false) != true);
+    }
+
+    function sharedPortalSessionActive(madrasaId, portal) {
+      let sessionId = token().get('portalSessionId', '');
+      let personId = token().get('personId', '');
+      let revision = token().get('gatewayConfigRevision', 0);
+      let sessionPath = /databases/$(database)/documents/All_Madrasas/$(madrasaId)/SharedPortalSessions/$(sessionId);
+      let configPath = /databases/$(database)/documents/All_Madrasas/$(madrasaId)/TenantSettings/sharedPortalGateway;
+      let session = get(sessionPath).data;
+      let config = get(configPath).data;
+      return isSharedPortalToken()
+        && token().get('tenantId', '') == madrasaId
+        && token().get('portalRole', '') == portal
+        && sessionId != ''
+        && personId != ''
+        && token().get('sessionExpiresAtMs', 0) > request.time.toMillis()
+        && exists(sessionPath)
+        && session.get('status', '') == 'active'
+        && session.get('syntheticUid', '') == request.auth.uid
+        && session.get('portal', '') == portal
+        && session.get('personId', '') == personId
+        && session.get('gatewayConfigRevision', 0) == revision
+        && session.get('expiresAtMs', 0) > request.time.toMillis()
+        && exists(configPath)
+        && config.get('enabled', false) == true
+        && config.get('revision', 0) == revision
+        && config.portals[portal].get('enabled', false) == true
+        && sharedPortalMfaAllowed(madrasaId, portal);
+    }
+
+    function sharedStaffLinkMatches(madrasaId) {
+      let link = get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Staff_Links/$(request.auth.uid)).data;
+      return sharedPortalSessionActive(madrasaId, 'teacher')
+        && link.get('identityMode', '') == 'shared_gateway'
+        && link.get('portalRole', '') == 'teacher'
+        && link.get('staffId', '') == token().get('personId', '')
+        && link.get('sessionId', '') == token().get('portalSessionId', '')
+        && link.get('gatewayConfigRevision', 0) == token().get('gatewayConfigRevision', 0)
+        && link.get('sessionExpiresAtMs', 0) > request.time.toMillis();
+    }
+
+    function sharedParentLinkMatches(madrasaId) {
+      let link = get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Parent_Links/$(request.auth.uid)).data;
+      return sharedPortalSessionActive(madrasaId, 'parent')
+        && link.get('identityMode', '') == 'shared_gateway'
+        && link.get('portalRole', '') == 'parent'
+        && link.get('personId', '') == token().get('personId', '')
+        && link.get('studentIds', []).size() == 1
+        && token().get('personId', '') in link.get('studentIds', [])
+        && link.get('sessionId', '') == token().get('portalSessionId', '')
+        && link.get('gatewayConfigRevision', 0) == token().get('gatewayConfigRevision', 0)
+        && link.get('sessionExpiresAtMs', 0) > request.time.toMillis();
+    }
+
     function isStaffOf(madrasaId) {
       return isSignedIn()
         && exists(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Staff_Links/$(request.auth.uid))
-        && get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Staff_Links/$(request.auth.uid)).data.status == 'active';
+        && get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Staff_Links/$(request.auth.uid)).data.status == 'active'
+        && (!isSharedPortalToken() || sharedStaffLinkMatches(madrasaId));
     }
 
     function isParentOf(madrasaId) {
       return isSignedIn()
         && exists(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Parent_Links/$(request.auth.uid))
-        && get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Parent_Links/$(request.auth.uid)).data.status == 'active';
+        && get(/databases/$(database)/documents/All_Madrasas/$(madrasaId)/Parent_Links/$(request.auth.uid)).data.status == 'active'
+        && (!isSharedPortalToken() || sharedParentLinkMatches(madrasaId));
     }
 
     /** Owner / staff / super-admin — مکمل tenant رسائی */
@@ -160,18 +226,20 @@ service cloud.firestore {
 
     /** Phase 3: temporary staff grant active (expiryAt ms epoch) */
     function staffTempGrantActive(madrasaId, tempKey) {
+      let perm = staffPerm(madrasaId);
       return staffPermExists(madrasaId)
-        && tempKey in staffPerm(madrasaId).temporary
-        && staffPerm(madrasaId).temporary[tempKey].expiryAt is int
-        && staffPerm(madrasaId).temporary[tempKey].expiryAt > request.time.toMillis();
+        && tempKey in perm.temporary
+        && perm.temporary[tempKey].expiryAt is int
+        && perm.temporary[tempKey].expiryAt > request.time.toMillis();
     }
 
     function staffHasModule(madrasaId, moduleId) {
+      let perm = staffPerm(madrasaId);
       return isStaffOf(madrasaId)
         && staffPermExists(madrasaId)
-        && staffPerm(madrasaId).status != 'suspended'
-        && moduleId in staffPerm(madrasaId).modules
-        && staffPerm(madrasaId).modules[moduleId] == true;
+        && perm.status != 'suspended'
+        && moduleId in perm.modules
+        && perm.modules[moduleId] == true;
     }
 
     function staffTempModuleAccess(madrasaId, moduleId) {
@@ -187,18 +255,45 @@ service cloud.firestore {
 
     /** Action-level staff permission (create/edit/delete/view) + temporary grants — strict RBAC only */
     function staffHasAction(madrasaId, moduleId, actionId) {
+      let perm = staffPerm(madrasaId);
       return (staffHasModule(madrasaId, moduleId)
               && staffPermExists(madrasaId)
-              && moduleId in staffPerm(madrasaId).actions
-              && actionId in staffPerm(madrasaId).actions[moduleId]
-              && staffPerm(madrasaId).actions[moduleId][actionId] == true)
+              && moduleId in perm.actions
+              && actionId in perm.actions[moduleId]
+              && perm.actions[moduleId][actionId] == true)
           || staffTempGrantActive(madrasaId, moduleId + '.' + actionId);
     }
 
     function canStaffReadModule(madrasaId, moduleId) {
-      return isSuperAdmin()
-        || (isMadrasaActive(madrasaId)
-            && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, moduleId, 'view')));
+      return isSharedPortalToken()
+        ? (isMadrasaActive(madrasaId) && sharedStaffHasAction(madrasaId, moduleId, 'view'))
+        : (isSuperAdmin()
+          || (isMadrasaActive(madrasaId)
+              && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, moduleId, 'view'))));
+    }
+
+    /** Preserve legacy staff reads, but shared accounts must match the module. */
+    function canTenantModuleRead(madrasaId, moduleId) {
+      return isSharedPortalToken()
+        ? canStaffReadModule(madrasaId, moduleId)
+        : canReadTenantStaff(madrasaId);
+    }
+
+    function canTenantNonSharedStaffRead(madrasaId) {
+      return !isSharedPortalToken() && canReadTenantStaff(madrasaId);
+    }
+
+    function canReadSharedModuleData(madrasaId, docId) {
+      return (docId.matches('^Attendance__.+$') && canStaffReadModule(madrasaId, 'attendance'))
+        || (docId.matches('^Exams__.+$') && canStaffReadModule(madrasaId, 'exams'))
+        || (docId.matches('^Curriculum__.+$') && canStaffReadModule(madrasaId, 'curriculum'))
+        || (docId.matches('^Training__.+$') && canStaffReadModule(madrasaId, 'training'))
+        || (docId.matches('^Finance__.+$') && canStaffReadModule(madrasaId, 'finance'))
+        || (docId.matches('^Ledger__.+$') && canStaffReadModule(madrasaId, 'ledger'))
+        || (docId.matches('^Announcements__.+$') && canStaffReadModule(madrasaId, 'announcements'))
+        || (docId.matches('^Registration__.+$')
+          && (canStaffReadModule(madrasaId, 'admission')
+            || canStaffReadModule(madrasaId, 'attendance')));
     }
 
     function canStaffCreate(madrasaId, moduleId) {
@@ -237,6 +332,48 @@ service cloud.firestore {
     function canAttendanceDeleteWithoutSuper(madrasaId) {
       return isMadrasaActive(madrasaId)
         && (canOwnerAct(madrasaId) || staffHasAction(madrasaId, 'attendance', 'delete'));
+    }
+
+    /**
+     * Shared-principal attendance checks use the person id already sealed into
+     * the short-lived token. Keeping this as one session validation + one
+     * permission lookup avoids Firestore's 1000-expression ceiling on updates.
+     */
+    function sharedStaffHasAction(madrasaId, moduleId, actionId) {
+      let personId = token().get('personId', '');
+      let permPath = /databases/$(database)/documents/All_Madrasas/$(madrasaId)/StaffPermissions/$(personId);
+      let perm = get(permPath).data;
+      let modules = perm.get('modules', {});
+      let actions = perm.get('actions', {});
+      return personId != ''
+        && sharedStaffLinkMatches(madrasaId)
+        && exists(permPath)
+        && perm.get('status', 'active') != 'suspended'
+        && moduleId in modules
+        && modules[moduleId] == true
+        && moduleId in actions
+        && actionId in actions[moduleId]
+        && actions[moduleId][actionId] == true;
+    }
+
+    function sharedAttendanceCreateDoesNotEditSelf() {
+      let personId = token().get('personId', '');
+      return !request.resource.data.get('records', {}).keys().hasAny([personId])
+        && !request.resource.data.get('periodRecords', {}).keys().hasAny([personId])
+        && !request.resource.data.get('remarks', {}).keys().hasAny([personId])
+        && !request.resource.data.get('late', {}).keys().hasAny([personId]);
+    }
+
+    function sharedAttendanceUpdateDoesNotEditSelf() {
+      let personId = token().get('personId', '');
+      return !request.resource.data.get('records', {}).diff(resource.data.get('records', {}))
+            .affectedKeys().hasAny([personId])
+        && !request.resource.data.get('periodRecords', {}).diff(resource.data.get('periodRecords', {}))
+            .affectedKeys().hasAny([personId])
+        && !request.resource.data.get('remarks', {}).diff(resource.data.get('remarks', {}))
+            .affectedKeys().hasAny([personId])
+        && !request.resource.data.get('late', {}).diff(resource.data.get('late', {}))
+            .affectedKeys().hasAny([personId]);
     }
 
     /** Attendance documents are monthly canonical/legacy register sheets only. */
@@ -564,7 +701,7 @@ service cloud.firestore {
       }
 
       match /Rejected/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'admission');
         allow create: if canCreateRegistration(madrasaId);
         allow update: if canUpdateRegistration(madrasaId);
         allow delete: if canDeleteRegistration(madrasaId);
@@ -572,18 +709,18 @@ service cloud.firestore {
 
       /** Write-trigger sync — clients listen to meta only (Phase A4) */
       match /RegistrationMeta/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'admission');
         allow create, update: if canCreateRegistration(madrasaId) || canUpdateRegistration(madrasaId);
         allow delete: if canDeleteRegistration(madrasaId);
       }
 
       match /DashboardStats/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'dashboard');
         allow write: if false;
       }
 
       match /FeeSummary/{studentId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'finance');
         allow write: if false;
       }
 
@@ -591,19 +728,29 @@ service cloud.firestore {
         allow read: if canStaffReadModule(madrasaId, 'attendance');
         allow create: if isValidAttendanceDocId(docId)
           && hasValidAttendanceShape()
-          && (isSuperAdmin()
-            || (canAttendanceCreateWithoutSuper(madrasaId)
-              && attendanceCreateDoesNotEditSelf(madrasaId)));
+          && (isSharedPortalToken()
+            ? (sharedStaffHasAction(madrasaId, 'attendance', 'create')
+              && sharedAttendanceCreateDoesNotEditSelf())
+            : (isSuperAdmin()
+              || (canAttendanceCreateWithoutSuper(madrasaId)
+                && attendanceCreateDoesNotEditSelf(madrasaId))));
         allow update: if isValidAttendanceDocId(docId)
           && hasValidAttendanceShape()
-          && (isSuperAdmin()
-            || (canAttendanceUpdateWithoutSuper(madrasaId)
-              && attendanceExistingRegisterIsEditable(madrasaId)
-              && attendanceUpdateDoesNotEditSelf(madrasaId)));
+          && (isSharedPortalToken()
+            ? (sharedStaffHasAction(madrasaId, 'attendance', 'edit')
+              && resource.data.get('locked', false) == false
+              && sharedAttendanceUpdateDoesNotEditSelf())
+            : (isSuperAdmin()
+              || (canAttendanceUpdateWithoutSuper(madrasaId)
+                && attendanceExistingRegisterIsEditable(madrasaId)
+                && attendanceUpdateDoesNotEditSelf(madrasaId))));
         allow delete: if isValidAttendanceDocId(docId)
-          && (isSuperAdmin()
-            || (canAttendanceDeleteWithoutSuper(madrasaId)
-              && attendanceExistingRegisterIsEditable(madrasaId)));
+          && (isSharedPortalToken()
+            ? (sharedStaffHasAction(madrasaId, 'attendance', 'delete')
+              && resource.data.get('locked', false) == false)
+            : (isSuperAdmin()
+              || (canAttendanceDeleteWithoutSuper(madrasaId)
+                && attendanceExistingRegisterIsEditable(madrasaId))));
       }
 
       match /Attendance_Config/{docId} {
@@ -614,7 +761,12 @@ service cloud.firestore {
       }
 
       match /Archive_Meta/{yearId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantNonSharedStaffRead(madrasaId)
+          || (isSharedPortalToken()
+            && (canStaffReadModule(madrasaId, 'attendance')
+              || canStaffReadModule(madrasaId, 'finance')
+              || canStaffReadModule(madrasaId, 'ledger')
+              || canStaffReadModule(madrasaId, 'exams')));
         allow write: if false;
       }
 
@@ -628,38 +780,41 @@ service cloud.firestore {
       }
 
       match /Archive_Finance/{yearId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'finance');
         allow write: if false;
       }
 
       match /Archive_Ledger/{yearId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'ledger');
         allow write: if false;
       }
 
       match /Archive_Exams/{yearId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'exams');
         allow write: if false;
       }
 
       match /Registration_Config/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'admission');
         allow create: if canStaffCreate(madrasaId, 'admission');
         allow update: if canStaffUpdate(madrasaId, 'admission');
         allow delete: if canStaffDelete(madrasaId, 'admission');
       }
 
       match /ImportHistory/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'admission');
         allow create: if canStaffCreate(madrasaId, 'admission');
         allow update: if canStaffUpdate(madrasaId, 'admission');
         allow delete: if canStaffDelete(madrasaId, 'admission');
       }
 
       match /ModuleData/{docId} {
-        allow read: if (isAttendanceModuleDataDocId(docId)
-            && canStaffReadModule(madrasaId, 'attendance'))
-          || (!isAttendanceModuleDataDocId(docId) && canReadTenantStaff(madrasaId));
+        allow read: if isSharedPortalToken()
+          ? canReadSharedModuleData(madrasaId, docId)
+          : ((isAttendanceModuleDataDocId(docId)
+              && canStaffReadModule(madrasaId, 'attendance'))
+            || (!isAttendanceModuleDataDocId(docId)
+              && canReadTenantStaff(madrasaId)));
         allow create: if canOwnerAct(madrasaId) || isSuperAdmin()
           || (isAttendanceModuleDataDocId(docId) && canStaffCreate(madrasaId, 'attendance'))
           || (docId == 'Curriculum__ems_curriculum_daily' && canStaffCreate(madrasaId, 'curriculum'));
@@ -680,7 +835,7 @@ service cloud.firestore {
       }
 
       match /Backup/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantNonSharedStaffRead(madrasaId);
         allow write: if false;
       }
 
@@ -691,25 +846,25 @@ service cloud.firestore {
       }
 
       match /SecuritySettings/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantNonSharedStaffRead(madrasaId);
         allow write: if isOwner(madrasaId) || isSuperAdmin();
       }
 
       match /Complaints/{complaintId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'complaints');
         allow create: if canStaffCreate(madrasaId, 'complaints');
         allow update: if canStaffUpdate(madrasaId, 'complaints');
         allow delete: if canStaffDelete(madrasaId, 'complaints');
       }
 
       match /ExamResults/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'exams');
         allow create: if canStaffCreate(madrasaId, 'exams');
         allow update: if canStaffUpdate(madrasaId, 'exams');
         allow delete: if canStaffDelete(madrasaId, 'exams');
       }
       match /Exams_Config/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'exams');
         allow create: if canStaffCreate(madrasaId, 'exams');
         allow update: if canStaffUpdate(madrasaId, 'exams');
         allow delete: if canStaffDelete(madrasaId, 'exams');
@@ -719,40 +874,40 @@ service cloud.firestore {
         allow write: if canWriteFinance(madrasaId);
       }
       match /FeeSetups/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'finance');
         allow write: if canWriteFinance(madrasaId);
       }
       match /FeeBills/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'finance');
         allow write: if canWriteFinance(madrasaId);
       }
       match /Finance_Config/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'finance');
         allow write: if canWriteFinance(madrasaId);
       }
       match /LedgerEntries/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'ledger');
         allow write: if canWriteFinance(madrasaId);
       }
       match /Ledger_Config/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'ledger');
         allow write: if canWriteFinance(madrasaId);
       }
       match /Announcements/{docId} {
         allow read: if isSuperAdmin()
-          || (isMadrasaActive(madrasaId) && canReadTenantStaff(madrasaId));
+          || (isMadrasaActive(madrasaId) && canTenantModuleRead(madrasaId, 'announcements'));
         allow create: if canStaffCreate(madrasaId, 'announcements');
         allow update: if canStaffUpdate(madrasaId, 'announcements');
         allow delete: if canStaffDelete(madrasaId, 'announcements');
 
         match /AnnouncementVotes/{voteId} {
           allow read: if isSuperAdmin()
-            || (isMadrasaActive(madrasaId) && canReadTenantStaff(madrasaId));
+            || (isMadrasaActive(madrasaId) && canTenantModuleRead(madrasaId, 'announcements'));
           allow write: if false;
         }
       }
       match /Announcements_Config/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'announcements');
         allow create: if canStaffCreate(madrasaId, 'announcements');
         allow update: if canStaffUpdate(madrasaId, 'announcements');
         allow delete: if canStaffDelete(madrasaId, 'announcements');
@@ -780,12 +935,33 @@ service cloud.firestore {
         allow write: if canManageTenantAccess(madrasaId) || isSuperAdmin();
       }
       match /ParentPermissions/{studentId} {
-        allow read: if canReadTenantStaff(madrasaId) || parentHasLinkedStudent(madrasaId, studentId);
+        allow read: if canTenantNonSharedStaffRead(madrasaId)
+          || parentHasLinkedStudent(madrasaId, studentId);
         allow write: if canManageTenantAccess(madrasaId);
       }
       match /TenantSettings/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
-        allow write: if canManageTenantAccess(madrasaId) || isSuperAdmin();
+        allow read: if docId != 'sharedPortalGateway' && canTenantNonSharedStaffRead(madrasaId);
+        allow write: if docId != 'sharedPortalGateway'
+          && (canManageTenantAccess(madrasaId) || isSuperAdmin());
+      }
+      match /TenantSettings/sharedPortalGateway {
+        allow read: if isOwner(madrasaId) || isSuperAdmin();
+        allow write: if false;
+      }
+      match /SharedPortalPrincipals/{docId} {
+        allow read: if isOwner(madrasaId) || isSuperAdmin();
+        allow write: if false;
+      }
+      match /SharedPortalSessions/{docId} {
+        allow read: if isOwner(madrasaId) || isSuperAdmin();
+        allow write: if false;
+      }
+      match /SharedPortalAttempts/{docId} {
+        allow read: if isOwner(madrasaId) || isSuperAdmin();
+        allow write: if false;
+      }
+      match /SharedPortalChallenges/{docId} {
+        allow read, write: if false;
       }
       match /KeyExpiryAlerts/{alertId} {
         allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin();
@@ -835,49 +1011,49 @@ service cloud.firestore {
       }
 
       match /TrainingPrayer/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'training');
         allow create: if canStaffCreate(madrasaId, 'training');
         allow update: if canStaffUpdate(madrasaId, 'training');
         allow delete: if canStaffDelete(madrasaId, 'training');
       }
       match /TrainingEthics/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'training');
         allow create: if canStaffCreate(madrasaId, 'training');
         allow update: if canStaffUpdate(madrasaId, 'training');
         allow delete: if canStaffDelete(madrasaId, 'training');
       }
       match /TrainingDiscipline/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'training');
         allow create: if canStaffCreate(madrasaId, 'training');
         allow update: if canStaffUpdate(madrasaId, 'training');
         allow delete: if canStaffDelete(madrasaId, 'training');
       }
       match /TrainingReform/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'training');
         allow create: if canStaffCreate(madrasaId, 'training');
         allow update: if canStaffUpdate(madrasaId, 'training');
         allow delete: if canStaffDelete(madrasaId, 'training');
       }
       match /TrainingAwards/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'training');
         allow create: if canStaffCreate(madrasaId, 'training');
         allow update: if canStaffUpdate(madrasaId, 'training');
         allow delete: if canStaffDelete(madrasaId, 'training');
       }
       match /TrainingWarnings/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'training');
         allow create: if canStaffCreate(madrasaId, 'training');
         allow update: if canStaffUpdate(madrasaId, 'training');
         allow delete: if canStaffDelete(madrasaId, 'training');
       }
       match /Training_Config/{docId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantModuleRead(madrasaId, 'training');
         allow create: if canStaffCreate(madrasaId, 'training');
         allow update: if canStaffUpdate(madrasaId, 'training');
         allow delete: if canStaffDelete(madrasaId, 'training');
       }
       match /SystemSettings_Config/{docId} {
-        allow read: if canReadTenantStaff(madrasaId) && docId != 'ai_config';
+        allow read: if canTenantNonSharedStaffRead(madrasaId) && docId != 'ai_config';
         allow read: if docId == 'ai_config' && (isOwner(madrasaId) || isSuperAdmin());
         allow write: if canOwnerAct(madrasaId) || isSuperAdmin();
       }
@@ -890,13 +1066,13 @@ service cloud.firestore {
 
       /** AI Assistant audit — server (Admin SDK) writes only */
       match /AiAuditLog/{logId} {
-        allow read: if canReadTenantStaff(madrasaId);
+        allow read: if canTenantNonSharedStaffRead(madrasaId);
         allow write: if false;
       }
 
       match /ParentMessages/{msgId} {
         allow read: if isSuperAdmin()
-          || (isMadrasaActive(madrasaId) && canReadTenantStaff(madrasaId))
+          || (isMadrasaActive(madrasaId) && canTenantModuleRead(madrasaId, 'announcements'))
           || (isMadrasaActive(madrasaId)
               && isParentOf(madrasaId)
               && parentHasLinkedStudent(madrasaId, resource.data.studentId)
@@ -942,7 +1118,7 @@ service cloud.firestore {
       // P2 foundation — student self-login links (portal gated off until available).
       match /Student_Links/{linkId} {
         allow read: if canManageTenantAccess(madrasaId) || isSuperAdmin()
-          || (isSignedIn() && request.auth.uid == linkId);
+          || (isSignedIn() && request.auth.uid == linkId && !isSharedPortalToken());
         allow create: if canManageTenantAccess(madrasaId) || isSuperAdmin();
         allow update: if canManageTenantAccess(madrasaId) || isSuperAdmin();
         allow delete: if canManageTenantAccess(madrasaId) || isSuperAdmin()
@@ -959,9 +1135,19 @@ service cloud.firestore {
           && collectionId != 'Attendance_Config'
           && collectionId != 'Archive_Attendance'
           && collectionId != 'ModuleData'
+          && collectionId != 'SharedPortalPrincipals'
+          && collectionId != 'SharedPortalSessions'
+          && collectionId != 'SharedPortalAttempts'
+          && collectionId != 'SharedPortalChallenges'
+          && collectionId != 'TenantSettings'
+          && !isSharedPortalToken()
           && canReadTenantStaff(madrasaId);
         allow write: if false;
       }
+    }
+
+    match /SharedPortalGatewayDirectory/{docId} {
+      allow read, write: if false;
     }
 
     /* TI-01: Staff/Parent link resolution is server-only (activateTenantLink / resolveTenantLink).

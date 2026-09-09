@@ -394,7 +394,22 @@
         return !policy || policy.requireAccessKey !== false;
     }
 
+    function sharedPrincipalMatches(user, tenantId, portal, personId) {
+        var principal = global.EMS_SHARED_PORTAL_PRINCIPAL;
+        if (!principal || !user || principal.uid !== user.uid) return false;
+        if (String(principal.tenantId || '') !== String(tenantId || '')) return false;
+        if (String(principal.portal || '') !== String(portal || '')) return false;
+        return !personId || String(principal.principalId || '') === String(personId);
+    }
+
     function runPortalDomainGate(tenantId, portal, user, onOk) {
+        // The raw verified Google email and SSO provider/domain policy were
+        // checked server-side before this synthetic, person-scoped token was
+        // issued. Synthetic users intentionally carry no reusable email.
+        if (sharedPrincipalMatches(user, tenantId, portal)) {
+            onOk();
+            return;
+        }
         if (typeof global.emsValidateEmailDomainForPortal !== 'function') {
             onOk();
             return;
@@ -623,6 +638,11 @@
         pendingUser = user;
         pendingCtx = ctx;
 
+        if (sharedPrincipalMatches(user, tenantId, 'teacher', staffId)) {
+            completeTeacher(user, ctx);
+            return;
+        }
+
         if (!policyRequiresAccessKey()) {
             completeTeacher(user, ctx);
             return;
@@ -744,6 +764,12 @@
     function proceedParentKeyGate(user, ctx, tenantId, studentIds) {
         pendingUser = user;
         pendingCtx = ctx;
+
+        var exactStudentId = studentIds && studentIds.length === 1 ? studentIds[0] : '';
+        if (exactStudentId && sharedPrincipalMatches(user, tenantId, 'parent', exactStudentId)) {
+            completeParent(user, ctx);
+            return;
+        }
 
         if (!policyRequiresAccessKey()) {
             completeParent(user, ctx);

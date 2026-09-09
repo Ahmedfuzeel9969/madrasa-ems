@@ -3,6 +3,7 @@
  */
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const { assertSharedPortalStaffAction } = require('./shared-portal-session');
 
 const WARN_DAYS_MS = 30 * 86400000;
 
@@ -101,6 +102,11 @@ const getAccessKeyExpiryReport = functions.https.onCall(async (data, context) =>
     const isStaff = staffLink.exists && staffLink.data().status === 'active';
     if (!isOwner && !isStaff) {
         throw new functions.https.HttpsError('permission-denied', 'رسائی نہیں۔');
+    }
+    if (isStaff) {
+        await assertSharedPortalStaffAction(
+            db, tenantId, context, staffLink.data() || {}, 'dashboard', 'view'
+        );
     }
 
     const now = Date.now();

@@ -6,6 +6,7 @@
  */
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const { assertSharedPortalStaffAction } = require('./shared-portal-session');
 const logger = require('./logger');
 const examCurSummaries = require('./tenant-exam-curriculum-summaries');
 
@@ -539,6 +540,9 @@ const refreshTenantDashboardStats = functions.https.onCall(async function (data,
         if (!linkSnap.exists || linkSnap.data().status !== 'active') {
             throw new functions.https.HttpsError('permission-denied', 'اجازت نہیں۔');
         }
+        await assertSharedPortalStaffAction(
+            admin.firestore(), tenantId, context, linkSnap.data() || {}, 'dashboard', 'view'
+        );
     }
     var stats = await recomputeTenantStats(tenantId);
     return { ok: true, stats: stats };

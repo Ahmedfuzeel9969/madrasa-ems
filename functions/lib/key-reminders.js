@@ -5,6 +5,7 @@ const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 const logger = require('./logger');
 const { scanTenantKeyExpiry } = require('./access-key-expiry');
+const { assertSharedPortalStaffAction } = require('./shared-portal-session');
 
 function alertDocId(item, dateKey) {
     return item.type + '-' + item.id + '-' + dateKey;
@@ -105,6 +106,11 @@ const getKeyExpiryAlerts = functions.https.onCall(async (data, context) => {
     const isStaff = staffLink.exists && staffLink.data().status === 'active';
     if (!isOwner && !isStaff) {
         throw new functions.https.HttpsError('permission-denied', 'رسائی نہیں۔');
+    }
+    if (isStaff) {
+        await assertSharedPortalStaffAction(
+            db, tenantId, context, staffLink.data() || {}, 'dashboard', 'view'
+        );
     }
 
     const snap = await db.collection('All_Madrasas').doc(tenantId)

@@ -1962,7 +1962,8 @@ function applyStaffTenantProfile(user, doc, firestore, ctx) {
     finishStaffUnlock();
 }
 
-function listenMadrasaProfile(user) {
+function listenMadrasaProfile(user, options) {
+    options = options || {};
     emsPostLoginDiagMark('listen_profile_enter', true);
     emsPostLoginDiagMark('firebase_uid', user && user.uid);
     emsPostLoginDiagMark('firebase_email', user && user.email);
@@ -1996,6 +1997,25 @@ function listenMadrasaProfile(user) {
         if (tryOfflineLocalBootAnyPlatform(user)) {
             return;
         }
+    }
+
+    // A configured shared Google account is only a gateway. Intercept it
+    // before Firestore profile/tenant resolution so the raw account can never
+    // inherit an institution identity or load business data.
+    if (options.sharedPortalChecked !== true
+        && typeof window.emsSharedPortalMaybeIntercept === 'function') {
+        Promise.resolve(window.emsSharedPortalMaybeIntercept(user)).then(function (result) {
+            if (result && result.handled === true) return;
+            listenMadrasaProfile(user, { sharedPortalChecked: true });
+        }).catch(function (err) {
+            console.error('[EMS] مشترک پورٹل شناخت ناکام:', err);
+            emsFailSecurityLayerMissing('shared-portal-resolve-error');
+            emsShowPostLoginBootFailure(
+                'shared_portal_resolve_error',
+                'مشترک پورٹل کی محفوظ شناخت مکمل نہیں ہو سکی؛ ڈیٹا لوڈ روک دیا گیا ہے۔'
+            );
+        });
+        return;
     }
 
     window.waitForDb(
@@ -2994,7 +3014,25 @@ window.applyModuleAccessUI = function () {
 };
 
 window.logoutUser = function () {
-    if (!confirm('کیا آپ واقعی سائن آؤٹ کرنا چاہتے ہیں؟')) return;
+    var sharedLogoutPrepared = window.__emsSharedPortalLogoutPrepared === true;
+    if (!sharedLogoutPrepared && !confirm('کیا آپ واقعی سائن آؤٹ کرنا چاہتے ہیں؟')) return;
+    if (!sharedLogoutPrepared
+        && window.EMS_SHARED_PORTAL_PRINCIPAL
+        && typeof window.emsSharedPortalPrepareLogout === 'function') {
+        window.showTopAlert('مشترک پورٹل کی تبدیلیاں محفوظ کر کے مقامی ذخیرہ صاف کیا جا رہا ہے…', false);
+        Promise.resolve(window.emsSharedPortalPrepareLogout()).then(function () {
+            window.__emsSharedPortalLogoutPrepared = true;
+            window.logoutUser();
+        }).catch(function () {
+            window.__emsSharedPortalLogoutPrepared = false;
+            window.showTopAlert(
+                'سائن آؤٹ روکا گیا: کچھ تبدیلیاں محفوظ نہیں ہوئیں یا مقامی ذخیرہ صاف نہیں ہو سکا۔ انٹرنیٹ چیک کر کے دوبارہ کوشش کریں۔',
+                true
+            );
+        });
+        return;
+    }
+    window.__emsSharedPortalLogoutPrepared = false;
 
     window.EMS_EXPLICIT_SIGNOUT = true;
     if (window.EmsSyncEngine && typeof window.EmsSyncEngine.shutdown === 'function') {

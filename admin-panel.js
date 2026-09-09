@@ -37,14 +37,38 @@
         { id: 'dashboard', name: 'ڈیش بورڈ', icon: 'fa-chart-line' },
         { id: 'admission', name: 'داخلہ / رجسٹریشن', icon: 'fa-user-plus' },
         { id: 'attendance', name: 'حاضری', icon: 'fa-calendar-check' },
-        { id: 'exams', name: 'امتحانات', icon: 'fa-graduation-cap' },
         { id: 'curriculum', name: 'نصاب', icon: 'fa-book-open' },
         { id: 'training', name: 'تربیت و نظم', icon: 'fa-mosque' },
+        { id: 'complaints', name: 'شکایات', icon: 'fa-exclamation-triangle' },
+        { id: 'exams', name: 'امتحانات', icon: 'fa-graduation-cap' },
         { id: 'finance', name: 'فیس سسٹم', icon: 'fa-money-bill-wave' },
         { id: 'ledger', name: 'مالیات و تنخواہ', icon: 'fa-wallet' },
-        { id: 'complaints', name: 'شکایات', icon: 'fa-exclamation-triangle' },
         { id: 'announcements', name: 'اعلانات و فیصلے', icon: 'fa-bullhorn' }
     ];
+
+    /** اختیار نامہ ہمیشہ مرکزی شعبہ وار مینو کی موجودہ ظاہری ترتیب اپنائے۔ */
+    function apGetOrderedStaffModules() {
+        var catalogue = window.ADMIN_STAFF_MODULES.slice();
+        var rank = Object.create(null);
+        var nextRank = 0;
+        if (typeof document !== 'undefined' && typeof document.querySelectorAll === 'function') {
+            document.querySelectorAll('.ribbon-tabs > .ribbon-tab[id^="tab-"]').forEach(function (tab) {
+                var moduleId = String(tab.id || '').replace(/^tab-/, '');
+                if (catalogue.some(function (item) { return item.id === moduleId; })) {
+                    rank[moduleId] = nextRank++;
+                }
+            });
+        }
+        return catalogue.map(function (item, originalIndex) {
+            return { item: item, originalIndex: originalIndex };
+        }).sort(function (a, b) {
+            var ar = Object.prototype.hasOwnProperty.call(rank, a.item.id) ? rank[a.item.id] : 1000 + a.originalIndex;
+            var br = Object.prototype.hasOwnProperty.call(rank, b.item.id) ? rank[b.item.id] : 1000 + b.originalIndex;
+            return ar - br;
+        }).map(function (entry) { return entry.item; });
+    }
+
+    window.apGetOrderedStaffModules = apGetOrderedStaffModules;
 
     // ہر شعبے کے اندر معیاری اعمال (Stage 2)
     window.ADMIN_ACTIONS = [
@@ -1104,8 +1128,9 @@
     }
 
     function apModuleName(id) {
-        for (var i = 0; i < window.ADMIN_STAFF_MODULES.length; i++) {
-            if (window.ADMIN_STAFF_MODULES[i].id === id) return window.ADMIN_STAFF_MODULES[i].name;
+        var orderedModules = apGetOrderedStaffModules();
+        for (var i = 0; i < orderedModules.length; i++) {
+            if (orderedModules[i].id === id) return orderedModules[i].name;
         }
         return id;
     }
@@ -1181,8 +1206,9 @@
     function apRefreshPeopleLists() {
         window.apLoadStaff();
         if (typeof window.apRenderParentsTable === 'function') window.apRenderParentsTable();
-        var dd = document.getElementById('main-ap-dropdown');
-        if (dd && dd.value === 'ap-win-comm' && typeof window.apRenderCommThreads === 'function') {
+        var activePanel = document.querySelector('#ap-ribbon-menu .reg-tab.active-sub-tab');
+        if (activePanel && activePanel.getAttribute('data-ap-panel') === 'ap-win-comm'
+            && typeof window.apRenderCommThreads === 'function') {
             window.apRenderCommThreads();
         }
     }
@@ -1357,7 +1383,7 @@
     function defaultPerm(staffId) {
         var modules = {};
         var actions = {};
-        window.ADMIN_STAFF_MODULES.forEach(function (m) {
+        apGetOrderedStaffModules().forEach(function (m) {
             modules[m.id] = false;
             actions[m.id] = emptyActions();
         });
@@ -1384,7 +1410,7 @@
         p.history = Array.isArray(p.history) ? p.history : [];
         p.status = p.status || 'active';
 
-        window.ADMIN_STAFF_MODULES.forEach(function (m) {
+        apGetOrderedStaffModules().forEach(function (m) {
             if (typeof p.modules[m.id] === 'undefined') p.modules[m.id] = false;
             if (!p.actions[m.id]) {
                 // پرانے ڈیٹا میں شعبہ آن تھا تو مکمل رسائی فرض کریں (پیچھے سے مطابقت)
@@ -1479,7 +1505,7 @@
     };
 
     function assignedModulesSummary(perm) {
-        return window.ADMIN_STAFF_MODULES.filter(function (m) {
+        return apGetOrderedStaffModules().filter(function (m) {
             return perm.modules[m.id] || window.ADMIN_ACTIONS.some(function (a) { return tempActive(perm, m.id, a.id); });
         });
     }
@@ -1737,7 +1763,7 @@
             return '<th title="' + a.name + '"><i class="fas ' + a.icon + '"></i><br>' + a.name + '</th>';
         }).join('');
 
-        var matrixRows = window.ADMIN_STAFF_MODULES.map(function (m) {
+        var matrixRows = apGetOrderedStaffModules().map(function (m) {
             var modOn = perm.modules[m.id];
             var actCells = window.ADMIN_ACTIONS.map(function (a) {
                 var checked = perm.actions[m.id] && perm.actions[m.id][a.id] ? ' checked' : '';
@@ -1753,7 +1779,7 @@
         var tempListHTML = apRenderTempList(perm);
 
         // عارضی اجازت — granter
-        var modOptions = window.ADMIN_STAFF_MODULES.map(function (m) { return '<option value="' + m.id + '">' + m.name + '</option>'; }).join('');
+        var modOptions = apGetOrderedStaffModules().map(function (m) { return '<option value="' + m.id + '">' + m.name + '</option>'; }).join('');
         var actOptions = window.ADMIN_ACTIONS.map(function (a) { return '<option value="' + a.id + '">' + a.name + '</option>'; }).join('');
         var durOptions = window.ADMIN_TEMP_DURATIONS.map(function (d) { return '<option value="' + d.id + '">' + d.name + '</option>'; }).join('');
 
@@ -1904,7 +1930,7 @@
 
         var newModules = {};
         var newActions = {};
-        window.ADMIN_STAFF_MODULES.forEach(function (m) {
+        apGetOrderedStaffModules().forEach(function (m) {
             newModules[m.id] = false;
             newActions[m.id] = emptyActions();
         });
@@ -1919,7 +1945,7 @@
 
         // تبدیلیوں کی ہسٹری (diff)
         var changes = [];
-        window.ADMIN_STAFF_MODULES.forEach(function (m) {
+        apGetOrderedStaffModules().forEach(function (m) {
             if (oldP.modules[m.id] !== newModules[m.id]) {
                 changes.push(apModuleName(m.id) + ': شعبہ ' + (newModules[m.id] ? 'آن' : 'آف'));
             }
@@ -3088,49 +3114,71 @@
         }
     };
 
+    var AP_PANEL_IDS = [
+        'ap-win-staff', 'ap-win-templates', 'ap-win-history', 'ap-win-parents',
+        'ap-win-shared-portal', 'ap-win-comm', 'ap-win-backup'
+    ];
+
+    function apLoadPanelData(panelId) {
+        if (panelId === 'ap-win-staff' && typeof window.apLoadStaff === 'function') window.apLoadStaff();
+        if (panelId === 'ap-win-templates' && typeof window.apRenderTemplates === 'function') window.apRenderTemplates();
+        if (panelId === 'ap-win-history' && typeof window.apRenderHistory === 'function') window.apRenderHistory();
+        if (panelId === 'ap-win-parents' && typeof window.apRenderParentsTable === 'function') window.apRenderParentsTable();
+        if (panelId === 'ap-win-shared-portal' && typeof window.emsRenderSharedPortalConfig === 'function') {
+            var mount = document.getElementById('ap-shared-portal-config');
+            if (mount && !mount.getAttribute('data-spg-mounted')) {
+                mount.setAttribute('data-spg-mounted', '1');
+                window.emsRenderSharedPortalConfig(mount);
+            }
+        }
+        if (panelId === 'ap-win-comm' && typeof window.apRenderCommThreads === 'function') window.apRenderCommThreads();
+        if (panelId !== 'ap-win-backup' || typeof window.apRefreshBackupList !== 'function') return;
+        window.apRefreshBackupList();
+        [
+            'apLoadSecurityLog', 'apLoadTenantKeySettings', 'apLoadSecurityPolicy',
+            'apLoadNotificationDelivery', 'apLoadAuditExportStatus', 'apLoadFailedNotifications',
+            'apLoadNotificationStats', 'apLoadAuditExportHistory', 'apLoadLoginSessions',
+            'apLoadNotificationAnalytics', 'apLoadSsoPolicy', 'apLoadSsoProviderSummary',
+            'apLoadTrustedDevices', 'apLoadTrustedDeviceStats', 'apLoadSecurityEvents',
+            'apLoadMfaPolicySummary', 'apLoadLoginSecurityOverview', 'apLoadLoginSecurityHealth',
+            'apLoadSecurityWebhookStatus', 'apLoadSecurityAlertSummary', 'apLoadLoginIpSummary',
+            'apLoadLoginLockouts', 'apLoadSessionAnomalies', 'apLoadLoginAuditSummary',
+            'apLoadKeyAlerts', 'apLoadKeyExpiryDashboard'
+        ].forEach(function (fnName) {
+            if (typeof window[fnName] === 'function') window[fnName]();
+        });
+    }
+
+    window.apSwitchTab = function (panelId, tabButton) {
+        if (AP_PANEL_IDS.indexOf(panelId) < 0) return false;
+        document.querySelectorAll('#module-admin-panel .ap-tab-content').forEach(function (panel) {
+            panel.style.display = panel.id === panelId ? 'block' : 'none';
+        });
+        document.querySelectorAll('#ap-ribbon-menu .reg-tab[data-ap-panel]').forEach(function (button) {
+            var active = button.getAttribute('data-ap-panel') === panelId;
+            button.classList.toggle('active-sub-tab', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+            button.tabIndex = active ? 0 : -1;
+        });
+        if (tabButton && typeof tabButton.focus === 'function') tabButton.focus({ preventScroll: true });
+        apLoadPanelData(panelId);
+        return true;
+    };
+
     function apBindModuleListeners() {
         if (window._apListenersBound) return;
         window._apListenersBound = true;
-        var dd = document.getElementById('main-ap-dropdown');
-        if (dd) {
-            dd.addEventListener('change', function () {
-                document.querySelectorAll('#module-admin-panel .ap-tab-content').forEach(function (el) {
-                    el.style.display = 'none';
-                });
-                var panel = document.getElementById(this.value);
-                if (panel) panel.style.display = 'block';
-                if (this.value === 'ap-win-history') window.apRenderHistory();
-                if (this.value === 'ap-win-parents' && typeof window.apRenderParentsTable === 'function') window.apRenderParentsTable();
-                if (this.value === 'ap-win-comm' && typeof window.apRenderCommThreads === 'function') window.apRenderCommThreads();
-                if (this.value === 'ap-win-backup' && typeof window.apRefreshBackupList === 'function') {
-                    window.apRefreshBackupList();
-                    if (typeof window.apLoadSecurityLog === 'function') window.apLoadSecurityLog();
-                    if (typeof window.apLoadTenantKeySettings === 'function') window.apLoadTenantKeySettings();
-                    if (typeof window.apLoadSecurityPolicy === 'function') window.apLoadSecurityPolicy();
-                    if (typeof window.apLoadNotificationDelivery === 'function') window.apLoadNotificationDelivery();
-                    if (typeof window.apLoadAuditExportStatus === 'function') window.apLoadAuditExportStatus();
-                    if (typeof window.apLoadFailedNotifications === 'function') window.apLoadFailedNotifications();
-                    if (typeof window.apLoadNotificationStats === 'function') window.apLoadNotificationStats();
-                    if (typeof window.apLoadAuditExportHistory === 'function') window.apLoadAuditExportHistory();
-                    if (typeof window.apLoadLoginSessions === 'function') window.apLoadLoginSessions();
-                    if (typeof window.apLoadNotificationAnalytics === 'function') window.apLoadNotificationAnalytics();
-                    if (typeof window.apLoadSsoPolicy === 'function') window.apLoadSsoPolicy();
-                    if (typeof window.apLoadSsoProviderSummary === 'function') window.apLoadSsoProviderSummary();
-                    if (typeof window.apLoadTrustedDevices === 'function') window.apLoadTrustedDevices();
-                    if (typeof window.apLoadTrustedDeviceStats === 'function') window.apLoadTrustedDeviceStats();
-                    if (typeof window.apLoadSecurityEvents === 'function') window.apLoadSecurityEvents();
-                    if (typeof window.apLoadMfaPolicySummary === 'function') window.apLoadMfaPolicySummary();
-                    if (typeof window.apLoadLoginSecurityOverview === 'function') window.apLoadLoginSecurityOverview();
-                    if (typeof window.apLoadLoginSecurityHealth === 'function') window.apLoadLoginSecurityHealth();
-                    if (typeof window.apLoadSecurityWebhookStatus === 'function') window.apLoadSecurityWebhookStatus();
-                    if (typeof window.apLoadSecurityAlertSummary === 'function') window.apLoadSecurityAlertSummary();
-                    if (typeof window.apLoadLoginIpSummary === 'function') window.apLoadLoginIpSummary();
-                    if (typeof window.apLoadLoginLockouts === 'function') window.apLoadLoginLockouts();
-                    if (typeof window.apLoadSessionAnomalies === 'function') window.apLoadSessionAnomalies();
-                    if (typeof window.apLoadLoginAuditSummary === 'function') window.apLoadLoginAuditSummary();
-                    if (typeof window.apLoadKeyAlerts === 'function') window.apLoadKeyAlerts();
-                    if (typeof window.apLoadKeyExpiryDashboard === 'function') window.apLoadKeyExpiryDashboard();
-                }
+        var subnav = document.getElementById('ap-ribbon-menu');
+        if (subnav) {
+            subnav.addEventListener('keydown', function (event) {
+                if (['ArrowRight', 'ArrowLeft', 'Home', 'End'].indexOf(event.key) < 0) return;
+                var buttons = Array.prototype.slice.call(subnav.querySelectorAll('.reg-tab[data-ap-panel]'));
+                if (!buttons.length) return;
+                var current = buttons.indexOf(document.activeElement);
+                var next = event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1
+                    : (current + (event.key === 'ArrowLeft' ? 1 : -1) + buttons.length) % buttons.length;
+                event.preventDefault();
+                buttons[next].click();
             });
         }
         ['ap-staff-search', 'ap-staff-type-filter', 'ap-staff-status-filter'].forEach(function (id) {

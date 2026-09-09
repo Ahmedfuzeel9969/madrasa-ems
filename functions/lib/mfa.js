@@ -4,6 +4,7 @@
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 const { writeSecurityLog } = require('./security-log-write');
+const { assertSharedPortalSessionActive } = require('./shared-portal-session');
 
 async function isActiveStaff(db, tenantId, uid) {
     const linkSnap = await db.collection('All_Madrasas').doc(tenantId)
@@ -64,6 +65,16 @@ const checkMfaCompliance = functions.https.onCall(async (data, context) => {
     const isOwner = context.auth.uid === tenantId;
     const isStaff = flags.isStaffPortal ? await isActiveStaff(db, tenantId, context.auth.uid) : false;
     const isParent = flags.isParentPortal ? await isActiveParent(db, tenantId, context.auth.uid) : false;
+    if (isStaff && context.auth.token && context.auth.token.sharedPortal === true) {
+        const staffLink = await db.collection('All_Madrasas').doc(tenantId)
+            .collection('Staff_Links').doc(context.auth.uid).get();
+        await assertSharedPortalSessionActive(db, tenantId, context, staffLink.data() || {}, 'teacher');
+    }
+    if (isParent && context.auth.token && context.auth.token.sharedPortal === true) {
+        const parentLink = await db.collection('All_Madrasas').doc(tenantId)
+            .collection('Parent_Links').doc(context.auth.uid).get();
+        await assertSharedPortalSessionActive(db, tenantId, context, parentLink.data() || {}, 'parent');
+    }
     const subjectToMfa = flags.isParentPortal ? isParent : (flags.isStaffPortal ? isStaff : isOwner);
     const compliant = !required || !subjectToMfa || (enrolled && sessionMfa);
 

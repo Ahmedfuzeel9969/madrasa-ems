@@ -6,6 +6,7 @@
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 const logger = require('./logger');
+const { assertSharedPortalStaffAction } = require('./shared-portal-session');
 
 var SEARCH_MIN = 2;
 var SEARCH_LIMIT = 50;
@@ -63,6 +64,9 @@ async function assertTenantAccess(context, tenantId) {
         if (!linkSnap.exists || linkSnap.data().status !== 'active') {
             throw new functions.https.HttpsError('permission-denied', 'اجازت نہیں۔');
         }
+        await assertSharedPortalStaffAction(
+            admin.firestore(), tenantId, context, linkSnap.data() || {}, 'admission', 'view'
+        );
     }
 }
 

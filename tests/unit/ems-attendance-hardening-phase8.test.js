@@ -28,9 +28,12 @@ describe('attendance hardening phase 8', function () {
 
     it('uses one canonical event store and no longer dual-writes att_evt documents', function () {
         const src = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
-        const save = src.slice(src.indexOf('window.attSaveEventAttendance'), src.indexOf('/** Remove event'));
+        const saveStart = src.indexOf('window.attSaveEventAttendance');
+        const saveEnd = src.indexOf('window.attDeleteEventAttendance', saveStart);
+        const save = src.slice(saveStart, saveEnd);
         const remove = src.slice(src.indexOf('window.attDeleteEventAttendance'), src.indexOf('\nfunction evtGetUsers'));
-        expect(save).toContain('attEnqueueEventsDbSync(events)');
+        expect(save).toContain('attEnqueueEventsDbSync(store)');
+        expect(save).toContain('evtFindSession');
         expect(save).not.toContain('emsOfflinePersistAttendance');
         expect(remove).not.toContain('emsOfflinePersistAttendance');
     });

@@ -25,7 +25,8 @@
       training: { order: ['tar-win-dashboard', 'tar-win-students', 'tar-win-staff', 'tar-win-prayer', 'tar-win-discipline', 'tar-win-ethics', 'tar-win-reform', 'tar-win-awards', 'tar-win-warnings', 'tar-win-reports', 'tar-win-analytics'], hidden: [] },
       complaints: { order: ['cmp-list', 'cmp-new', 'cmp-dashboard'], hidden: [] },
       announcements: { order: ['ann-win-dashboard', 'ann-win-compose', 'ann-win-archive', 'ann-win-messaging', 'ann-win-programs', 'ann-win-designer', 'ann-win-templates', 'ann-win-print', 'ann-win-audit', 'ann-win-settings'], hidden: [] },
-      'sys-settings': { order: ['sys-win-theme', 'sys-win-terminology', 'sys-win-buttons', 'sys-win-fields', 'sys-win-layout', 'sys-win-reports', 'sys-win-profiles', 'sys-win-permissions', 'sys-win-audit', 'sys-win-security'], hidden: [] }
+      'sys-settings': { order: ['sys-win-theme', 'sys-win-terminology', 'sys-win-buttons', 'sys-win-fields', 'sys-win-layout', 'sys-win-reports', 'sys-win-profiles', 'sys-win-permissions', 'sys-win-audit', 'sys-win-security'], hidden: [] },
+      'admin-panel': { order: ['ap-win-staff', 'ap-win-templates', 'ap-win-history', 'ap-win-parents', 'ap-win-shared-portal', 'ap-win-comm', 'ap-win-backup'], hidden: [] }
     },
     tables: {
       'reg-users-table': {
@@ -71,6 +72,7 @@
     complaints: '#cmp-ribbon-menu',
     announcements: '#ann-ribbon-menu',
     'sys-settings': '#sys-ribbon-menu',
+    'admin-panel': '#ap-ribbon-menu',
     superadmin: '#sa-ribbon-menu'
   };
 

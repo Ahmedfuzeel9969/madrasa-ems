@@ -5,12 +5,39 @@
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 
+/**
+ * Keep this dependency lazy: the pure message-filter helper is also loaded in
+ * isolation by lightweight tests/tools which deliberately do not boot the
+ * Firebase session stack.
+ */
+function assertSharedPortalSessionActive(db, tenantId, context, linkData, expectedPortal) {
+    return require('./shared-portal-session').assertSharedPortalSessionActive(
+        db,
+        tenantId,
+        context,
+        linkData,
+        expectedPortal
+    );
+}
+
+function assertSharedPortalStaffAction(db, tenantId, context, linkData, moduleId, actionId) {
+    return require('./shared-portal-session').assertSharedPortalStaffAction(
+        db,
+        tenantId,
+        context,
+        linkData,
+        moduleId,
+        actionId
+    );
+}
+
 function normalizeText(str, maxLen) {
     return String(str || '').trim().slice(0, maxLen || 4000);
 }
 
-async function assertParentStudentLink(tenantId, studentId, uid) {
+async function assertParentStudentLink(tenantId, studentId, context) {
     const db = admin.firestore();
+    const uid = context.auth.uid;
     const linkSnap = await db.collection('All_Madrasas').doc(tenantId)
         .collection('Parent_Links').doc(uid).get();
     if (!linkSnap.exists || linkSnap.data().status !== 'active') {
@@ -20,6 +47,7 @@ async function assertParentStudentLink(tenantId, studentId, uid) {
     if (studentIds.indexOf(studentId) < 0) {
         throw new functions.https.HttpsError('permission-denied', 'یہ طالبِ علم منسلک نہیں۔');
     }
+    await assertSharedPortalSessionActive(db, tenantId, context, linkSnap.data() || {}, 'parent');
     return linkSnap.data();
 }
 
@@ -57,10 +85,11 @@ function filterMessagesForParent(messages, uid, studentIds) {
     });
 }
 
-async function assertStaffOrParentRead(tenantId, studentId, uid, email) {
+async function assertStaffOrParentRead(tenantId, studentId, context, staffAction) {
     const db = admin.firestore();
+    const uid = context.auth.uid;
     try {
-        await assertParentStudentLink(tenantId, studentId, uid);
+        await assertParentStudentLink(tenantId, studentId, context);
         await assertParentLeaveView(tenantId, studentId);
         return 'parent';
     } catch (e) {
@@ -70,7 +99,17 @@ async function assertStaffOrParentRead(tenantId, studentId, uid, email) {
     if (madrasaSnap.exists && madrasaSnap.data().ownerUid === uid) return 'owner';
     const staffLink = await db.collection('All_Madrasas').doc(tenantId)
         .collection('Staff_Links').doc(uid).get();
-    if (staffLink.exists && staffLink.data().status === 'active') return 'staff';
+    if (staffLink.exists && staffLink.data().status === 'active') {
+        await assertSharedPortalStaffAction(
+            db,
+            tenantId,
+            context,
+            staffLink.data() || {},
+            'announcements',
+            staffAction || 'view'
+        );
+        return 'staff';
+    }
     throw new functions.https.HttpsError('permission-denied', 'پیغامات دیکھنے کی اجازت نہیں۔');
 }
 
@@ -102,7 +141,7 @@ const submitParentMessage = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('invalid-argument', 'صوتی پیغام درکار ہے۔');
     }
 
-    await assertParentStudentLink(tenantId, studentId, context.auth.uid);
+    await assertParentStudentLink(tenantId, studentId, context);
     await assertParentLeaveView(tenantId, studentId);
 
     const db = admin.firestore();
@@ -156,7 +195,7 @@ const getParentMessages = functions.https.onCall(async (data, context) => {
     const col = db.collection('All_Madrasas').doc(tenantId).collection('ParentMessages');
 
     if (studentId) {
-        const role = await assertStaffOrParentRead(tenantId, studentId, uid, context.auth.token.email);
+        const role = await assertStaffOrParentRead(tenantId, studentId, context);
         const snap = await col.where('studentId', '==', studentId).limit(limit).get();
         let messages = [];
         snap.forEach(function (doc) { messages.push(doc.data()); });
@@ -172,6 +211,7 @@ const getParentMessages = functions.https.onCall(async (data, context) => {
     if (!linkSnap.exists || linkSnap.data().status !== 'active') {
         throw new functions.https.HttpsError('permission-denied', 'والدین رسائی نہیں۔');
     }
+    await assertSharedPortalSessionActive(db, tenantId, context, linkSnap.data() || {}, 'parent');
     const studentIds = linkSnap.data().studentIds || [];
     const allowedIds = [];
     for (let i = 0; i < studentIds.length; i++) {
@@ -216,6 +256,11 @@ const listParentMessageThreads = functions.https.onCall(async (data, context) =>
     const isStaff = staffLink.exists && staffLink.data().status === 'active';
     if (!isOwner && !isStaff) {
         throw new functions.https.HttpsError('permission-denied', 'عملہ رسائی نہیں۔');
+    }
+    if (isStaff) {
+        await assertSharedPortalStaffAction(
+            db, tenantId, context, staffLink.data() || {}, 'announcements', 'view'
+        );
     }
 
     const snap = await db.collection('All_Madrasas').doc(tenantId)
@@ -266,7 +311,7 @@ const markParentMessagesRead = functions.https.onCall(async (data, context) => {
     let marked = 0;
 
     if (role === 'parent') {
-        await assertParentStudentLink(tenantId, studentId, context.auth.uid);
+        await assertParentStudentLink(tenantId, studentId, context);
         await assertParentLeaveView(tenantId, studentId);
         const snap = await col.where('studentId', '==', studentId).limit(200).get();
         const batch = db.batch();
@@ -285,7 +330,7 @@ const markParentMessagesRead = functions.https.onCall(async (data, context) => {
         return { ok: true, marked: marked, role: 'parent' };
     }
 
-    await assertStaffOrParentRead(tenantId, studentId, context.auth.uid, context.auth.token.email);
+    await assertStaffOrParentRead(tenantId, studentId, context, 'edit');
     const madrasaSnap = await db.collection('All_Madrasas').doc(tenantId).get();
     const isOwner = madrasaSnap.exists && madrasaSnap.data().ownerUid === context.auth.uid;
     const staffLink = await db.collection('All_Madrasas').doc(tenantId)
@@ -293,6 +338,11 @@ const markParentMessagesRead = functions.https.onCall(async (data, context) => {
     const isStaff = staffLink.exists && staffLink.data().status === 'active';
     if (!isOwner && !isStaff) {
         throw new functions.https.HttpsError('permission-denied', 'عملہ رسائی نہیں۔');
+    }
+    if (isStaff) {
+        await assertSharedPortalStaffAction(
+            db, tenantId, context, staffLink.data() || {}, 'announcements', 'edit'
+        );
     }
 
     const snap = await col.where('studentId', '==', studentId).limit(200).get();

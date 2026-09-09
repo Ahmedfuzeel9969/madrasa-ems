@@ -28,16 +28,64 @@ function loadPureExports() {
 }
 
 describe('Collective monthly read-only attendance view', () => {
-    it('provides a distinct entry/view switch and month filters', () => {
+    it('provides a distinct entry/view/reports switch and month filters', () => {
         const html = read('index.html');
         expect(html).toContain('id="btn-att-col-mode-entry"');
         expect(html).toContain('id="btn-att-col-mode-view"');
+        expect(html).toContain('id="btn-att-col-mode-reports"');
         expect(html).toContain('ماہانہ حاضری دیکھیں');
         expect(html).not.toContain('ماہانہ صرف دیکھیں');
         expect(html).toContain('id="att-col-entry-mode"');
         expect(html).toContain('id="att-col-view-mode"');
+        expect(html).toContain('id="att-col-reports-mode"');
         expect(html).toContain('id="att-col-view-month"');
         expect(html).toContain('یہ ویو اسی مرکزی ریکارڈ کو دکھاتا ہے جس میں اجتماعی حاضری محفوظ ہوتی ہے');
+        expect(html).toContain('id="btn-att-col-generate-report"');
+        expect(html).toContain('name="att_col_rep_role"');
+    });
+
+    it('builds collective reports from the same attendance sheet collectors', () => {
+        const src = read('att-collective-view.js');
+        expect(src).toContain("mode === 'reports'");
+        expect(src).toContain('generateCollectiveReport');
+        expect(src).toContain('emsAttCollectReportSheetsAsync');
+        expect(src).toContain('attResolveTargetUsers');
+        expect(src).toContain('attCollectiveGenerateReport');
+        expect(src).toContain('printCollectiveReport');
+    });
+
+    it('offers class→student browse with solar/lunar monthly one-line records', () => {
+        const html = read('index.html');
+        const src = read('att-collective-view.js');
+        expect(html).toContain('id="att-col-rep-browse-pane"');
+        expect(html).toContain('data-att-col-rep-sub="browse"');
+        expect(html).toContain('درجہ وار ریکارڈ');
+        expect(html).toContain('name="att_col_browse_cal" value="solar"');
+        expect(html).toContain('name="att_col_browse_cal" value="lunar"');
+        expect(src).toContain('setReportSubMode');
+        expect(src).toContain('toggleBrowseClass');
+        expect(src).toContain('openBrowseStudent');
+        expect(src).toContain('hijriPartsFromIso');
+        expect(src).toContain('countMarksByBucket');
+        expect(src).toContain('islamic-umalqura');
+    });
+
+    it('groups marks by solar or lunar month keys for student browse lines', () => {
+        const sandbox = loadPureExports();
+        const marks = {
+            '2026-01-10|p1': { kind: 'present' },
+            '2026-01-11|p1': { kind: 'absent' },
+            '2026-02-05|p1': { kind: 'present' }
+        };
+        const solar = sandbox.attCollectiveCountMarksByBucket(marks, 'solar');
+        expect(solar.length).toBe(2);
+        expect(solar[0].sortKey).toBe('2026-01');
+        expect(solar[0].present).toBe(1);
+        expect(solar[0].absent).toBe(1);
+        expect(solar[1].sortKey).toBe('2026-02');
+        const hijri = sandbox.attCollectiveHijriPartsFromIso('2026-01-15');
+        expect(hijri).toBeTruthy();
+        expect(hijri.key).toMatch(/^\d{4}-\d{2}$/);
     });
 
     it('supports students, teachers, staff, all people, or selected people', () => {

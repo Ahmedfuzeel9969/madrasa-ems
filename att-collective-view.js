@@ -8,6 +8,14 @@
   var EXPORT_ROWS_PER_PAGE = 19;
   var _bound = false;
   var _mode = 'entry';
+  var _reportSubMode = 'summary';
+  var _reportRowHtmlCache = [];
+  var _reportRequest = 0;
+  var _browseExpanded = Object.create(null);
+  var _browseStudentsByClass = Object.create(null);
+  var _browseActiveStudent = null;
+  var _browseMonthLines = [];
+  var _browseRequest = 0;
   var _roster = [];
   var _selected = Object.create(null);
   var _viewState = null;
@@ -439,30 +447,601 @@
   }
 
   function setMode(mode) {
-    _mode = mode === 'view' ? 'view' : 'entry';
+    if (mode === 'view') _mode = 'view';
+    else if (mode === 'reports') _mode = 'reports';
+    else _mode = 'entry';
+
     var entry = byId('att-col-entry-mode');
     var view = byId('att-col-view-mode');
+    var reports = byId('att-col-reports-mode');
     var entryBtn = byId('btn-att-col-mode-entry');
     var viewBtn = byId('btn-att-col-mode-view');
+    var reportsBtn = byId('btn-att-col-mode-reports');
+
     if (entry) entry.classList.toggle('att-col-hidden', _mode !== 'entry');
     if (view) view.classList.toggle('att-col-hidden', _mode !== 'view');
-    if (entryBtn) {
-      entryBtn.classList.toggle('btn-primary', _mode === 'entry');
-      entryBtn.classList.toggle('btn-outline', _mode !== 'entry');
-      entryBtn.classList.toggle('active', _mode === 'entry');
-      entryBtn.setAttribute('aria-selected', _mode === 'entry' ? 'true' : 'false');
+    if (reports) reports.classList.toggle('att-col-hidden', _mode !== 'reports');
+
+    function styleModeBtn(btn, active) {
+      if (!btn) return;
+      btn.classList.toggle('btn-primary', active);
+      btn.classList.toggle('btn-outline', !active);
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
     }
-    if (viewBtn) {
-      viewBtn.classList.toggle('btn-primary', _mode === 'view');
-      viewBtn.classList.toggle('btn-outline', _mode !== 'view');
-      viewBtn.classList.toggle('active', _mode === 'view');
-      viewBtn.setAttribute('aria-selected', _mode === 'view' ? 'true' : 'false');
-    }
+    styleModeBtn(entryBtn, _mode === 'entry');
+    styleModeBtn(viewBtn, _mode === 'view');
+    styleModeBtn(reportsBtn, _mode === 'reports');
+
     var month = byId('att-col-view-month');
     if (month && !month.value) month.value = todayMonth();
     if (_mode === 'view') {
       syncScopeControls();
       refreshPicker();
+    }
+    if (_mode === 'reports') {
+      prepareReportsFilters();
+      setReportSubMode(_reportSubMode || 'summary');
+    }
+  }
+
+  function setReportSubMode(sub) {
+    _reportSubMode = sub === 'browse' ? 'browse' : 'summary';
+    var summaryPane = byId('att-col-rep-summary-pane');
+    var browsePane = byId('att-col-rep-browse-pane');
+    var summaryBtn = byId('btn-att-col-rep-sub-summary');
+    var browseBtn = byId('btn-att-col-rep-sub-browse');
+    if (summaryPane) summaryPane.classList.toggle('att-col-hidden', _reportSubMode !== 'summary');
+    if (browsePane) browsePane.classList.toggle('att-col-hidden', _reportSubMode !== 'browse');
+    if (summaryBtn) {
+      summaryBtn.classList.toggle('btn-primary', _reportSubMode === 'summary');
+      summaryBtn.classList.toggle('btn-outline', _reportSubMode !== 'summary');
+      summaryBtn.classList.toggle('active', _reportSubMode === 'summary');
+      summaryBtn.setAttribute('aria-selected', _reportSubMode === 'summary' ? 'true' : 'false');
+    }
+    if (browseBtn) {
+      browseBtn.classList.toggle('btn-primary', _reportSubMode === 'browse');
+      browseBtn.classList.toggle('btn-outline', _reportSubMode !== 'browse');
+      browseBtn.classList.toggle('active', _reportSubMode === 'browse');
+      browseBtn.setAttribute('aria-selected', _reportSubMode === 'browse' ? 'true' : 'false');
+    }
+    if (_reportSubMode === 'browse') {
+      ensureBrowseClassesLoaded();
+    }
+  }
+
+  var HIJRI_MONTHS_UR = [
+    'محرم', 'صفر', 'ربیع الاول', 'ربیع الثانی',
+    'جمادی الاولی', 'جمادی الآخرة', 'رجب', 'شعبان',
+    'رمضان', 'شوال', 'ذوالقعدہ', 'ذوالحجہ'
+  ];
+  var SOLAR_MONTHS_UR = [
+    'جنوری', 'فروری', 'مارچ', 'اپریل', 'مئی', 'جون',
+    'جولائی', 'اگست', 'ستمبر', 'اکتوبر', 'نومبر', 'دسمبر'
+  ];
+
+  function pad2(n) {
+    n = Number(n) || 0;
+    return n < 10 ? '0' + n : String(n);
+  }
+
+  function hijriPartsFromIso(isoDate) {
+    try {
+      var d = new Date(String(isoDate) + 'T12:00:00+05:00');
+      if (isNaN(d.getTime())) return null;
+      var fmt = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', {
+        year: 'numeric', month: 'numeric', day: 'numeric'
+      });
+      var parts = fmt.formatToParts(d);
+      var y = 0;
+      var m = 0;
+      var day = 0;
+      parts.forEach(function (p) {
+        if (p.type === 'year') y = parseInt(String(p.value).replace(/\D/g, ''), 10) || 0;
+        if (p.type === 'month') m = parseInt(p.value, 10) || 0;
+        if (p.type === 'day') day = parseInt(p.value, 10) || 0;
+      });
+      if (!y || !m) return null;
+      return { year: y, month: m, day: day, key: y + '-' + pad2(m) };
+    } catch (eH) {
+      return null;
+    }
+  }
+
+  function solarMonthLabel(ym) {
+    var parts = String(ym || '').split('-');
+    var y = parts[0] || '';
+    var m = parseInt(parts[1], 10) || 0;
+    var name = SOLAR_MONTHS_UR[m - 1] || parts[1] || '';
+    return y + '-' + pad2(m) + ' · ' + name + ' ' + y;
+  }
+
+  function lunarMonthLabel(key, parts) {
+    parts = parts || {};
+    var y = parts.year || String(key || '').split('-')[0] || '';
+    var m = parts.month || parseInt(String(key || '').split('-')[1], 10) || 0;
+    var name = HIJRI_MONTHS_UR[m - 1] || pad2(m);
+    return y + '-' + pad2(m) + ' · ' + name + ' ' + y + 'ھ';
+  }
+
+  function midMonthHijriLabel(ym) {
+    var mid = String(ym) + '-15';
+    var h = hijriPartsFromIso(mid);
+    if (!h) return '';
+    return lunarMonthLabel(h.key, h);
+  }
+
+  function browseCalendarMode() {
+    var checked = document.querySelector('input[name="att_col_browse_cal"]:checked');
+    return checked && checked.value === 'lunar' ? 'lunar' : 'solar';
+  }
+
+  function listBrowseClasses() {
+    var classes = [];
+    if (typeof global.attListAttendanceClasses === 'function') {
+      classes = global.attListAttendanceClasses() || [];
+    }
+    if (!classes.length) {
+      readTimetablePeriods().forEach(function (period) {
+        var name = String(period.className || '').trim();
+        if (name) classes.push(name);
+      });
+      classes = classes.filter(function (name, index, all) {
+        return all.indexOf(name) === index;
+      });
+    }
+    return classes.sort(function (a, b) { return String(a).localeCompare(String(b), 'ur'); });
+  }
+
+  function ensureBrowseClassesLoaded() {
+    var list = byId('att-col-browse-class-list');
+    if (!list) return;
+    var classes = listBrowseClasses();
+    if (!classes.length) {
+      list.innerHTML = '<p class="att-col-placeholder">کوئی درجہ نہیں ملا</p>';
+      return;
+    }
+    list.innerHTML = classes.map(function (cls) {
+      var open = !!_browseExpanded[cls];
+      var students = _browseStudentsByClass[cls] || null;
+      var body = '';
+      if (open) {
+        if (!students) {
+          body = '<div class="att-col-browse-students"><p class="att-col-placeholder" style="padding:8px;">طلباء لوڈ…</p></div>';
+        } else if (!students.length) {
+          body = '<div class="att-col-browse-students"><p class="att-col-placeholder" style="padding:8px;">اس درجے میں طالب علم نہیں</p></div>';
+        } else {
+          body = '<div class="att-col-browse-students">' + students.map(function (st) {
+            var uid = userId(st);
+            var active = _browseActiveStudent && _browseActiveStudent.uid === uid ? ' active' : '';
+            return '<button type="button" class="att-col-browse-student' + active + '" data-att-col-browse-student="' + escHtml(uid) + '" data-att-col-browse-class="' + escHtml(cls) + '">'
+              + '<strong>' + escHtml(userName(st) || uid) + '</strong>'
+              + '<small>' + escHtml(uid) + '</small></button>';
+          }).join('') + '</div>';
+        }
+      }
+      return '<div class="att-col-browse-class' + (open ? ' open' : '') + '" data-att-col-browse-class-wrap="' + escHtml(cls) + '">'
+        + '<button type="button" class="att-col-browse-class-btn" data-att-col-browse-toggle="' + escHtml(cls) + '">'
+        + '<span>' + escHtml(cls) + '</span><i class="fas fa-chevron-left chev"></i></button>'
+        + body + '</div>';
+    }).join('');
+  }
+
+  function toggleBrowseClass(className) {
+    className = String(className || '');
+    if (!className) return;
+    if (_browseExpanded[className]) {
+      delete _browseExpanded[className];
+      ensureBrowseClassesLoaded();
+      return;
+    }
+    _browseExpanded[className] = true;
+    ensureBrowseClassesLoaded();
+    if (_browseStudentsByClass[className]) return;
+    var requestId = ++_browseRequest;
+    var context = tenantContext();
+    Promise.resolve(global.attResolveTargetUsers('students', className)).then(function (users) {
+      if (requestId !== _browseRequest || !tenantContextMatches(context)) return;
+      _browseStudentsByClass[className] = (users || []).slice().sort(function (a, b) {
+        return String(userName(a)).localeCompare(String(userName(b)), 'ur');
+      });
+      ensureBrowseClassesLoaded();
+    }).catch(function (err) {
+      console.error('[EMS] browse class students', err);
+      _browseStudentsByClass[className] = [];
+      ensureBrowseClassesLoaded();
+      toast('طلباء لوڈ نہیں ہو سکے', 'error');
+    });
+  }
+
+  function browseDefaultFromTo() {
+    var to = new Date();
+    var from = new Date(to.getFullYear() - 3, to.getMonth(), 1);
+    return {
+      from: from.getFullYear() + '-' + pad2(from.getMonth() + 1) + '-01',
+      to: to.toISOString().slice(0, 10)
+    };
+  }
+
+  function countMarksByBucket(finalMarks, calendarMode) {
+    var buckets = Object.create(null);
+    Object.keys(finalMarks || {}).forEach(function (key) {
+      var mark = finalMarks[key];
+      if (!mark) return;
+      var kind = mark.kind;
+      var iso = String(key).split('|')[0];
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+      var bucketKey;
+      var labelMain;
+      var labelSub;
+      var sortKey;
+      if (calendarMode === 'lunar') {
+        var h = hijriPartsFromIso(iso);
+        if (!h) return;
+        bucketKey = 'L:' + h.key;
+        labelMain = lunarMonthLabel(h.key, h);
+        labelSub = 'شمسی دن: ' + iso;
+        sortKey = h.key;
+      } else {
+        var ym = iso.slice(0, 7);
+        bucketKey = 'S:' + ym;
+        labelMain = solarMonthLabel(ym);
+        labelSub = 'قمری: ' + (midMonthHijriLabel(ym) || '—');
+        sortKey = ym;
+      }
+      if (!buckets[bucketKey]) {
+        buckets[bucketKey] = {
+          key: bucketKey,
+          sortKey: sortKey,
+          labelMain: labelMain,
+          labelSub: labelSub,
+          total: 0,
+          present: 0,
+          absent: 0,
+          leave: 0
+        };
+      }
+      buckets[bucketKey].total += 1;
+      if (kind === 'present' || kind === 'P') buckets[bucketKey].present += 1;
+      else if (kind === 'absent' || kind === 'A') buckets[bucketKey].absent += 1;
+      else if (kind === 'leave' || kind === 'L') buckets[bucketKey].leave += 1;
+    });
+    return Object.keys(buckets).map(function (k) { return buckets[k]; })
+      .sort(function (a, b) { return String(a.sortKey).localeCompare(String(b.sortKey)); });
+  }
+
+  function renderBrowseMonthLines(lines) {
+    var wrap = byId('att-col-browse-record-wrap');
+    if (!wrap) return;
+    if (!lines || !lines.length) {
+      wrap.innerHTML = '<p class="att-col-placeholder">اس مدت میں کوئی حاضری ریکارڈ نہیں ملا۔</p>';
+      return;
+    }
+    var cal = browseCalendarMode();
+    var monthHead = cal === 'lunar' ? 'قمری مہینہ (سال-مہینہ)' : 'شمسی مہینہ (سال-مہینہ)';
+    wrap.innerHTML = '<table class="att-col-browse-month-table data-table"><thead><tr>'
+      + '<th>' + monthHead + '</th>'
+      + '<th>کل</th><th>حاضر</th><th>غیر حاضر</th><th>رخصت</th><th>فیصد</th>'
+      + '</tr></thead><tbody>'
+      + lines.map(function (row) {
+        var pct = row.total ? Math.round((row.present / row.total) * 100) : 0;
+        var color = pct >= 75 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : 'var(--danger)';
+        return '<tr><td class="month-cell">' + escHtml(row.labelMain)
+          + '<small>' + escHtml(row.labelSub) + '</small></td>'
+          + '<td style="font-weight:700;">' + row.total + '</td>'
+          + '<td class="att-status-present" style="font-weight:700;">' + row.present + '</td>'
+          + '<td class="att-status-absent" style="font-weight:700;">' + row.absent + '</td>'
+          + '<td class="att-status-leave" style="font-weight:700;">' + row.leave + '</td>'
+          + '<td style="font-weight:700;color:' + color + ';">' + pct + '%</td></tr>';
+      }).join('')
+      + '</tbody></table>';
+  }
+
+  function openBrowseStudent(className, uid) {
+    className = String(className || '');
+    uid = String(uid || '');
+    if (!uid) return;
+    var students = _browseStudentsByClass[className] || [];
+    var user = students.find(function (u) { return userId(u) === uid; });
+    if (!user && typeof global.attResolveTargetUsers === 'function') {
+      // fallback: still try with minimal user shape
+      user = { id: uid, name: uid, class: className, type: 'student' };
+    }
+    if (!user) return;
+
+    _browseActiveStudent = { uid: uid, className: className, user: user };
+    ensureBrowseClassesLoaded();
+
+    var meta = byId('att-col-browse-student-meta');
+    if (meta) {
+      meta.innerHTML = '<strong>' + escHtml(userName(user) || uid) + '</strong>'
+        + '<small>' + escHtml(uid) + ' · ' + escHtml(className) + '</small>';
+    }
+    var printBtn = byId('btn-att-col-browse-print');
+    if (printBtn) printBtn.disabled = true;
+
+    var wrap = byId('att-col-browse-record-wrap');
+    if (wrap) wrap.innerHTML = '<p class="att-col-placeholder"><i class="fas fa-spinner fa-spin"></i> ریکارڈ لوڈ ہو رہا ہے…</p>';
+
+    var range = browseDefaultFromTo();
+    var requestId = ++_browseRequest;
+    var context = tenantContext();
+    var symbols = {};
+    try {
+      symbols = JSON.parse(global.localStorage.getItem('ems_att_symbols') || '{}') || { P: 'P', A: 'A', L: 'L' };
+    } catch (eS) {
+      symbols = { P: 'P', A: 'A', L: 'L' };
+    }
+
+    var collectFn = typeof global.emsAttCollectReportSheetsAsync === 'function'
+      ? global.emsAttCollectReportSheetsAsync
+      : function () { return Promise.resolve([]); };
+
+    return collectFn(range.from, range.to).then(function (allRecords) {
+      if (requestId !== _browseRequest || !tenantContextMatches(context)) return;
+      if (!_browseActiveStudent || _browseActiveStudent.uid !== uid) return;
+      var collected = typeof global.attMetricsReportCollectMarks === 'function'
+        ? global.attMetricsReportCollectMarks(user, allRecords || [], range.from, range.to, symbols)
+        : null;
+      var finalMarks = collected && collected.finalMarks ? collected.finalMarks : Object.create(null);
+      _browseActiveStudent.finalMarks = finalMarks;
+      _browseMonthLines = countMarksByBucket(finalMarks, browseCalendarMode());
+      renderBrowseMonthLines(_browseMonthLines);
+      if (printBtn) printBtn.disabled = !_browseMonthLines.length;
+      if (!_browseMonthLines.length) toast('اس طالب علم کا ریکارڈ نہیں ملا', 'warning');
+      else toast('ریکارڈ تیار — ' + _browseMonthLines.length + ' مہینے', 'success');
+    }).catch(function (err) {
+      console.error('[EMS] openBrowseStudent', err);
+      if (wrap) wrap.innerHTML = '<p class="att-col-placeholder" style="color:var(--danger);">ریکارڈ لوڈ نہیں ہو سکا</p>';
+      toast('ریکارڈ لوڈ نہیں ہو سکا', 'error');
+    });
+  }
+
+  function refreshBrowseCalendarView() {
+    if (!_browseActiveStudent) return;
+    if (_browseActiveStudent.finalMarks) {
+      _browseMonthLines = countMarksByBucket(_browseActiveStudent.finalMarks, browseCalendarMode());
+      renderBrowseMonthLines(_browseMonthLines);
+      var printBtn = byId('btn-att-col-browse-print');
+      if (printBtn) printBtn.disabled = !_browseMonthLines.length;
+      return;
+    }
+    if (_browseActiveStudent.uid) {
+      openBrowseStudent(_browseActiveStudent.className, _browseActiveStudent.uid);
+    }
+  }
+
+  function printBrowseStudentRecord() {
+    var wrap = byId('att-col-browse-record-wrap');
+    var meta = byId('att-col-browse-student-meta');
+    if (!wrap || !_browseMonthLines.length) return;
+    var html = '<div style="text-align:center;margin-bottom:12px;">'
+      + '<h2 style="font-family:\'Noto Nastaliq Urdu\',serif;margin:0;">اجتماعی حاضری — طالب علم کا ماہانہ ریکارڈ</h2>'
+      + '<div>' + (meta ? meta.innerHTML : '') + '</div>'
+      + '<small>کیلنڈر: ' + (browseCalendarMode() === 'lunar' ? 'قمری' : 'شمسی') + '</small></div>'
+      + wrap.innerHTML;
+    if (typeof global.attPrintWithBranding === 'function') {
+      global.attPrintWithBranding(html, '');
+    } else if (typeof global.print === 'function') {
+      global.print();
+    }
+  }
+
+  function reportSelectedRoles() {
+    return Array.prototype.map.call(
+      document.querySelectorAll('input[name="att_col_rep_role"]:checked') || [],
+      function (node) { return node.value; }
+    ).filter(function (role) {
+      return role === 'students' || role === 'teachers' || role === 'staff';
+    });
+  }
+
+  function fillReportClassSelect() {
+    var select = byId('att-col-rep-class');
+    if (!select) return;
+    var prev = String(select.value || '');
+    var classes = [];
+    if (typeof global.attListAttendanceClasses === 'function') {
+      classes = global.attListAttendanceClasses() || [];
+    }
+    if (!classes.length) {
+      readTimetablePeriods().forEach(function (period) {
+        var name = String(period.className || '').trim();
+        if (name) classes.push(name);
+      });
+      classes = classes.filter(function (name, index, all) {
+        return all.indexOf(name) === index;
+      }).sort(function (a, b) { return String(a).localeCompare(String(b), 'ur'); });
+    }
+    select.innerHTML = '<option value="">تمام درجات</option>' + classes.map(function (name) {
+      return '<option value="' + escHtml(name) + '">' + escHtml(name) + '</option>';
+    }).join('');
+    if (prev && classes.indexOf(prev) >= 0) select.value = prev;
+  }
+
+  function prepareReportsFilters() {
+    fillReportClassSelect();
+    var fromEl = byId('att-col-rep-from');
+    var toEl = byId('att-col-rep-to');
+    try {
+      var now = new Date();
+      var y = now.getFullYear();
+      var m = String(now.getMonth() + 1).padStart(2, '0');
+      if (fromEl && !fromEl.value) fromEl.value = y + '-' + m + '-01';
+      if (toEl && !toEl.value) toEl.value = now.toISOString().slice(0, 10);
+    } catch (eD) { /* ignore */ }
+  }
+
+  function reportRoleToWantType(role) {
+    if (role === 'students') return 'students';
+    if (role === 'teachers') return 'teachers';
+    if (role === 'staff') return 'staff';
+    return role;
+  }
+
+  function resolveReportUsers(roles, classId) {
+    if (typeof global.attResolveTargetUsers !== 'function') {
+      return Promise.reject(new Error('attendance roster reader unavailable'));
+    }
+    return Promise.all((roles || []).map(function (role) {
+      var classArg = role === 'students' && classId ? classId : '';
+      return Promise.resolve(global.attResolveTargetUsers(reportRoleToWantType(role), classArg)).then(function (users) {
+        return (users || []).map(function (user) {
+          return user;
+        });
+      });
+    })).then(function (groups) {
+      var seen = Object.create(null);
+      var flat = [];
+      Array.prototype.concat.apply([], groups).forEach(function (user) {
+        var uid = userId(user);
+        if (!uid || seen[uid]) return;
+        seen[uid] = true;
+        flat.push(user);
+      });
+      return flat;
+    });
+  }
+
+  function buildReportRowFromMetrics(user, allRecords, fromDate, toDate, symbols) {
+    if (typeof global.attBuildReportRowHtml === 'function') {
+      return global.attBuildReportRowHtml(user, allRecords, fromDate, toDate, symbols);
+    }
+    if (typeof global.attMetricsReportCollectMarks !== 'function') return null;
+    var collected = global.attMetricsReportCollectMarks(user, allRecords, fromDate, toDate, symbols);
+    if (!collected || !collected.finalMarks) return null;
+    var totalHours = 0;
+    var present = 0;
+    var absent = 0;
+    var leave = 0;
+    Object.keys(collected.finalMarks).forEach(function (key) {
+      var kind = collected.finalMarks[key] && collected.finalMarks[key].kind;
+      totalHours += 1;
+      if (kind === 'present' || kind === 'P') present += 1;
+      else if (kind === 'absent' || kind === 'A') absent += 1;
+      else if (kind === 'leave' || kind === 'L') leave += 1;
+    });
+    if (totalHours <= 0) return null;
+    var percentage = Math.round((present / totalHours) * 100);
+    var pctColor = percentage >= 75 ? 'var(--success)' : percentage >= 50 ? 'var(--warning)' : 'var(--danger)';
+    var uid = userId(user);
+    var cls = userClass(user) || user.type || '—';
+    return '<tr>' +
+      '<td><strong>' + escHtml(userName(user) || uid) + '</strong><br><small style="color:#7f8c8d;">' + escHtml(uid) + '</small></td>' +
+      '<td>' + escHtml(cls) + '</td>' +
+      '<td style="font-weight:bold;">' + totalHours + '</td>' +
+      '<td class="att-status-present" style="font-weight:bold;">' + present + '</td>' +
+      '<td class="att-status-absent" style="font-weight:bold;">' + absent + '</td>' +
+      '<td class="att-status-leave" style="font-weight:bold;">' + leave + '</td>' +
+      '<td style="color:' + pctColor + ';font-weight:bold;font-size:16px;">' + percentage + '%</td>' +
+      '<td></td></tr>';
+  }
+
+  function generateCollectiveReport() {
+    var fromEl = byId('att-col-rep-from');
+    var toEl = byId('att-col-rep-to');
+    var classEl = byId('att-col-rep-class');
+    var tbody = byId('att-col-report-tbody');
+    var btn = byId('btn-att-col-generate-report');
+    if (!tbody) return Promise.resolve();
+
+    var fromDate = String(fromEl && fromEl.value || '').trim();
+    var toDate = String(toEl && toEl.value || '').trim();
+    if (!fromDate || !toDate) {
+      toast('ابتدائی اور آخری تاریخ منتخب کریں', 'warning');
+      return Promise.resolve();
+    }
+    if (fromDate > toDate) {
+      toast('ابتدائی تاریخ آخری تاریخ سے بڑی نہیں ہو سکتی', 'warning');
+      return Promise.resolve();
+    }
+
+    var roles = reportSelectedRoles();
+    if (!roles.length) {
+      toast('کم از کم ایک قسم منتخب کریں (طلباء / اساتذہ / عملہ)', 'warning');
+      return Promise.resolve();
+    }
+
+    var classId = String(classEl && classEl.value || '').trim();
+    var requestId = ++_reportRequest;
+    var context = tenantContext();
+
+    if (btn) {
+      btn.disabled = true;
+      if (!btn.dataset.prevHtml) btn.dataset.prevHtml = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> لوڈ…';
+    }
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;"><i class="fas fa-spinner fa-spin"></i> رپورٹ تیار ہو رہی ہے...</td></tr>';
+    _reportRowHtmlCache = [];
+
+    var symbols = {};
+    try {
+      symbols = JSON.parse(global.localStorage.getItem('ems_att_symbols') || '{}') || { P: 'P', A: 'A', L: 'L' };
+    } catch (eSym) {
+      symbols = { P: 'P', A: 'A', L: 'L' };
+    }
+
+    var collectFn = typeof global.emsAttCollectReportSheetsAsync === 'function'
+      ? global.emsAttCollectReportSheetsAsync
+      : function () { return Promise.resolve([]); };
+
+    return resolveReportUsers(roles, classId).then(function (users) {
+      if (requestId !== _reportRequest || !tenantContextMatches(context)) return null;
+      if (!users.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;">منتخب اقسام میں کوئی فرد نہیں ملا۔</td></tr>';
+        toast('اس کرائیٹیریا پر کوئی فرد موجود نہیں', 'error');
+        return null;
+      }
+      return collectFn(fromDate, toDate).then(function (allRecords) {
+        if (requestId !== _reportRequest || !tenantContextMatches(context)) return null;
+        var rowHtmlList = [];
+        users.forEach(function (user) {
+          var row = buildReportRowFromMetrics(user, allRecords || [], fromDate, toDate, symbols);
+          if (row) rowHtmlList.push(row);
+        });
+        _reportRowHtmlCache = rowHtmlList.slice();
+
+        var titleEl = byId('att-col-rep-print-title');
+        if (titleEl) {
+          titleEl.textContent = 'اجتماعی حاضری — تفصیلی خلاصہ (' + fromDate + ' تا ' + toDate + ')';
+        }
+
+        if (!rowHtmlList.length) {
+          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;">مطلوبہ تاریخوں میں اجتماعی حاضری کا کوئی ریکارڈ نہیں۔<br><small style="color:#94a3b8;">پہلے حاضری اندراج میں حاضری محفوظ کریں۔</small></td></tr>';
+          var emptyFoot = byId('att-col-report-chunk-foot');
+          if (emptyFoot) emptyFoot.textContent = '';
+          toast('اس تاریخ کی حد میں کوئی ڈیٹا نہیں ملا', 'warning');
+          return null;
+        }
+
+        tbody.innerHTML = rowHtmlList.join('');
+        var foot = byId('att-col-report-chunk-foot');
+        if (foot) foot.textContent = 'افراد: ' + rowHtmlList.length;
+        toast('رپورٹ تیار ہو گئی (' + rowHtmlList.length + ' افراد)', 'success');
+        return rowHtmlList;
+      });
+    }).catch(function (err) {
+      console.error('[EMS] generateCollectiveReport', err);
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--danger);">رپورٹ لوڈ نہیں ہو سکی</td></tr>';
+      toast('رپورٹ تیار کرنے میں خرابی', 'error');
+    }).finally(function () {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = btn.dataset.prevHtml || '<i class="fas fa-search"></i> رپورٹ تیار کریں';
+      }
+    });
+  }
+
+  function printCollectiveReport() {
+    var cache = _reportRowHtmlCache || [];
+    var tbody = byId('att-col-report-tbody');
+    if (tbody && cache.length) tbody.innerHTML = cache.join('');
+    var area = byId('att-col-report-print-area');
+    if (!area) return;
+    if (typeof global.attPrintWithBranding === 'function') {
+      global.attPrintWithBranding(area.innerHTML, 'اجتماعی حاضری رپورٹ');
+    } else if (typeof global.print === 'function') {
+      global.print();
     }
   }
 
@@ -1073,8 +1652,51 @@
         setMode(modeButton.getAttribute('data-att-col-mode'));
         return;
       }
+      var repSub = event.target && event.target.closest ? event.target.closest('[data-att-col-rep-sub]') : null;
+      if (repSub) {
+        event.preventDefault();
+        setReportSubMode(repSub.getAttribute('data-att-col-rep-sub'));
+        return;
+      }
+      var browseToggle = event.target && event.target.closest ? event.target.closest('[data-att-col-browse-toggle]') : null;
+      if (browseToggle) {
+        event.preventDefault();
+        toggleBrowseClass(browseToggle.getAttribute('data-att-col-browse-toggle'));
+        return;
+      }
+      var browseStudent = event.target && event.target.closest ? event.target.closest('[data-att-col-browse-student]') : null;
+      if (browseStudent) {
+        event.preventDefault();
+        openBrowseStudent(
+          browseStudent.getAttribute('data-att-col-browse-class'),
+          browseStudent.getAttribute('data-att-col-browse-student')
+        );
+        return;
+      }
+      var browseRefresh = event.target && event.target.closest ? event.target.closest('#btn-att-col-browse-refresh') : null;
+      if (browseRefresh) {
+        event.preventDefault();
+        _browseStudentsByClass = Object.create(null);
+        ensureBrowseClassesLoaded();
+        Object.keys(_browseExpanded).forEach(function (cls) {
+          if (!_browseExpanded[cls]) return;
+          Promise.resolve(global.attResolveTargetUsers('students', cls)).then(function (users) {
+            _browseStudentsByClass[cls] = (users || []).slice().sort(function (a, b) {
+              return String(userName(a)).localeCompare(String(userName(b)), 'ur');
+            });
+            ensureBrowseClassesLoaded();
+          });
+        });
+        return;
+      }
+      var browsePrint = event.target && event.target.closest ? event.target.closest('#btn-att-col-browse-print') : null;
+      if (browsePrint) { event.preventDefault(); printBrowseStudentRecord(); return; }
       var open = event.target && event.target.closest ? event.target.closest('#btn-att-col-view-open') : null;
       if (open) { event.preventDefault(); loadMonthlyView(); return; }
+      var genRep = event.target && event.target.closest ? event.target.closest('#btn-att-col-generate-report') : null;
+      if (genRep) { event.preventDefault(); generateCollectiveReport(); return; }
+      var printRep = event.target && event.target.closest ? event.target.closest('#btn-att-col-print-report') : null;
+      if (printRep) { event.preventDefault(); printCollectiveReport(); return; }
       var all = event.target && event.target.closest ? event.target.closest('#btn-att-col-view-select-all') : null;
       if (all) { event.preventDefault(); selectVisible(true); return; }
       var clear = event.target && event.target.closest ? event.target.closest('#btn-att-col-view-clear') : null;
@@ -1105,6 +1727,8 @@
         refreshPicker();
       } else if (target.id === 'att-col-view-month') {
         invalidateRenderedView();
+      } else if (target.name === 'att_col_browse_cal') {
+        refreshBrowseCalendarView();
       } else if (target.hasAttribute && target.hasAttribute('data-att-col-person')) {
         syncSelectedFromDom();
         invalidateRenderedView();
@@ -1155,6 +1779,13 @@
   global.attCollectiveViewBuildPages = exportPagesHtml;
   global.attCollectiveViewRawDayStatus = rawDayStatus;
   global.attCollectiveViewFilterUsersForScope = filterUsersForScope;
+  global.attCollectiveGenerateReport = generateCollectiveReport;
+  global.attCollectivePrintReport = printCollectiveReport;
+  global.attCollectiveSetReportSubMode = setReportSubMode;
+  global.attCollectiveBrowseToggleClass = toggleBrowseClass;
+  global.attCollectiveBrowseOpenStudent = openBrowseStudent;
+  global.attCollectiveHijriPartsFromIso = hijriPartsFromIso;
+  global.attCollectiveCountMarksByBucket = countMarksByBucket;
 
   if (typeof global.emsRunWhenDomReady === 'function') {
     global.emsRunWhenDomReady(boot);

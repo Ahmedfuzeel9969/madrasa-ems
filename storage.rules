@@ -11,17 +11,78 @@ service firebase.storage {
       return isSignedIn() && request.auth.uid == tenantId;
     }
 
+    function isSharedPortalToken() {
+      return isSignedIn() && request.auth.token.get('sharedPortal', false) == true;
+    }
+
+    function sharedPortalMfaAllowed(tenantId, portal) {
+      return !firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/SecuritySettings/mfa)
+        || (portal == 'teacher'
+          && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/SecuritySettings/mfa).data.get('requireMfaForStaff', false) != true)
+        || (portal == 'parent'
+          && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/SecuritySettings/mfa).data.get('requireMfaForParent', false) != true);
+    }
+
+    function sharedPortalSessionActive(tenantId, portal) {
+      return isSharedPortalToken()
+        && request.auth.token.tenantId == tenantId
+        && request.auth.token.portalRole == portal
+        && request.auth.token.portalSessionId != null
+        && firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/SharedPortalSessions/$(request.auth.token.portalSessionId))
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/SharedPortalSessions/$(request.auth.token.portalSessionId)).data.status == 'active'
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/SharedPortalSessions/$(request.auth.token.portalSessionId)).data.syntheticUid == request.auth.uid
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/SharedPortalSessions/$(request.auth.token.portalSessionId)).data.portal == portal
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/SharedPortalSessions/$(request.auth.token.portalSessionId)).data.personId == request.auth.token.personId
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/SharedPortalSessions/$(request.auth.token.portalSessionId)).data.expiresAtTtl > request.time
+        && firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/TenantSettings/sharedPortalGateway)
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/TenantSettings/sharedPortalGateway).data.enabled == true
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/TenantSettings/sharedPortalGateway).data.revision == request.auth.token.gatewayConfigRevision
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/TenantSettings/sharedPortalGateway).data.portals[portal].enabled == true
+        && sharedPortalMfaAllowed(tenantId, portal);
+    }
+
+    function activeStaffLink(tenantId) {
+      return firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/Staff_Links/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Staff_Links/$(request.auth.uid)).data.status == 'active'
+        && (!isSharedPortalToken()
+          || (sharedPortalSessionActive(tenantId, 'teacher')
+            && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Staff_Links/$(request.auth.uid)).data.staffId == request.auth.token.personId
+            && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Staff_Links/$(request.auth.uid)).data.sessionId == request.auth.token.portalSessionId));
+    }
+
     function isTenantStaff(tenantId) {
       return isSignedIn() && (
         request.auth.uid == tenantId ||
-        firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/Staff_Links/$(request.auth.uid))
+        activeStaffLink(tenantId)
+      );
+    }
+
+    function sharedStaffHasAction(tenantId, moduleId, actionId) {
+      return sharedPortalSessionActive(tenantId, 'teacher')
+        && firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/StaffPermissions/$(request.auth.token.personId))
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/StaffPermissions/$(request.auth.token.personId)).data.status == 'active'
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/StaffPermissions/$(request.auth.token.personId)).data.modules[moduleId] == true
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/StaffPermissions/$(request.auth.token.personId)).data.actions[moduleId][actionId] == true;
+    }
+
+    function isTenantStaffForAction(tenantId, moduleId, actionId) {
+      return isSignedIn() && (
+        request.auth.uid == tenantId
+        || (!isSharedPortalToken() && activeStaffLink(tenantId))
+        || (isSharedPortalToken()
+          && activeStaffLink(tenantId)
+          && sharedStaffHasAction(tenantId, moduleId, actionId))
       );
     }
 
     function isActiveParentOf(tenantId) {
       return isSignedIn()
         && firestore.exists(/databases/(default)/documents/All_Madrasas/$(tenantId)/Parent_Links/$(request.auth.uid))
-        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Parent_Links/$(request.auth.uid)).data.status == 'active';
+        && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Parent_Links/$(request.auth.uid)).data.status == 'active'
+        && (!isSharedPortalToken()
+          || (sharedPortalSessionActive(tenantId, 'parent')
+            && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Parent_Links/$(request.auth.uid)).data.personId == request.auth.token.personId
+            && firestore.get(/databases/(default)/documents/All_Madrasas/$(tenantId)/Parent_Links/$(request.auth.uid)).data.sessionId == request.auth.token.portalSessionId));
     }
 
     function parentLinkStudentIds(tenantId) {
@@ -42,9 +103,12 @@ service firebase.storage {
 
     // Registration photos — tenant staff/owner, or linked parent for that student only
     match /registrations/{tenantId}/{userType}/{fileName} {
-      allow read: if isTenantStaff(tenantId)
+      allow read: if isTenantStaffForAction(tenantId, 'admission', 'view')
         || parentCanReadRegistrationFile(tenantId, fileName);
-      allow write: if isTenantStaff(tenantId)
+      allow create: if isTenantStaffForAction(tenantId, 'admission', 'create')
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow update: if isTenantStaffForAction(tenantId, 'admission', 'edit')
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
       allow delete: if isTenantOwner(tenantId);
@@ -52,8 +116,10 @@ service firebase.storage {
 
     // Ledger attachments — tenant staff/owner only (no cross-tenant signed-in read)
     match /ledger/{tenantId}/{entryId}/{fileName} {
-      allow read: if isTenantStaff(tenantId);
-      allow write: if isTenantStaff(tenantId)
+      allow read: if isTenantStaffForAction(tenantId, 'ledger', 'view');
+      allow create: if isTenantStaffForAction(tenantId, 'ledger', 'create')
+        && request.resource.size < 10 * 1024 * 1024;
+      allow update: if isTenantStaffForAction(tenantId, 'ledger', 'edit')
         && request.resource.size < 10 * 1024 * 1024;
       allow delete: if isTenantOwner(tenantId);
     }

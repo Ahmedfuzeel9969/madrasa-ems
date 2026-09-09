@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260909_att_evt_sheet_flow_v1">
+    <link rel="stylesheet" href="style.css?v=20260909_att_evt_browse_v1">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -1246,7 +1246,7 @@
                     <button class="reg-tab active-sub-tab" onclick="switchAttTab('att-dashboard-panel', this)"><i class="fas fa-chart-line"></i> ڈیش بورڈ</button>
                     <button class="reg-tab" onclick="switchAttTab('att-smart-register', this)"><i class="fas fa-list-alt"></i> اسمارٹ رجسٹر</button>
                     <button class="reg-tab" onclick="switchAttTab('att-collective-register', this)"><i class="fas fa-users"></i> اجتماعی حاضری</button>
-                    <button class="reg-tab" onclick="switchAttTab('att-event-register', this)"><i class="fas fa-star"></i> تقریبات</button>
+                    <button class="reg-tab" onclick="switchAttTab('att-event-register', this)"><i class="fas fa-book-open"></i> حاضری مطالعہ</button>
                     <button class="reg-tab" onclick="switchAttTab('att-timetable', this)"><i class="fas fa-table"></i> نظام الاوقات</button>
                     <button class="reg-tab" onclick="switchAttTab('att-holiday-management', this)"><i class="fas fa-umbrella-beach"></i> تعطیلات</button>
                     <button class="reg-tab" onclick="switchAttTab('att-reports-panel', this)"><i class="fas fa-chart-pie"></i> رپورٹس</button>
@@ -1449,7 +1449,7 @@
                             </div>
                             <div id="att-dash-alerts-list" class="att-dash-alerts"></div>
                             <div class="att-dash-quick-links">
-                                <button class="btn btn-outline btn-sm" onclick="switchAttTab('att-event-register', document.querySelector('#att-ribbon-menu [onclick*=att-event-register]'))"><i class="fas fa-star"></i> تقریبات</button>
+                                <button class="btn btn-outline btn-sm" onclick="switchAttTab('att-event-register', document.querySelector('#att-ribbon-menu [onclick*=att-event-register]'))"><i class="fas fa-book-open"></i> حاضری مطالعہ</button>
                                 <button class="btn btn-outline btn-sm" onclick="switchAttTab('att-smart-register', document.querySelector('#att-ribbon-menu [onclick*=att-smart-register]'))"><i class="fas fa-list-alt"></i> رجسٹر</button>
                             </div>
                         </div>
@@ -1555,6 +1555,7 @@
                     <div class="att-col-mode-switch" role="tablist" aria-label="اجتماعی حاضری موڈ">
                         <button type="button" class="btn btn-primary active" id="btn-att-col-mode-entry" data-att-col-mode="entry" role="tab" aria-selected="true"><i class="fas fa-edit"></i> حاضری اندراج</button>
                         <button type="button" class="btn btn-outline" id="btn-att-col-mode-view" data-att-col-mode="view" role="tab" aria-selected="false"><i class="fas fa-calendar-alt"></i> ماہانہ حاضری دیکھیں</button>
+                        <button type="button" class="btn btn-outline" id="btn-att-col-mode-reports" data-att-col-mode="reports" role="tab" aria-selected="false"><i class="fas fa-chart-pie"></i> رپورٹس</button>
                     </div>
 
                     <div id="att-col-entry-mode">
@@ -1705,16 +1706,115 @@
                             <p class="att-col-placeholder">مہینہ اور مطلوبہ افراد منتخب کر کے «ماہانہ حاضری دکھائیں» دبائیں۔</p>
                         </div>
                     </div>
+
+                    <div id="att-col-reports-mode" class="att-col-hidden" aria-live="polite">
+                        <div class="att-col-view-note"><i class="fas fa-chart-pie"></i> یہ رپورٹ اسی مرکزی ریکارڈ سے بنتی ہے جس میں اجتماعی حاضری محفوظ ہوتی ہے (اسمارٹ رجسٹر کے ساتھ مشترکہ ڈیٹا)۔</div>
+
+                        <div class="att-col-rep-subswitch" role="tablist" aria-label="رپورٹ موڈ">
+                            <button type="button" class="btn btn-primary btn-sm active" id="btn-att-col-rep-sub-summary" data-att-col-rep-sub="summary" role="tab" aria-selected="true"><i class="fas fa-table"></i> خلاصہ رپورٹ</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="btn-att-col-rep-sub-browse" data-att-col-rep-sub="browse" role="tab" aria-selected="false"><i class="fas fa-sitemap"></i> درجہ وار ریکارڈ</button>
+                        </div>
+
+                        <div id="att-col-rep-summary-pane">
+                        <div class="form-grid" style="background:#f8fafc;padding:15px;border-radius:6px;border:1px solid #cbd5e1;margin-bottom:16px;">
+                            <div class="input-group">
+                                <label>ابتدائی تاریخ (From)</label>
+                                <input type="date" id="att-col-rep-from" class="input-control">
+                            </div>
+                            <div class="input-group">
+                                <label>آخری تاریخ (To)</label>
+                                <input type="date" id="att-col-rep-to" class="input-control">
+                            </div>
+                            <div class="input-group att-col-view-role-group">
+                                <label>کس کی رپورٹ؟</label>
+                                <div class="att-col-view-checks">
+                                    <label class="checkbox-label"><input type="checkbox" name="att_col_rep_role" value="students" checked> طلباء</label>
+                                    <label class="checkbox-label"><input type="checkbox" name="att_col_rep_role" value="teachers"> اساتذہ</label>
+                                    <label class="checkbox-label"><input type="checkbox" name="att_col_rep_role" value="staff"> عملہ</label>
+                                </div>
+                            </div>
+                            <div class="input-group">
+                                <label>درجہ (اختیاری — طلباء)</label>
+                                <select id="att-col-rep-class" class="input-control">
+                                    <option value="">تمام درجات</option>
+                                </select>
+                            </div>
+                            <div class="input-group form-grid-full" style="align-items:flex-end;">
+                                <button type="button" class="btn btn-primary" id="btn-att-col-generate-report"><i class="fas fa-search"></i> رپورٹ تیار کریں</button>
+                            </div>
+                        </div>
+                        <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+                            <button type="button" class="btn btn-outline" id="btn-att-col-print-report"><i class="fas fa-print"></i> پرنٹ رپورٹ</button>
+                        </div>
+                        <div id="att-col-report-print-area" style="background:#fff;padding:20px;border:1px solid #ccc;">
+                            <h2 style="text-align:center;margin-bottom:15px;font-family:'Noto Nastaliq Urdu',serif;" id="att-col-rep-print-title">اجتماعی حاضری — تفصیلی خلاصہ</h2>
+                            <div id="att-col-report-scroll-wrap" style="max-height:55vh;overflow:auto;">
+                                <table class="data-table" id="att-col-report-table" style="margin:0;">
+                                    <thead style="background:var(--secondary);color:white;">
+                                        <tr>
+                                            <th>نام و ID</th>
+                                            <th>درجہ/عہدہ</th>
+                                            <th>کل گھنٹے</th>
+                                            <th>حاضر</th>
+                                            <th>غیر حاضر</th>
+                                            <th>رخصت</th>
+                                            <th>فیصد (%)</th>
+                                            <th style="width:18%;">کیفیت</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="att-col-report-tbody">
+                                        <tr><td colspan="8" style="text-align:center;">اوپر سے تاریخ اور اقسام منتخب کر کے رپورٹ تیار کریں</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div id="att-col-report-chunk-foot" style="font-size:12px;color:#94a3b8;text-align:center;padding:8px 4px;"></div>
+                        </div>
+                        </div>
+
+                        <div id="att-col-rep-browse-pane" class="att-col-hidden">
+                            <div class="att-col-browse-layout">
+                                <aside class="att-col-browse-sidebar" aria-label="درجات اور طلباء">
+                                    <div class="att-col-browse-side-head">
+                                        <strong><i class="fas fa-layer-group"></i> تمام درجات</strong>
+                                        <button type="button" class="btn btn-outline btn-sm" id="btn-att-col-browse-refresh" title="درجات دوبارہ لوڈ"><i class="fas fa-sync-alt"></i></button>
+                                    </div>
+                                    <div id="att-col-browse-class-list" class="att-col-browse-class-list">
+                                        <p class="att-col-placeholder">درجات لوڈ ہو رہے ہیں…</p>
+                                    </div>
+                                </aside>
+                                <section class="att-col-browse-detail" aria-live="polite">
+                                    <div class="att-col-browse-detail-toolbar">
+                                        <div id="att-col-browse-student-meta" class="att-col-browse-student-meta">
+                                            <span class="att-col-placeholder">بائیں/دائیں سے درجہ کھولیں، پھر طالب علم منتخب کریں</span>
+                                        </div>
+                                        <div class="att-col-browse-cal-switch" role="group" aria-label="کیلنڈر">
+                                            <span class="att-col-browse-cal-label">ڈیٹا چیک:</span>
+                                            <label class="checkbox-label"><input type="radio" name="att_col_browse_cal" value="solar" checked> شمسی</label>
+                                            <label class="checkbox-label"><input type="radio" name="att_col_browse_cal" value="lunar"> قمری</label>
+                                        </div>
+                                        <button type="button" class="btn btn-outline btn-sm" id="btn-att-col-browse-print" disabled><i class="fas fa-print"></i> پرنٹ</button>
+                                    </div>
+                                    <div id="att-col-browse-record-wrap" class="att-col-browse-record-wrap">
+                                        <p class="att-col-placeholder">طالب علم پر کلک کریں — ہر مہینہ ایک لائن میں، سال+مہینہ کے ساتھ (شمسی و قمری)۔</p>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         
             <div id="att-event-register" class="att-panel" style="display:none;">
                 <div class="premium-card">
                     <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
-                        <h3 style="margin:0;"><i class="fas fa-star"></i> تقریباتی حاضری شیٹس</h3>
-                        <button type="button" class="btn btn-primary" id="btn-create-event"><i class="fas fa-plus"></i> نئی شیٹ بنائیں</button>
+                        <h3 style="margin:0;"><i class="fas fa-book-open"></i> حاضری مطالعہ — شیٹس</h3>
+                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                            <button type="button" class="btn btn-outline" id="btn-evt-open-reports" onclick="window.evtOpenReports()"><i class="fas fa-chart-pie"></i> رپورٹس</button>
+                            <button type="button" class="btn btn-outline" id="btn-evt-open-month-view" onclick="window.evtOpenMonthView()"><i class="fas fa-calendar-alt"></i> ماہانہ رجسٹر (صرف دیکھیں)</button>
+                            <button type="button" class="btn btn-primary" id="btn-create-event"><i class="fas fa-plus"></i> نئی شیٹ بنائیں</button>
+                        </div>
                     </div>
-                    <p style="color:#64748b;font-size:13px;margin:0 0 14px;">پہلے شیٹ بنائیں (شرکاء منتخب کریں)، پھر شیٹ پر کلک کر کے فوراً حاضری لگائیں۔</p>
+                    <p style="color:#64748b;font-size:13px;margin:0 0 14px;">ایک شیٹ = نام + شرکاء۔ حاضری الگ الگ تاریخوں پر لی جاسکتی ہے۔ ماہانہ رجسٹر اور رپورٹس شیٹ کے ڈیٹا سے بنتی ہیں (صرف دیکھیں)۔</p>
 
                     <!-- 1) شیٹس کی فہرست -->
                     <div id="evt-sheets-home">
@@ -1723,18 +1823,141 @@
                         <table class="data-table" id="evt-saved-table" style="margin:0;">
                             <thead>
                                 <tr>
-                                    <th>شیٹ / تقریب</th>
-                                    <th style="width:120px;">نوعیت</th>
-                                    <th style="width:110px;">تاریخ</th>
-                                    <th style="width:80px;">شرکاء</th>
-                                    <th style="width:140px;">حاضر/غیرحاضر/رخصت</th>
-                                    <th style="width:160px;">کارروائی</th>
+                                    <th>شیٹ / مطالعہ</th>
+                                    <th style="width:110px;">نوعیت</th>
+                                    <th style="width:70px;">شرکاء</th>
+                                    <th style="width:80px;">سیشنز</th>
+                                    <th style="width:110px;">آخری تاریخ</th>
+                                    <th style="width:170px;">کارروائی</th>
                                 </tr>
                             </thead>
                             <tbody id="evt-saved-tbody"><tr><td colspan="6" style="text-align:center;">ابھی کوئی شیٹ نہیں — «نئی شیٹ بنائیں» دبائیں</td></tr></tbody>
                         </table>
                         </div>
                         <div id="evt-saved-chunk-foot" style="font-size:12px;color:#94a3b8;text-align:center;padding:8px 4px;"></div>
+                    </div>
+
+                    <!-- 1b) ماہانہ ویو رجسٹر — صرف پڑھنے والا -->
+                    <div id="evt-month-view" style="display:none;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                            <h4 style="margin:0;color:var(--primary);"><i class="fas fa-table"></i> ماہانہ رجسٹر (صرف دیکھیں — ترمیم نہیں)</h4>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="window.evtBackToSheetsList()"><i class="fas fa-arrow-right"></i> شیٹس فہرست</button>
+                        </div>
+                        <div class="form-grid" style="background:#f8fafc;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #e2e8f0;">
+                            <div class="input-group">
+                                <label>مہینہ</label>
+                                <input type="month" id="evt-view-month" class="input-control">
+                            </div>
+                            <div class="input-group form-grid-full">
+                                <label>شیٹس (سب یا بعض — Ctrl/Cmd سے کئی)</label>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+                                    <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap;">
+                                        <input type="checkbox" id="evt-view-all-sheets" checked onchange="window.evtToggleViewAllSheets(this.checked)"> تمام شیٹس
+                                    </label>
+                                    <select id="evt-view-sheets" class="input-control" multiple size="5" style="min-width:260px;min-height:110px;flex:1;"></select>
+                                    <button type="button" class="btn btn-primary" id="btn-evt-view-load" onclick="window.evtLoadMonthRegister()"><i class="fas fa-eye"></i> رجسٹر دکھائیں</button>
+                                </div>
+                            </div>
+                        </div>
+                        <p id="evt-view-summary" style="font-size:12px; color:#7f8c8d;">مہینہ اور شیٹس منتخب کر کے «رجسٹر دکھائیں» دبائیں</p>
+                        <div id="evt-view-table-wrap" style="max-height:58vh;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;background:#fff;">
+                            <p style="text-align:center;color:#94a3b8;padding:24px;">مہینہ اور شیٹس منتخب کر کے «رجسٹر دکھائیں» دبائیں</p>
+                        </div>
+                    </div>
+
+                    <!-- 1c) رپورٹس — خلاصہ + درجہ وار ریکارڈ؛ ڈیٹا شیٹ سیشنز سے -->
+                    <div id="evt-reports-view" style="display:none;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                            <h4 style="margin:0;color:var(--primary);"><i class="fas fa-chart-pie"></i> حاضری مطالعہ — رپورٹس</h4>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="window.evtBackToSheetsList()"><i class="fas fa-arrow-right"></i> شیٹس فہرست</button>
+                        </div>
+                        <p style="font-size:13px;color:#64748b;margin:0 0 12px;">ڈیٹا محفوظ شدہ مطالعہ شیٹس کی حاضری سے آتا ہے — خلاصہ یا درجہ وار ریکارڈ (اجتماعی حاضری جیسا)۔</p>
+
+                        <div class="att-col-rep-subswitch" role="tablist" aria-label="مطالعہ رپورٹ موڈ">
+                            <button type="button" class="btn btn-primary btn-sm active" id="btn-evt-rep-sub-summary" data-evt-rep-sub="summary" role="tab" aria-selected="true" onclick="window.evtSetReportSubMode('summary')"><i class="fas fa-table"></i> خلاصہ رپورٹ</button>
+                            <button type="button" class="btn btn-outline btn-sm" id="btn-evt-rep-sub-browse" data-evt-rep-sub="browse" role="tab" aria-selected="false" onclick="window.evtSetReportSubMode('browse')"><i class="fas fa-sitemap"></i> درجہ وار ریکارڈ</button>
+                        </div>
+
+                        <div id="evt-rep-summary-pane">
+                        <div class="form-grid" style="background:#f8fafc;padding:15px;border-radius:6px;border:1px solid #cbd5e1;margin-bottom:16px;">
+                            <div class="input-group">
+                                <label>ابتدائی تاریخ (From)</label>
+                                <input type="date" id="evt-rep-from" class="input-control">
+                            </div>
+                            <div class="input-group">
+                                <label>آخری تاریخ (To)</label>
+                                <input type="date" id="evt-rep-to" class="input-control">
+                            </div>
+                            <div class="input-group form-grid-full">
+                                <label>شیٹس (سب یا بعض)</label>
+                                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;">
+                                    <label style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;white-space:nowrap;">
+                                        <input type="checkbox" id="evt-rep-all-sheets" checked onchange="window.evtToggleRepAllSheets(this.checked)"> تمام شیٹس
+                                    </label>
+                                    <select id="evt-rep-sheets" class="input-control" multiple size="4" style="min-width:240px;min-height:96px;flex:1;"></select>
+                                </div>
+                            </div>
+                            <div class="input-group form-grid-full" style="align-items:flex-end;">
+                                <button type="button" class="btn btn-primary" id="btn-evt-generate-report" onclick="window.evtGenerateReport()"><i class="fas fa-search"></i> رپورٹ تیار کریں</button>
+                            </div>
+                        </div>
+                        <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+                            <button type="button" class="btn btn-outline" onclick="window.evtPrintReport()"><i class="fas fa-print"></i> پرنٹ رپورٹ</button>
+                        </div>
+                        <div id="evt-report-print-area" style="background:#fff;padding:20px;border:1px solid #ccc;">
+                            <h2 style="text-align:center;margin-bottom:15px;font-family:'Noto Nastaliq Urdu',serif;" id="evt-rep-print-title">حاضری مطالعہ — تفصیلی خلاصہ</h2>
+                            <div id="evt-report-scroll-wrap" style="max-height:55vh;overflow:auto;">
+                                <table class="data-table" id="evt-report-table" style="margin:0;">
+                                    <thead style="background:var(--secondary);color:white;">
+                                        <tr>
+                                            <th>نام و ID</th>
+                                            <th>درجہ/عہدہ</th>
+                                            <th>کل سیشن</th>
+                                            <th>حاضر</th>
+                                            <th>غیر حاضر</th>
+                                            <th>رخصت</th>
+                                            <th>فیصد (%)</th>
+                                            <th style="width:18%;">کیفیت</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="evt-report-tbody">
+                                        <tr><td colspan="8" style="text-align:center;">اوپر سے تاریخ اور شیٹس منتخب کر کے رپورٹ تیار کریں</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div id="evt-report-chunk-foot" style="font-size:12px;color:#94a3b8;text-align:center;padding:8px 4px;"></div>
+                        </div>
+                        </div>
+
+                        <div id="evt-rep-browse-pane" class="att-col-hidden">
+                            <div class="att-col-browse-layout">
+                                <aside class="att-col-browse-sidebar" aria-label="درجات اور طلباء">
+                                    <div class="att-col-browse-side-head">
+                                        <strong><i class="fas fa-layer-group"></i> تمام درجات</strong>
+                                        <button type="button" class="btn btn-outline btn-sm" id="btn-evt-browse-refresh" onclick="window.evtBrowseRefresh()" title="درجات دوبارہ لوڈ"><i class="fas fa-sync-alt"></i></button>
+                                    </div>
+                                    <div id="evt-browse-class-list" class="att-col-browse-class-list">
+                                        <p class="att-col-placeholder">درجات لوڈ ہو رہے ہیں…</p>
+                                    </div>
+                                </aside>
+                                <section class="att-col-browse-detail" aria-live="polite">
+                                    <div class="att-col-browse-detail-toolbar">
+                                        <div id="evt-browse-student-meta" class="att-col-browse-student-meta">
+                                            <span class="att-col-placeholder">درجہ کھولیں، پھر طالب علم منتخب کریں — ڈیٹا مطالعہ شیٹس سے</span>
+                                        </div>
+                                        <div class="att-col-browse-cal-switch" role="group" aria-label="کیلنڈر">
+                                            <span class="att-col-browse-cal-label">ڈیٹا چیک:</span>
+                                            <label class="checkbox-label"><input type="radio" name="evt_browse_cal" value="solar" checked onchange="window.evtBrowseRefreshCalendar()"> شمسی</label>
+                                            <label class="checkbox-label"><input type="radio" name="evt_browse_cal" value="lunar" onchange="window.evtBrowseRefreshCalendar()"> قمری</label>
+                                        </div>
+                                        <button type="button" class="btn btn-outline btn-sm" id="btn-evt-browse-print" disabled onclick="window.evtBrowsePrint()"><i class="fas fa-print"></i> پرنٹ</button>
+                                    </div>
+                                    <div id="evt-browse-record-wrap" class="att-col-browse-record-wrap">
+                                        <p class="att-col-placeholder">طالب علم پر کلک کریں — ہر مہینہ ایک لائن میں، سال+مہینہ کے ساتھ (شمسی و قمری)۔</p>
+                                    </div>
+                                </section>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- 2) شیٹ بنانے / ترمیم کا پینل (تمام انتخاب سہولیات) -->
@@ -1745,28 +1968,26 @@
                         </div>
                         <div class="form-grid" style="background:#eef2f6;padding:15px;border-radius:6px;margin-bottom:14px;">
                             <div class="input-group">
-                                <label>شیٹ / تقریب کا نام</label>
-                                <input type="text" id="evt-name" class="input-control" placeholder="مثلاً: سالانہ جلسہ، تربیتی ورکشاپ">
+                                <label>شیٹ / مطالعہ کا نام</label>
+                                <input type="text" id="evt-name" class="input-control" placeholder="مثلاً: صبح مطالعہ، رات کا مطالعہ، مطالعاتی نشست">
                             </div>
                             <div class="input-group">
                                 <label>نوعیت (Type)</label>
                                 <select id="evt-type" class="input-control">
+                                    <option value="حاضری مطالعہ">حاضری مطالعہ</option>
+                                    <option value="مطالعاتی نشست">مطالعاتی نشست</option>
                                     <option value="اجلاس">اجلاس / میٹنگ</option>
                                     <option value="امتحان">امتحانی ڈیوٹی</option>
                                     <option value="پروگرام">عمومی پروگرام</option>
                                     <option value="رات کا قیام">رات کا قیام</option>
-                                    <option value="مطالعاتی نشست">مطالعاتی نشست</option>
                                     <option value="خصوصی اجتماع">خصوصی اجتماع</option>
                                     <option value="تربیتی نشست">تربیتی نشست</option>
                                     <option value="سالانہ پروگرام">سالانہ پروگرام</option>
                                 </select>
                             </div>
                             <div class="input-group">
-                                <label>تاریخ اور وقت</label>
-                                <div style="display:flex; gap:5px;">
-                                    <input type="date" id="evt-date" class="input-control" style="flex:1;">
-                                    <input type="time" id="evt-time" class="input-control" style="flex:1;">
-                                </div>
+                                <label style="color:#64748b;">نوٹ</label>
+                                <p style="margin:0;font-size:12px;color:#64748b;">تاریخ حاضری لیتے وقت منتخب ہوگی — ایک شیٹ پر کئی تاریخوں کی حاضری ممکن ہے۔</p>
                             </div>
                         </div>
 
@@ -1840,6 +2061,16 @@
                             <div style="display:flex;gap:6px;flex-wrap:wrap;">
                                 <button type="button" class="btn btn-outline btn-sm" onclick="window.editEventRosterFromMarking()"><i class="fas fa-users-cog"></i> شرکاء ترمیم</button>
                                 <button type="button" class="btn btn-outline btn-sm" onclick="window.evtBackToSheetsList()"><i class="fas fa-arrow-right"></i> فہرست</button>
+                            </div>
+                        </div>
+                        <div class="form-grid" style="background:#ecfdf5;padding:12px;border-radius:6px;margin-bottom:12px;border:1px solid #a7f3d0;">
+                            <div class="input-group">
+                                <label>حاضری کی تاریخ (تبدیل کر کے اسی شیٹ پر نئی/پرانی تاریخ)</label>
+                                <input type="date" id="evt-mark-date" class="input-control" onchange="window.evtOnMarkDateChange()">
+                            </div>
+                            <div class="input-group">
+                                <label>وقت (اختیاری)</label>
+                                <input type="time" id="evt-mark-time" class="input-control">
                             </div>
                         </div>
                         <div class="evt-status-bar">
@@ -2058,7 +2289,7 @@
         
                     <div class="premium-card" style="border-top: 4px solid var(--danger);">
                         <h3 style="margin-top:0; color:var(--danger);"><i class="fas fa-trash-restore"></i> ریسائیکل بن (حذف شدہ ریکارڈ)</h3>
-                        <p style="font-size:12px; color:#7f8c8d;">یہاں سے آپ غلطی سے حذف ہونے والے ریکارڈ (تعطیلات، تقریبات، یا کسٹم سیٹنگز) بحال کر سکتے ہیں۔</p>
+                        <p style="font-size:12px; color:#7f8c8d;">یہاں سے آپ غلطی سے حذف ہونے والے ریکارڈ (تعطیلات، حاضری مطالعہ، یا کسٹم سیٹنگز) بحال کر سکتے ہیں۔</p>
                         <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
                             <table class="data-table" id="att-recycle-table">
                                 <thead style="position: sticky; top: 0;"><tr><th>حذف کی تاریخ</th><th>قسم</th><th>ریکارڈ کی تفصیل</th><th style="width: 80px;">ایکشن</th></tr></thead>
@@ -5008,11 +5239,14 @@
                                     <select id="sys-layout-module-select" class="input-control">
                                         <option value="admission">رجسٹریشن</option>
                                         <option value="attendance">حاضری</option>
+                                        <option value="curriculum">نصاب</option>
+                                        <option value="training">تربیت و نظم</option>
+                                        <option value="complaints">شکایات</option>
+                                        <option value="exams">امتحانات</option>
                                         <option value="finance">فیس</option>
                                         <option value="ledger">مالیات</option>
-                                        <option value="exams">امتحانات</option>
-                                        <option value="complaints">شکایات</option>
                                         <option value="announcements">اعلانات</option>
+                                        <option value="admin-panel">ادارہ ایڈمن پینل</option>
                                         <option value="sys-settings">سیٹنگز</option>
                                     </select>
                                 </div>
@@ -5532,25 +5766,22 @@
 <!-- ادارہ ایڈمن پینل (Madrasa Admin Control — Stage 1)            -->
 <!-- ============================================================= -->
 <div id="module-admin-panel" class="module-view" style="display: none;">
-    <div class="premium-card ap-header-card">
-        <div class="form-grid">
-            <div class="input-group form-grid-full">
-                <label class="ap-header-label"><i class="fas fa-users-cog"></i> ادارہ ایڈمن کنٹرول پینل (مہتمم / ذمہ دار)</label>
-                <select id="main-ap-dropdown" class="input-control ap-nav-select">
-                    <option value="ap-win-staff">1. عملہ مینجمنٹ و تفصیلی اجازت</option>
-                    <option value="ap-win-templates">2. تیار شدہ اجازت ٹیمپلیٹس</option>
-                    <option value="ap-win-history">3. اجازت ہسٹری (تمام تبدیلیاں)</option>
-                    <option value="ap-win-parents">4. والدین رسائی کنٹرول</option>
-                    <option value="ap-win-comm">5. والدین پیغام رسانی مرکز</option>
-                    <option value="ap-win-backup">6. بیک اپ، بحالی و سنک</option>
-                </select>
-                <div id="ap-outbox-pending-strip" role="status" aria-live="polite" style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:8px 12px;margin-top:10px;display:none;"></div>
-            </div>
+    <div class="reg-topbar ap-header-card">
+        <div class="reg-topbar-title"><i class="fas fa-users-cog"></i> ادارہ ایڈمن کنٹرول پینل</div>
+        <div class="reg-tabs" id="ap-ribbon-menu" role="tablist" aria-label="ادارہ ایڈمن پینل کے ذیلی شعبے">
+            <button type="button" id="ap-tab-staff" class="reg-tab active-sub-tab" role="tab" aria-selected="true" aria-controls="ap-win-staff" tabindex="0" data-ap-panel="ap-win-staff" onclick="window.apSwitchTab('ap-win-staff', this)"><i class="fas fa-users-cog"></i> عملہ و اجازت</button>
+            <button type="button" id="ap-tab-templates" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-templates" tabindex="-1" data-ap-panel="ap-win-templates" onclick="window.apSwitchTab('ap-win-templates', this)"><i class="fas fa-layer-group"></i> ٹیمپلیٹس</button>
+            <button type="button" id="ap-tab-history" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-history" tabindex="-1" data-ap-panel="ap-win-history" onclick="window.apSwitchTab('ap-win-history', this)"><i class="fas fa-history"></i> اجازت ہسٹری</button>
+            <button type="button" id="ap-tab-parents" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-parents" tabindex="-1" data-ap-panel="ap-win-parents" onclick="window.apSwitchTab('ap-win-parents', this)"><i class="fas fa-user-friends"></i> والدین رسائی</button>
+            <button type="button" id="ap-tab-shared-portal" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-shared-portal" tabindex="-1" data-ap-panel="ap-win-shared-portal" onclick="window.apSwitchTab('ap-win-shared-portal', this)"><i class="fas fa-door-open"></i> مشترک پورٹل داخلہ</button>
+            <button type="button" id="ap-tab-comm" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-comm" tabindex="-1" data-ap-panel="ap-win-comm" onclick="window.apSwitchTab('ap-win-comm', this)"><i class="fas fa-comments"></i> پیغام رسانی</button>
+            <button type="button" id="ap-tab-backup" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-backup" tabindex="-1" data-ap-panel="ap-win-backup" onclick="window.apSwitchTab('ap-win-backup', this)"><i class="fas fa-database"></i> بیک اپ و حفاظت</button>
         </div>
     </div>
+    <div id="ap-outbox-pending-strip" role="status" aria-live="polite" style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:8px 12px;margin:10px 0;display:none;"></div>
 
     <!-- ===== عملہ مینجمنٹ ===== -->
-    <div id="ap-win-staff" class="premium-card ap-tab-content">
+    <div id="ap-win-staff" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-staff">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
             <h2 style="margin:0; border:none; padding:0;"><i class="fas fa-chalkboard-teacher"></i> عملہ کی فہرست و شعبہ جات</h2>
             <div class="btn-action-group" style="margin:0;">
@@ -5599,14 +5830,14 @@
         </div>
 
     <!-- ===== ٹیمپلیٹس ===== -->
-    <div id="ap-win-templates" class="premium-card ap-tab-content" style="display:none;">
+    <div id="ap-win-templates" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-templates" style="display:none;">
         <h2><i class="fas fa-layer-group"></i> تیار شدہ اجازت ٹیمپلیٹس</h2>
         <p style="color:#7f8c8d; font-size:13px;">ہر ٹیمپلیٹ منتخب عہدے کے لیے پہلے سے طے شدہ شعبے اور اعمال رکھتا ہے۔ عملہ کی تفصیل میں ٹیمپلیٹ منتخب کرتے ہی اجازتیں خودکار طور پر تفویض ہو جاتی ہیں، جنہیں بعد میں تبدیل کیا جا سکتا ہے۔</p>
         <div class="dashboard-grid" id="ap-templates-grid"></div>
     </div>
 
     <!-- ===== اجازت ہسٹری ===== -->
-    <div id="ap-win-history" class="premium-card ap-tab-content" style="display:none;">
+    <div id="ap-win-history" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-history" style="display:none;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
             <h2 style="margin:0; border:none; padding:0;"><i class="fas fa-history"></i> اجازت ہسٹری (تمام عملہ)</h2>
             <button type="button" class="btn btn-outline" onclick="window.apRenderHistory()"><i class="fas fa-sync-alt"></i> ریفریش</button>
@@ -5621,7 +5852,7 @@
 </div>
 
     <!-- ===== والدین رسائی کنٹرول ===== -->
-    <div id="ap-win-parents" class="premium-card ap-tab-content" style="display:none;">
+    <div id="ap-win-parents" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-parents" style="display:none;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
             <h2 style="margin:0; border:none; padding:0;"><i class="fas fa-user-friends"></i> والدین رسائی کنٹرول</h2>
             <button type="button" class="btn btn-outline" onclick="window.apRenderParentsTable()"><i class="fas fa-sync-alt"></i> ریفریش</button>
@@ -5644,8 +5875,15 @@
         </div>
     </div>
 
+    <!-- ===== مشترک پورٹل داخلہ ===== -->
+    <div id="ap-win-shared-portal" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-shared-portal" style="display:none;">
+        <h2><i class="fas fa-door-open"></i> مشترک پورٹل داخلہ</h2>
+        <p style="color:#64748b;font-size:13px;line-height:1.9;">ادارہ چاہے تو ہر فرد کا الگ گوگل کھاتہ برقرار رکھے، تینوں پورٹل کے لیے ایک مشترک کھاتہ مقرر کرے، یا اساتذہ، طلبہ اور والدین کے لیے الگ الگ مشترک کھاتے رکھے۔ مشترک کھاتہ صرف داخلے کا دروازہ ہے؛ ہر فرد کی ذاتی شناخت اور رسائی کلید پھر بھی لازم ہے۔</p>
+        <div id="ap-shared-portal-config"></div>
+    </div>
+
     <!-- ===== والدین پیغام رسانی مرکز ===== -->
-    <div id="ap-win-comm" class="premium-card ap-tab-content" style="display:none;">
+    <div id="ap-win-comm" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-comm" style="display:none;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
             <h2 style="margin:0; border:none; padding:0;"><i class="fas fa-comments"></i> والدین پیغام رسانی مرکز <span class="ap-badge ap-badge-temp" id="ap-comm-unread-badge"></span></h2>
             <div class="btn-action-group" style="margin:0;">
@@ -5667,7 +5905,7 @@
     </div>
 
     <!-- ===== بیک اپ و بحالی ===== -->
-    <div id="ap-win-backup" class="premium-card ap-tab-content" style="display:none;">
+    <div id="ap-win-backup" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-backup" style="display:none;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
             <h2 style="margin:0; border:none; padding:0;"><i class="fas fa-database"></i> بیک اپ، بحالی و سنک</h2>
             <div class="btn-action-group" style="margin:0;">
@@ -6806,7 +7044,7 @@
     <script defer src="ems-query-utils.js?v=20260704attfix1"></script>
     <script defer src="ems-repository.js?v=20260703repo1"></script>
     <script defer src="ems-online-mode.js?v=20260708_search_index_v3"></script>
-    <script defer src="cloud/ems-cloud-manifest.js?v=20260909_att_evt_sheet_flow_v1"></script>
+    <script defer src="cloud/ems-cloud-manifest.js?v=20260909_att_evt_browse_v1"></script>
     <script defer src="cloud/ems-cloud-loader.js?v=20260708_search_index_v3"></script>
     <script defer src="ems-deferred-libs.js?v=20260809_pdf1"></script>
     <script defer src="ems-utils.js?v=20260809_att_print_bw"></script>
@@ -6831,10 +7069,10 @@
     <script defer src="ems-offline-session-cache.js?v=20260705desktopfix6"></script>
     <script defer src="ems-offline-policy.js?v=20260707_sync_hardening_v1"></script>
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
-    <script defer src="auth.js?v=20260909_att_evt_sheet_flow_v1"></script>
+    <script defer src="auth.js?v=20260909_att_evt_browse_v1"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260909_att_evt_sheet_flow_v1"></script>
-    <script defer src="ems-lazy-loader.js?v=20260909_att_evt_sheet_flow_v1"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260909_att_evt_browse_v1"></script>
+    <script defer src="ems-lazy-loader.js?v=20260909_att_evt_browse_v1"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>

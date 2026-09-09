@@ -23,6 +23,7 @@ const parentData = require('./lib/parent-data');
 const mfa = require('./lib/mfa');
 const staffClaims = require('./lib/staff-claims');
 const saAccess = require('./lib/sa-access');
+const sharedPortalGateway = require('./lib/shared-portal-gateway');
 
 /* ----------------------------- RBAC ----------------------------- */
 exports.assignRoles = rbac.assignRoles;
@@ -76,6 +77,14 @@ exports.pingBackend = staffClaims.pingBackend;
 const accessKeys = require('./lib/access-keys');
 exports.verifyTeacherAccessKey = accessKeys.verifyTeacherKey;
 exports.verifyParentAccessKey = accessKeys.verifyParentKey;
+
+/* ------------------------- Shared portal gateway ---------------- */
+exports.configureSharedPortalGateway = sharedPortalGateway.configureSharedPortalGateway;
+exports.getSharedPortalGatewayConfig = sharedPortalGateway.getSharedPortalGatewayConfig;
+exports.resolveSharedPortalGateway = sharedPortalGateway.resolveSharedPortalGateway;
+exports.exchangeSharedPortalToken = sharedPortalGateway.exchangeSharedPortalToken;
+exports.renewSharedPortalSession = sharedPortalGateway.renewSharedPortalSession;
+exports.revokeSharedPortalSession = sharedPortalGateway.revokeSharedPortalSession;
 
 /* ------------------------- Temp grant lifecycle (Phase 4) -------- */
 const tempGrants = require('./lib/temp-grants');

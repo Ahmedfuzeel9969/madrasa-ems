@@ -6,6 +6,19 @@
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
 const { assertMadrasaActive } = require('./tenant-kill-switch');
+const { assertSharedPortalSessionActive, isSharedPortalContext } = require('./shared-portal-session');
+const { directoryDocId } = require('./shared-portal-gateway');
+
+async function assertNotConfiguredRawGateway(db, email, context) {
+    if (!email || isSharedPortalContext(context)) return;
+    const snap = await db.collection('SharedPortalGatewayDirectory').doc(directoryDocId(email)).get();
+    if (snap.exists && (snap.data() || {}).status === 'active') {
+        throw new functions.https.HttpsError(
+            'failed-precondition',
+            'یہ گوگل کھاتہ مشترک پورٹل دروازہ ہے؛ اسے براہِ راست فرد سے منسلک نہیں کیا جا سکتا۔'
+        );
+    }
+}
 
 function normalizeEmail(email) {
     return (email || '').toLowerCase().trim();
@@ -127,6 +140,7 @@ const activateTenantLink = functions.https.onCall(async (data, context) => {
     }
 
     const db = admin.firestore();
+    await assertNotConfiguredRawGateway(db, email, context);
     const prefer = (data && data.prefer) || 'staff';
     const order = prefer === 'parent'
         ? ['Parent_Links', 'Staff_Links']
@@ -186,6 +200,8 @@ const resolveTenantLink = functions.https.onCall(async (data, context) => {
     const db = admin.firestore();
     const collectionName = (data && data.collection === 'Parent_Links') ? 'Parent_Links' : 'Staff_Links';
 
+    await assertNotConfiguredRawGateway(db, email, context);
+
     const activeSnap = await db.collectionGroup(collectionName)
         .where('authUid', '==', uid)
         .where('status', '==', 'active')
@@ -196,6 +212,13 @@ const resolveTenantLink = functions.https.onCall(async (data, context) => {
         const d = activeSnap.docs[0];
         const tenantId = extractMadrasaId(d.ref);
         await assertMadrasaActive(db, tenantId);
+        await assertSharedPortalSessionActive(
+            db,
+            tenantId,
+            context,
+            d.data() || {},
+            collectionName === 'Parent_Links' ? 'parent' : 'teacher'
+        );
 
         // Still merge any leftover Parent pendings for this email into the active link.
         if (collectionName === 'Parent_Links' && email) {

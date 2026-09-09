@@ -3,6 +3,7 @@
  */
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const { isSharedPortalContext } = require('./shared-portal-session');
 
 async function syncStaffClaimsForUser(uid, tenantId) {
     const db = admin.firestore();
@@ -60,6 +61,12 @@ async function syncStaffClaimsForUser(uid, tenantId) {
 const syncStaffClaims = functions.https.onCall(async (data, context) => {
     if (!context.auth) {
         throw new functions.https.HttpsError('unauthenticated', 'لاگ ان لازمی ہے۔');
+    }
+    if (isSharedPortalContext(context)) {
+        throw new functions.https.HttpsError(
+            'permission-denied',
+            'مختصر مشترک پورٹل نشست کو مستقل اختیارات نہیں دیے جا سکتے۔'
+        );
     }
     const tenantId = String((data && data.tenantId) || '').trim();
     if (!tenantId) {

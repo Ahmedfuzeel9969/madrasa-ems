@@ -49,7 +49,12 @@ describe('Portal login gate fixes (parent + teacher)', function () {
             localStorage: {
                 _data: {
                     ems_staff_permissions: JSON.stringify({
-                        T1: { status: 'active', modules: { attendance: true, exams: false }, actions: {}, temporary: {} }
+                        T1: {
+                            status: 'active',
+                            modules: { attendance: true, exams: false },
+                            actions: { attendance: { view: true, create: false } },
+                            temporary: {}
+                        }
                     })
                 },
                 getItem: function (k) { return this._data[k] || null; },
@@ -63,6 +68,7 @@ describe('Portal login gate fixes (parent + teacher)', function () {
         sandbox.CURRENT_STAFF_LINK = { staffId: 'T1' };
         expect(sandbox.emsStaffHasAnyModule()).toBe(true);
         expect(sandbox.checkStaffModuleAccess('attendance', 'view')).toBe(true);
+        expect(sandbox.checkStaffModuleAccess('attendance', 'create')).toBe(false);
         expect(sandbox.checkStaffModuleAccess('finance', 'view')).toBe(false);
     });
 });

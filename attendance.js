@@ -6730,41 +6730,160 @@ function attBindModuleLifecycle() {
 attBindModuleLifecycle();
 
 // ============================================================================
-// حصہ 6: خصوصی تقریبات کا رجسٹر (Event Register Logic)
+// حصہ 6: حاضری مطالعہ (Event / Study Attendance sheets + sessions)
+// v2 store: { version:2, sheets:[{id,name,type,roster}], sessions:[{id,sheetId,date,time,participants}] }
 // ============================================================================
 var EVT_EVENTS_DB_KEY = 'ems_att_events_db';
 
-function evtReadEventsDb() {
+function evtNewId(prefix) {
+  if (typeof window.generateID === 'function') return window.generateID(prefix);
+  return prefix + '-' + Date.now().toString(36) + Math.floor(Math.random() * 900);
+}
+
+function evtRosterFromParticipants(list) {
+  return (list || []).map(function (p) {
+    return {
+      id: p.id,
+      name: p.name,
+      type: p.type,
+      role: p.role || '',
+      cls: p.cls || ''
+    };
+  });
+}
+
+function evtParticipantsFromRoster(roster, statusMap) {
+  statusMap = statusMap || {};
+  var symbols = {};
+  try { symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' }; }
+  catch (eS) { symbols = { P: 'P', A: 'A', L: 'L' }; }
+  return (roster || []).map(function (p) {
+    return {
+      id: p.id,
+      name: p.name,
+      type: p.type,
+      role: p.role || '',
+      cls: p.cls || '',
+      status: statusMap[p.id] != null ? statusMap[p.id] : (symbols.P || 'P')
+    };
+  });
+}
+
+function evtMigrateLegacyArray(arr) {
+  var sheetsByKey = Object.create(null);
+  var sessions = [];
+  (arr || []).forEach(function (e) {
+    if (!e) return;
+    var key = e.sheetId || ('n:' + String(e.name || '') + '|t:' + String(e.type || ''));
+    if (!sheetsByKey[key]) {
+      sheetsByKey[key] = {
+        id: e.sheetId || evtNewId('EVS'),
+        name: e.name || '',
+        type: e.type || 'اجلاس',
+        roster: evtRosterFromParticipants(e.participants || []),
+        timestamp: e.timestamp || Date.now()
+      };
+    } else if ((e.participants || []).length > (sheetsByKey[key].roster || []).length) {
+      sheetsByKey[key].roster = evtRosterFromParticipants(e.participants || []);
+    }
+    sessions.push({
+      id: e.id || evtNewId('EVT'),
+      sheetId: sheetsByKey[key].id,
+      date: e.date || '',
+      time: e.time || '',
+      participants: e.participants || [],
+      timestamp: e.timestamp || Date.now()
+    });
+  });
+  return {
+    version: 2,
+    sheets: Object.keys(sheetsByKey).map(function (k) { return sheetsByKey[k]; }),
+    sessions: sessions
+  };
+}
+
+function evtEmptyStore() {
+  return { version: 2, sheets: [], sessions: [] };
+}
+
+function evtNormalizeStore(raw) {
+  if (!raw) return evtEmptyStore();
+  if (Array.isArray(raw)) return evtMigrateLegacyArray(raw);
+  if (raw.version === 2 && Array.isArray(raw.sheets) && Array.isArray(raw.sessions)) {
+    return { version: 2, sheets: raw.sheets, sessions: raw.sessions };
+  }
+  if (Array.isArray(raw.events)) return evtMigrateLegacyArray(raw.events);
+  return evtEmptyStore();
+}
+
+function evtReadStore() {
   try {
+    var parsed = null;
     if (typeof window.emsSafeLocalGet === 'function') {
       var viaSafe = window.emsSafeLocalGet(EVT_EVENTS_DB_KEY);
-      if (viaSafe) {
-        var parsedSafe = typeof viaSafe === 'string' ? JSON.parse(viaSafe) : viaSafe;
-        return Array.isArray(parsedSafe) ? parsedSafe : [];
-      }
+      if (viaSafe) parsed = typeof viaSafe === 'string' ? JSON.parse(viaSafe) : viaSafe;
     }
-    var raw = localStorage.getItem(EVT_EVENTS_DB_KEY);
-    if (!raw) return [];
-    var parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (parsed == null) {
+      var raw = localStorage.getItem(EVT_EVENTS_DB_KEY);
+      if (!raw) return evtEmptyStore();
+      parsed = JSON.parse(raw);
+    }
+    return evtNormalizeStore(parsed);
   } catch (eRead) {
-    return [];
+    return evtEmptyStore();
   }
 }
 
-function evtWriteEventsDbLocal(events) {
-  events = Array.isArray(events) ? events : [];
+/** Legacy helper: flat sessions list (compat). Prefer evtReadStore(). */
+function evtReadEventsDb() {
+  var store = evtReadStore();
+  return (store.sessions || []).map(function (s) {
+    var sheet = evtFindSheet(store, s.sheetId) || {};
+    return Object.assign({}, s, {
+      name: sheet.name || s.name || '',
+      type: sheet.type || s.type || 'اجلاس'
+    });
+  });
+}
+
+function evtWriteStore(store) {
+  store = evtNormalizeStore(store);
   if (typeof window.emsOfflineWriteLocalSync === 'function') {
     var tenantId = typeof getAttendanceTenantId === 'function' ? getAttendanceTenantId() : null;
-    return window.emsOfflineWriteLocalSync(EVT_EVENTS_DB_KEY, events, { tenantId: tenantId }) === true;
+    return window.emsOfflineWriteLocalSync(EVT_EVENTS_DB_KEY, store, { tenantId: tenantId }) === true;
   }
   try {
-    localStorage.setItem(EVT_EVENTS_DB_KEY, JSON.stringify(events));
+    localStorage.setItem(EVT_EVENTS_DB_KEY, JSON.stringify(store));
     return true;
   } catch (eWrite) {
     console.warn('[EMS] evt local write failed', eWrite);
     return false;
   }
+}
+
+function evtWriteEventsDbLocal(events) {
+  // Compat: if caller passes array, treat as legacy sessions-only migration write
+  if (Array.isArray(events)) {
+    return evtWriteStore(evtMigrateLegacyArray(events));
+  }
+  return evtWriteStore(events);
+}
+
+function evtFindSheet(store, sheetId) {
+  store = store || evtReadStore();
+  return (store.sheets || []).find(function (s) { return s && s.id === sheetId; }) || null;
+}
+
+function evtFindSession(store, sheetId, date) {
+  store = store || evtReadStore();
+  date = String(date || '');
+  return (store.sessions || []).find(function (s) {
+    return s && s.sheetId === sheetId && String(s.date || '') === date;
+  }) || null;
+}
+
+function evtSessionsForSheet(store, sheetId) {
+  return (store.sessions || []).filter(function (s) { return s && s.sheetId === sheetId; });
 }
 
 function attEventCloudDocId(eventId) {
@@ -6775,16 +6894,11 @@ function attComputeEventCloudPatch(prev, next) {
   prev = prev || {};
   next = next || {};
   var patch = {};
-  ['name', 'type', 'date', 'time', 'timestamp'].forEach(function (field) {
-    if (next[field] !== undefined && next[field] !== prev[field]) {
+  ['name', 'type', 'date', 'time', 'timestamp', 'sheetId', 'roster', 'participants'].forEach(function (field) {
+    if (next[field] !== undefined && JSON.stringify(next[field]) !== JSON.stringify(prev[field])) {
       patch[field] = next[field];
     }
   });
-  var prevParts = JSON.stringify(prev.participants || []);
-  var nextParts = JSON.stringify(next.participants || []);
-  if (prevParts !== nextParts) {
-    patch.participants = next.participants || [];
-  }
   return patch;
 }
 
@@ -6792,39 +6906,22 @@ function attEnqueueEventsDbSync(eventsDb) {
   return attEnqueueSyncModuleBlob(EVT_EVENTS_DB_KEY, eventsDb);
 }
 
-/**
- * Persist one event to the single canonical event store.
- * Canonical SSOT: tenant-scoped ModuleData/Attendance__ems_att_events_db.
- * Historical Attendance/att_evt_* documents are read-only migration evidence.
- */
-window.attSaveEventAttendance = function (eventRecord, opts) {
-  opts = opts || {};
-  if (!eventRecord || !eventRecord.id) {
-    return Promise.resolve({ ok: false, reason: 'invalid_event' });
+/** Save/update a sheet (roster template). */
+window.attSaveEventSheet = function (sheetRecord) {
+  if (!sheetRecord || !sheetRecord.id) {
+    return Promise.resolve({ ok: false, reason: 'invalid_sheet' });
   }
-
-  var events = evtReadEventsDb();
-  var prev = null;
-  var idx = events.findIndex(function (e) { return e && e.id === eventRecord.id; });
-  var stamped = Object.assign({}, eventRecord, {
-    timestamp: eventRecord.timestamp || Date.now()
+  var store = evtReadStore();
+  var stamped = Object.assign({}, sheetRecord, {
+    roster: evtRosterFromParticipants(sheetRecord.roster || sheetRecord.participants || []),
+    timestamp: Date.now()
   });
-
-  if (idx >= 0) {
-    prev = events[idx];
-    events[idx] = Object.assign({}, events[idx], stamped);
-    stamped = events[idx];
-  } else {
-    events.push(stamped);
-  }
-
-  if (!evtWriteEventsDbLocal(events)) {
-    return Promise.resolve({ ok: false, reason: 'local_write_failed' });
-  }
-
-  var chain = attEnqueueEventsDbSync(events);
-
-  return chain.then(function (syncRes) {
+  delete stamped.participants;
+  var idx = store.sheets.findIndex(function (s) { return s && s.id === stamped.id; });
+  if (idx >= 0) store.sheets[idx] = Object.assign({}, store.sheets[idx], stamped);
+  else store.sheets.push(stamped);
+  if (!evtWriteStore(store)) return Promise.resolve({ ok: false, reason: 'local_write_failed' });
+  return attEnqueueEventsDbSync(store).then(function (syncRes) {
     return {
       ok: true,
       local: true,
@@ -6833,23 +6930,94 @@ window.attSaveEventAttendance = function (eventRecord, opts) {
       id: stamped.id
     };
   }).catch(function (err) {
+    return { ok: false, error: err && err.message ? err.message : String(err) };
+  });
+};
+
+/**
+ * Persist one attendance session (sheetId + date).
+ * Also accepts legacy flat eventRecord with id/name/date/participants.
+ */
+window.attSaveEventAttendance = function (eventRecord, opts) {
+  opts = opts || {};
+  if (!eventRecord) return Promise.resolve({ ok: false, reason: 'invalid_event' });
+
+  var store = evtReadStore();
+  var sheetId = eventRecord.sheetId || null;
+  var sheet = sheetId ? evtFindSheet(store, sheetId) : null;
+
+  // Legacy: save whole flat record → ensure sheet + session
+  if (!sheet && eventRecord.name) {
+    sheet = {
+      id: sheetId || evtNewId('EVS'),
+      name: eventRecord.name,
+      type: eventRecord.type || 'اجلاس',
+      roster: evtRosterFromParticipants(eventRecord.participants || []),
+      timestamp: Date.now()
+    };
+    sheetId = sheet.id;
+    var sIdx = store.sheets.findIndex(function (s) { return s && s.id === sheetId; });
+    if (sIdx >= 0) store.sheets[sIdx] = Object.assign({}, store.sheets[sIdx], sheet);
+    else store.sheets.push(sheet);
+  }
+
+  if (!sheetId) return Promise.resolve({ ok: false, reason: 'missing_sheet' });
+
+  var date = String(eventRecord.date || '').trim();
+  if (!date) return Promise.resolve({ ok: false, reason: 'missing_date' });
+
+  var existing = evtFindSession(store, sheetId, date);
+  var sessionId = (existing && existing.id) || eventRecord.id || evtNewId('EVT');
+  var stamped = {
+    id: sessionId,
+    sheetId: sheetId,
+    date: date,
+    time: eventRecord.time || '',
+    participants: eventRecord.participants || [],
+    timestamp: Date.now()
+  };
+
+  var idx = store.sessions.findIndex(function (s) { return s && s.id === sessionId; });
+  if (idx < 0 && existing) {
+    idx = store.sessions.findIndex(function (s) { return s && s.sheetId === sheetId && String(s.date) === date; });
+  }
+  if (idx >= 0) store.sessions[idx] = Object.assign({}, store.sessions[idx], stamped);
+  else store.sessions.push(stamped);
+
+  if (!evtWriteStore(store)) {
+    return Promise.resolve({ ok: false, reason: 'local_write_failed' });
+  }
+
+  return attEnqueueEventsDbSync(store).then(function (syncRes) {
+    return {
+      ok: true,
+      local: true,
+      synced: !!(syncRes && syncRes.synced),
+      offline: !!(syncRes && syncRes.offline) || !(syncRes && syncRes.synced),
+      id: stamped.id,
+      sheetId: sheetId
+    };
+  }).catch(function (err) {
     console.error('[EMS] attSaveEventAttendance', err);
     return { ok: false, error: err && err.message ? err.message : String(err) };
   });
 };
 
-/** Remove event from the canonical event blob. Legacy att_evt_* docs are never mutated. */
-window.attDeleteEventAttendance = function (eventId) {
-  if (!eventId) return Promise.resolve({ ok: false, reason: 'invalid_id' });
-  var events = evtReadEventsDb();
-  events = events.filter(function (e) { return !e || e.id !== eventId; });
-  if (!evtWriteEventsDbLocal(events)) {
+/** Delete sheet (+ all its sessions) or a single session id. */
+window.attDeleteEventAttendance = function (id) {
+  if (!id) return Promise.resolve({ ok: false, reason: 'invalid_id' });
+  var store = evtReadStore();
+  var isSheet = (store.sheets || []).some(function (s) { return s && s.id === id; });
+  if (isSheet) {
+    store.sheets = store.sheets.filter(function (s) { return !s || s.id !== id; });
+    store.sessions = store.sessions.filter(function (s) { return !s || s.sheetId !== id; });
+  } else {
+    store.sessions = store.sessions.filter(function (s) { return !s || s.id !== id; });
+  }
+  if (!evtWriteStore(store)) {
     return Promise.resolve({ ok: false, reason: 'local_write_failed' });
   }
-
-  var chain = attEnqueueEventsDbSync(events);
-
-  return chain.then(function (syncRes) {
+  return attEnqueueEventsDbSync(store).then(function (syncRes) {
     return {
       ok: true,
       local: true,
@@ -7087,21 +7255,29 @@ window.evtBulkSelectByClasses = function () {
   window.showToast(classes.length + ' درجہ — ' + window.currentEventParticipants.length + ' اساتذہ/طلباء منتخب', 'info');
 };
 
-window._evtUiMode = window._evtUiMode || 'list'; // list | builder | marking
+window._evtUiMode = window._evtUiMode || 'list'; // list | builder | marking | month | reports
 window._evtSheetMeta = window._evtSheetMeta || null;
+window._evtActiveSheetId = window._evtActiveSheetId || null;
+window._evtActiveSessionId = window._evtActiveSessionId || null;
 
 function evtShowPanel(mode) {
   window._evtUiMode = mode || 'list';
   var home = document.getElementById('evt-sheets-home');
   var builder = document.getElementById('evt-sheet-builder');
   var marking = document.getElementById('evt-marking-panel');
+  var monthView = document.getElementById('evt-month-view');
+  var reportsView = document.getElementById('evt-reports-view');
   if (home) home.style.display = mode === 'list' ? 'block' : 'none';
   if (builder) builder.style.display = mode === 'builder' ? 'block' : 'none';
   if (marking) marking.style.display = mode === 'marking' ? 'block' : 'none';
+  if (monthView) monthView.style.display = mode === 'month' ? 'block' : 'none';
+  if (reportsView) reportsView.style.display = mode === 'reports' ? 'block' : 'none';
 }
 
 window.evtBackToSheetsList = function () {
   window._evtEditId = null;
+  window._evtActiveSheetId = null;
+  window._evtActiveSessionId = null;
   window._evtSheetMeta = null;
   window.currentEventParticipants = [];
   evtShowPanel('list');
@@ -7114,26 +7290,18 @@ function evtOpenSheetBuilder(opts) {
   opts = opts || {};
   window._evtUiMode = 'builder';
   window._evtEditId = opts.id || null;
+  window._evtActiveSheetId = opts.id || null;
   window.currentEventParticipants = Array.isArray(opts.participants)
     ? JSON.parse(JSON.stringify(opts.participants))
-    : [];
+    : (Array.isArray(opts.roster) ? evtParticipantsFromRoster(opts.roster, {}) : []);
 
   var titleEl = document.getElementById('evt-builder-title');
   if (titleEl) titleEl.textContent = opts.id ? 'شیٹ ترمیم' : 'نئی شیٹ';
 
   var nameEl = document.getElementById('evt-name');
   var typeEl = document.getElementById('evt-type');
-  var dateEl = document.getElementById('evt-date');
-  var timeEl = document.getElementById('evt-time');
   if (nameEl) nameEl.value = opts.name || '';
-  if (typeEl) typeEl.value = opts.type || 'اجلاس';
-  if (dateEl) {
-    dateEl.value = opts.date || '';
-    if (!dateEl.value) {
-      try { dateEl.value = new Date().toISOString().slice(0, 10); } catch (eD) { /* ignore */ }
-    }
-  }
-  if (timeEl) timeEl.value = opts.time || '';
+  if (typeEl) typeEl.value = opts.type || 'حاضری مطالعہ';
 
   evtEnsureParticipantSearchBound();
   evtInitParticipantSearch();
@@ -7300,49 +7468,58 @@ function evtSyncStatusesFromUI() {
 }
 
 function evtBuildPayloadFromForm(participants) {
-  var eventName = (document.getElementById('evt-name') || {}).value || '';
-  eventName = String(eventName).trim();
-  var eventDate = (document.getElementById('evt-date') || {}).value || '';
   var meta = window._evtSheetMeta || {};
-  if (!eventName && meta.name) eventName = meta.name;
-  if (!eventDate && meta.date) eventDate = meta.date;
+  var nameEl = document.getElementById('evt-name');
+  var typeEl = document.getElementById('evt-type');
+  var markDate = document.getElementById('evt-mark-date');
+  var markTime = document.getElementById('evt-mark-time');
+  var eventName = nameEl ? String(nameEl.value || '').trim() : '';
+  if (!eventName) eventName = meta.name || '';
+  var eventType = typeEl ? typeEl.value : (meta.type || 'اجلاس');
+  var eventDate = markDate ? String(markDate.value || '').trim() : '';
+  if (!eventDate) eventDate = meta.date || '';
+  var eventTime = markTime ? String(markTime.value || '') : (meta.time || '');
   return {
     name: eventName,
-    type: (document.getElementById('evt-type') || {}).value || meta.type || 'اجلاس',
+    type: eventType,
     date: eventDate,
-    time: (document.getElementById('evt-time') || {}).value || meta.time || '',
+    time: eventTime,
+    sheetId: window._evtActiveSheetId || meta.sheetId || null,
     participants: participants || window.currentEventParticipants || [],
     timestamp: new Date().getTime()
   };
 }
 
-/** شیٹ محفوظ — فہرست میں آتی ہے؛ حاضری بعد میں کلک سے */
+/** شیٹ محفوظ — صرف نام + شرکاء (بغیر تاریخ) */
 document.getElementById('btn-save-event-sheet')?.addEventListener('click', function () {
   if (window.currentEventParticipants.length === 0) {
     return window.showToast('شیٹ میں کم از کم ایک شریک شامل کریں!', 'error');
   }
-  var payload = evtBuildPayloadFromForm(window.currentEventParticipants);
-  if (!payload.name || !payload.date) {
-    return window.showToast('شیٹ کا نام اور تاریخ لازمی ہیں!', 'error');
-  }
-  var isEdit = !!window._evtEditId;
-  payload.id = isEdit
-    ? window._evtEditId
-    : (window.generateID ? window.generateID('EVT') : 'EVT-' + Math.floor(Math.random() * 9000));
+  var nameEl = document.getElementById('evt-name');
+  var typeEl = document.getElementById('evt-type');
+  var name = nameEl ? String(nameEl.value || '').trim() : '';
+  if (!name) return window.showToast('شیٹ کا نام لازمی ہے!', 'error');
+
+  var sheetId = window._evtActiveSheetId || window._evtEditId || evtNewId('EVS');
+  var sheet = {
+    id: sheetId,
+    name: name,
+    type: typeEl ? typeEl.value : 'حاضری مطالعہ',
+    roster: evtRosterFromParticipants(window.currentEventParticipants)
+  };
 
   var btn = document.getElementById('btn-save-event-sheet');
   if (btn) btn.disabled = true;
 
-  Promise.resolve(window.attSaveEventAttendance(payload, { isEdit: isEdit })).then(function (res) {
+  Promise.resolve(window.attSaveEventSheet(sheet)).then(function (res) {
     if (!res || !res.ok) {
       window.showToast('شیٹ محفوظ نہیں ہو سکی', 'error');
       return;
     }
     if (typeof logAttAudit === 'function') {
-      logAttAudit(isEdit ? 'تقریب شیٹ ترمیم' : 'تقریب شیٹ', 'شیٹ: ' + payload.name + ' | شرکاء: ' + payload.participants.length);
+      logAttAudit('مطالعہ شیٹ', 'شیٹ: ' + name + ' | شرکاء: ' + sheet.roster.length);
     }
-    window.showToast(isEdit ? 'شیٹ ترمیم محفوظ ہو گئی' : 'شیٹ محفوظ ہو گئی — فہرست سے کلک کر کے حاضری لگائیں', 'success');
-    if (res.offline && !res.synced) window.showToast('آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'info');
+    window.showToast('شیٹ محفوظ — فہرست سے کلک کر کے کسی بھی تاریخ کی حاضری لگائیں', 'success');
     window.evtBackToSheetsList();
   }).catch(function (err) {
     console.error('[EMS] btn-save-event-sheet', err);
@@ -7352,40 +7529,36 @@ document.getElementById('btn-save-event-sheet')?.addEventListener('click', funct
   });
 });
 
-/** حاضری محفوظ — marking موڈ */
+/** حاضری محفوظ — موجودہ شیٹ + منتخب تاریخ کا سیشن */
 document.getElementById('btn-save-event-att')?.addEventListener('click', () => {
   if (window.currentEventParticipants.length === 0) return window.showToast('فہرست میں کوئی شریک موجود نہیں!', 'error');
 
   evtSyncStatusesFromUI();
 
   var payload = evtBuildPayloadFromForm(window.currentEventParticipants);
-  if (!payload.name || !payload.date) {
-    return window.showToast('شیٹ کا نام اور تاریخ لازمی ہیں!', 'error');
+  if (!payload.sheetId) return window.showToast('شیٹ شناخت غائب', 'error');
+  if (!payload.date) return window.showToast('حاضری کی تاریخ منتخب کریں!', 'error');
+  if (!payload.name) {
+    var sh = evtFindSheet(null, payload.sheetId);
+    if (sh) payload.name = sh.name;
   }
 
-  const isEdit = !!window._evtEditId;
-  if (isEdit) {
-    payload.id = window._evtEditId;
-  } else {
-    payload.id = window.generateID ? window.generateID('EVT') : 'EVT-' + Math.floor(Math.random() * 9000);
-  }
+  if (window._evtActiveSessionId) payload.id = window._evtActiveSessionId;
 
   const btn = document.getElementById('btn-save-event-att');
-  if (btn) {
-    btn.disabled = true;
-  }
+  if (btn) btn.disabled = true;
 
-  Promise.resolve(window.attSaveEventAttendance(payload, { isEdit: isEdit })).then(function (res) {
+  Promise.resolve(window.attSaveEventAttendance(payload, { isEdit: true })).then(function (res) {
     if (!res || !res.ok) {
       window.showToast('حاضری محفوظ نہیں ہو سکی', 'error');
       return;
     }
-    window.showToast('حاضری محفوظ ہو گئی!', 'success');
-    if (typeof logAttAudit === 'function') logAttAudit('تقریب حاضری', `تقریب: ${payload.name} | شرکاء: ${payload.participants.length}`);
-    if (res.offline && !res.synced) {
-      window.showToast('آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'info');
+    window._evtActiveSessionId = res.id;
+    window.showToast('حاضری محفوظ (' + payload.date + ')', 'success');
+    if (typeof logAttAudit === 'function') {
+      logAttAudit('مطالعہ حاضری', 'شیٹ: ' + payload.name + ' | تاریخ: ' + payload.date);
     }
-    window.evtBackToSheetsList();
+    if (res.offline && !res.synced) window.showToast('آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'info');
   }).catch(function (err) {
     console.error('[EMS] btn-save-event-att', err);
     window.showToast('حاضری محفوظ نہیں ہو سکی', 'error');
@@ -7394,15 +7567,69 @@ document.getElementById('btn-save-event-att')?.addEventListener('click', () => {
   });
 });
 
-// محفوظ شدہ شیٹس کی فہرست — کلک = حاضری کھولیں
+function evtTodayIso() {
+  try { return new Date().toISOString().slice(0, 10); } catch (e) { return ''; }
+}
+
+function evtLoadMarkingForDate(sheetId, date) {
+  var store = evtReadStore();
+  var sheet = evtFindSheet(store, sheetId);
+  if (!sheet) return;
+  date = String(date || evtTodayIso());
+  var session = evtFindSession(store, sheetId, date);
+  var statusMap = {};
+  if (session && session.participants) {
+    session.participants.forEach(function (p) {
+      if (p && p.id) statusMap[p.id] = p.status;
+    });
+  }
+  window._evtActiveSheetId = sheetId;
+  window._evtEditId = sheetId;
+  window._evtActiveSessionId = session ? session.id : null;
+  window._evtSheetMeta = {
+    sheetId: sheetId,
+    name: sheet.name || '',
+    type: sheet.type || 'اجلاس',
+    date: date,
+    time: session ? (session.time || '') : ''
+  };
+  window.currentEventParticipants = evtParticipantsFromRoster(sheet.roster || [], statusMap);
+
+  var markDate = document.getElementById('evt-mark-date');
+  var markTime = document.getElementById('evt-mark-time');
+  if (markDate) markDate.value = date;
+  if (markTime) markTime.value = session ? (session.time || '') : '';
+
+  var title = document.getElementById('evt-marking-title');
+  var meta = document.getElementById('evt-marking-meta');
+  if (title) title.textContent = sheet.name || 'حاضری';
+  if (meta) {
+    var sessN = evtSessionsForSheet(store, sheetId).length;
+    meta.textContent = (sheet.type || '') + ' · شرکاء: ' + (sheet.roster || []).length +
+      ' · محفوظ سیشنز: ' + sessN + (session ? ' · اس تاریخ کا ریکارڈ موجود' : ' · نئی تاریخ');
+  }
+  renderEventParticipants();
+}
+
+window.evtOnMarkDateChange = function () {
+  var sheetId = window._evtActiveSheetId;
+  var markDate = document.getElementById('evt-mark-date');
+  if (!sheetId || !markDate || !markDate.value) return;
+  evtLoadMarkingForDate(sheetId, markDate.value);
+  window.showToast('تاریخ: ' + markDate.value, 'info');
+};
+
+// محفوظ شدہ شیٹس
 window.renderSavedEvents = function () {
   const tbody = document.getElementById('evt-saved-tbody');
   if (!tbody) return;
   evtShowPanel('list');
-  const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
-  const events = evtReadEventsDb();
+  const store = evtReadStore();
+  const sheets = (store.sheets || []).slice().sort(function (a, b) {
+    return (b.timestamp || 0) - (a.timestamp || 0);
+  });
 
-  if (events.length === 0) {
+  if (!sheets.length) {
     attDisposeChunked('evt-saved');
     tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">ابھی کوئی شیٹ نہیں — «نئی شیٹ بنائیں» دبائیں</td></tr>';
     var emptyFoot = document.getElementById('evt-saved-chunk-foot');
@@ -7410,30 +7637,27 @@ window.renderSavedEvents = function () {
     return;
   }
 
-  var rowHtml = events
-    .slice()
-    .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-    .map(function (e) {
-      const present = (e.participants || []).filter((p) => p.status === symbols.P).length;
-      const absent = (e.participants || []).filter((p) => p.status === symbols.A).length;
-      const leave = (e.participants || []).filter((p) => p.status === symbols.L).length;
-      var eid = String(e.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      return (
-        '<td style="cursor:pointer;" onclick="window.openEventSheet(\'' + eid + '\')" title="حاضری کھولیں">' +
-        '<strong style="color:var(--primary);">' + (e.name || '-') + '</strong>' +
-        (e.time ? '<br><small style="color:#7f8c8d;">' + e.time + '</small>' : '') +
-        '<br><small style="color:#0d9488;"><i class="fas fa-mouse-pointer"></i> حاضری کے لیے کلک</small></td>' +
-        '<td><span class="evt-type-tag">' + (e.type || '-') + '</span></td>' +
-        '<td>' + (e.date || '-') + '</td>' +
-        '<td style="text-align:center; font-weight:bold;">' + (e.participants || []).length + '</td>' +
-        '<td style="text-align:center;"><span class="att-status-present" style="font-weight:bold;">' + present + '</span> / <span class="att-status-absent" style="font-weight:bold;">' + absent + '</span> / <span class="att-status-leave" style="font-weight:bold;">' + leave + '</span></td>' +
-        '<td>' +
-        '<button class="icon-btn" style="color:var(--success);" title="حاضری" onclick="event.stopPropagation();window.openEventSheet(\'' + eid + '\')"><i class="fas fa-clipboard-check"></i></button> ' +
-        '<button class="icon-btn" style="color:var(--accent);" title="شیٹ / شرکاء ترمیم" onclick="event.stopPropagation();editEvent(\'' + eid + '\')"><i class="fas fa-edit"></i></button> ' +
-        '<button class="icon-btn delete" title="حذف" onclick="event.stopPropagation();deleteEvent(\'' + eid + '\')"><i class="fas fa-trash"></i></button>' +
-        '</td>'
-      );
-    });
+  var rowHtml = sheets.map(function (sheet) {
+    var sessions = evtSessionsForSheet(store, sheet.id);
+    var lastDate = sessions.slice().sort(function (a, b) {
+      return String(b.date || '').localeCompare(String(a.date || ''));
+    })[0];
+    var eid = String(sheet.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    return (
+      '<td style="cursor:pointer;" onclick="window.openEventSheet(\'' + eid + '\')" title="حاضری کھولیں">' +
+      '<strong style="color:var(--primary);">' + (sheet.name || '-') + '</strong>' +
+      '<br><small style="color:#0d9488;"><i class="fas fa-mouse-pointer"></i> حاضری (تاریخ تبدیل ممکن)</small></td>' +
+      '<td><span class="evt-type-tag">' + (sheet.type || '-') + '</span></td>' +
+      '<td style="text-align:center;font-weight:bold;">' + (sheet.roster || []).length + '</td>' +
+      '<td style="text-align:center;">' + sessions.length + '</td>' +
+      '<td>' + (lastDate && lastDate.date ? lastDate.date : '—') + '</td>' +
+      '<td>' +
+      '<button class="icon-btn" style="color:var(--success);" title="حاضری" onclick="event.stopPropagation();window.openEventSheet(\'' + eid + '\')"><i class="fas fa-clipboard-check"></i></button> ' +
+      '<button class="icon-btn" style="color:var(--accent);" title="شیٹ / شرکاء ترمیم" onclick="event.stopPropagation();editEvent(\'' + eid + '\')"><i class="fas fa-edit"></i></button> ' +
+      '<button class="icon-btn delete" title="حذف" onclick="event.stopPropagation();deleteEvent(\'' + eid + '\')"><i class="fas fa-trash"></i></button>' +
+      '</td>'
+    );
+  });
 
   var scrollEl = tbody.closest('table') && tbody.closest('table').parentElement;
   if (scrollEl && !scrollEl.style.maxHeight) {
@@ -7451,78 +7675,690 @@ window.renderSavedEvents = function () {
   });
 };
 
-/** شیٹ پر کلک → فوراً حاضری مارکنگ */
-window.openEventSheet = function (id) {
-  const events = evtReadEventsDb();
-  const e = events.find((x) => x.id === id);
-  if (!e) return window.showToast('شیٹ نہیں ملی', 'error');
-
-  window._evtEditId = id;
-  window._evtSheetMeta = {
-    name: e.name || '',
-    type: e.type || 'اجلاس',
-    date: e.date || '',
-    time: e.time || ''
-  };
-  window.currentEventParticipants = JSON.parse(JSON.stringify(e.participants || []));
-
-  var nameEl = document.getElementById('evt-name');
-  var typeEl = document.getElementById('evt-type');
-  var dateEl = document.getElementById('evt-date');
-  var timeEl = document.getElementById('evt-time');
-  if (nameEl) nameEl.value = e.name || '';
-  if (typeEl) typeEl.value = e.type || 'اجلاس';
-  if (dateEl) dateEl.value = e.date || '';
-  if (timeEl) timeEl.value = e.time || '';
-
-  var title = document.getElementById('evt-marking-title');
-  var meta = document.getElementById('evt-marking-meta');
-  if (title) title.textContent = e.name || 'حاضری';
-  if (meta) {
-    meta.textContent = (e.type || '') + (e.date ? ' · ' + e.date : '') + (e.time ? ' · ' + e.time : '') +
-      ' · شرکاء: ' + (e.participants || []).length;
-  }
-
+/** شیٹ پر کلک → حاضری (آج کی تاریخ، تبدیل ممکن) */
+window.openEventSheet = function (sheetId) {
+  var store = evtReadStore();
+  var sheet = evtFindSheet(store, sheetId);
+  if (!sheet) return window.showToast('شیٹ نہیں ملی', 'error');
   evtShowPanel('marking');
-  renderEventParticipants();
-  window.showToast('حاضری شیٹ کھل گئی', 'info');
+  var sessions = evtSessionsForSheet(store, sheetId);
+  var prefer = sessions.slice().sort(function (a, b) {
+    return String(b.date || '').localeCompare(String(a.date || ''));
+  })[0];
+  var date = (prefer && prefer.date) || evtTodayIso();
+  evtLoadMarkingForDate(sheetId, date);
+  window.showToast('حاضری کھل گئی — تاریخ تبدیل کر کے بار بار حاضری ممکن', 'info');
 };
 
-/** شیٹ بنانے والا فارم (شرکاء ترمیم) */
-window.editEvent = function (id) {
-  const events = evtReadEventsDb();
-  const e = events.find((x) => x.id === id);
-  if (!e) return;
+window.editEvent = function (sheetId) {
+  var sheet = evtFindSheet(null, sheetId);
+  if (!sheet) return;
   evtOpenSheetBuilder({
-    id: id,
-    name: e.name,
-    type: e.type,
-    date: e.date,
-    time: e.time,
-    participants: e.participants || []
+    id: sheet.id,
+    name: sheet.name,
+    type: sheet.type,
+    roster: sheet.roster || []
   });
   window.showToast('شیٹ ترمیم — شرکاء تبدیل کر کے محفوظ کریں', 'info');
 };
 
 window.editEventRosterFromMarking = function () {
-  if (!window._evtEditId) return;
-  window.editEvent(window._evtEditId);
+  if (!window._evtActiveSheetId) return;
+  window.editEvent(window._evtActiveSheetId);
 };
 
-window.deleteEvent = function (id) {
-  if (!confirm('کیا آپ واقعی یہ تقریباتی شیٹ حذف کرنا چاہتے ہیں؟')) return;
-  const events = evtReadEventsDb();
-  const ev = events.find((x) => x.id === id);
-  Promise.resolve(window.attDeleteEventAttendance(id)).then(function (res) {
+window.deleteEvent = function (sheetId) {
+  if (!confirm('کیا آپ واقعی یہ شیٹ اور اس کی تمام تاریخوں کی حاضری حذف کرنا چاہتے ہیں؟')) return;
+  var sheet = evtFindSheet(null, sheetId);
+  Promise.resolve(window.attDeleteEventAttendance(sheetId)).then(function (res) {
     if (!res || !res.ok) {
       window.showToast('شیٹ حذف نہیں ہو سکی', 'error');
       return;
     }
-    if (typeof moveToRecycleBin === 'function' && ev) moveToRecycleBin('تقریباتی رجسٹر', ev);
-    if (typeof logAttAudit === 'function') logAttAudit('تقریب حذف', `تقریب: ${ev ? ev.name : id}`);
+    if (typeof moveToRecycleBin === 'function' && sheet) moveToRecycleBin('حاضری مطالعہ شیٹ', sheet);
+    if (typeof logAttAudit === 'function') logAttAudit('مطالعہ حذف', 'شیٹ: ' + (sheet ? sheet.name : sheetId));
     window.evtBackToSheetsList();
     window.showToast('شیٹ حذف کر دی گئی', 'error');
   });
+};
+
+/* ---------- ماہانہ ویو رجسٹر (صرف دیکھیں) ---------- */
+window.evtOpenMonthView = function () {
+  evtShowPanel('month');
+  var monthEl = document.getElementById('evt-view-month');
+  if (monthEl && !monthEl.value) {
+    try { monthEl.value = new Date().toISOString().slice(0, 7); } catch (eM) { /* ignore */ }
+  }
+  window.evtPopulateViewSheets();
+};
+
+window.evtPopulateViewSheets = function () {
+  var sel = document.getElementById('evt-view-sheets');
+  if (!sel) return;
+  var store = evtReadStore();
+  sel.innerHTML = (store.sheets || []).map(function (s) {
+    var esc = String(s.name || s.id).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    return '<option value="' + String(s.id).replace(/"/g, '&quot;') + '">' + esc + '</option>';
+  }).join('');
+  var allCb = document.getElementById('evt-view-all-sheets');
+  if (allCb && allCb.checked) {
+    Array.prototype.forEach.call(sel.options, function (o) { o.selected = true; });
+  }
+};
+
+window.evtToggleViewAllSheets = function (checked) {
+  var sel = document.getElementById('evt-view-sheets');
+  if (!sel) return;
+  Array.prototype.forEach.call(sel.options, function (o) { o.selected = !!checked; });
+};
+
+function evtEscHtml(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+window.evtLoadMonthRegister = function () {
+  var monthEl = document.getElementById('evt-view-month');
+  var sel = document.getElementById('evt-view-sheets');
+  var wrap = document.getElementById('evt-view-table-wrap');
+  var summary = document.getElementById('evt-view-summary');
+  if (!monthEl || !wrap) return;
+  var month = String(monthEl.value || '');
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    return window.showToast('مہینہ منتخب کریں', 'warning');
+  }
+
+  var sheetIds = [];
+  if (sel) {
+    Array.prototype.forEach.call(sel.selectedOptions || [], function (o) {
+      if (o && o.value) sheetIds.push(o.value);
+    });
+  }
+  if (!sheetIds.length) {
+    return window.showToast('کم از کم ایک شیٹ منتخب کریں (یا تمام شیٹس)', 'warning');
+  }
+
+  var store = evtReadStore();
+  var sheetSet = Object.create(null);
+  sheetIds.forEach(function (id) { sheetSet[id] = true; });
+
+  var sessions = (store.sessions || []).filter(function (s) {
+    if (!s || !sheetSet[s.sheetId]) return false;
+    return String(s.date || '').indexOf(month) === 0;
+  }).sort(function (a, b) {
+    return String(a.date).localeCompare(String(b.date));
+  });
+
+  var dates = [];
+  var dateSeen = Object.create(null);
+  sessions.forEach(function (s) {
+    if (s.date && !dateSeen[s.date]) {
+      dateSeen[s.date] = true;
+      dates.push(s.date);
+    }
+  });
+
+  var peopleMap = Object.create(null);
+  sheetIds.forEach(function (sid) {
+    var sh = evtFindSheet(store, sid);
+    (sh && sh.roster || []).forEach(function (p) {
+      if (!p || !p.id) return;
+      if (!peopleMap[p.id]) {
+        peopleMap[p.id] = { id: p.id, name: p.name || '', role: p.role || '', sheets: {} };
+      }
+      peopleMap[p.id].sheets[sid] = true;
+    });
+  });
+
+  // status matrix: personId -> date -> status (if multi sheets same day, prefer A > L > P)
+  var symbols = {};
+  try { symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' }; }
+  catch (e) { symbols = { P: 'P', A: 'A', L: 'L' }; }
+  function rank(st) {
+    if (st === symbols.A || st === 'A' || st === 'غائب') return 3;
+    if (st === symbols.L || st === 'L' || st === 'رخصت') return 2;
+    if (st === symbols.P || st === 'P' || st === 'حاضر') return 1;
+    return 0;
+  }
+  var matrix = Object.create(null);
+  sessions.forEach(function (s) {
+    (s.participants || []).forEach(function (p) {
+      if (!p || !p.id) return;
+      if (!peopleMap[p.id]) {
+        peopleMap[p.id] = { id: p.id, name: p.name || '', role: p.role || '', sheets: {} };
+      }
+      if (!matrix[p.id]) matrix[p.id] = Object.create(null);
+      var prev = matrix[p.id][s.date];
+      if (!prev || rank(p.status) > rank(prev)) matrix[p.id][s.date] = p.status;
+    });
+  });
+
+  var people = Object.keys(peopleMap).map(function (k) { return peopleMap[k]; })
+    .sort(function (a, b) { return String(a.name).localeCompare(String(b.name), 'ur'); });
+
+  if (summary) {
+    summary.textContent = 'مہینہ ' + month + ' · شیٹس: ' + sheetIds.length +
+      ' · سیشن تاریخیں: ' + dates.length + ' · افراد: ' + people.length + ' · صرف دیکھیں (ترمیم بند)';
+  }
+
+  if (!dates.length) {
+    wrap.innerHTML = '<p style="text-align:center;color:#94a3b8;padding:24px;">اس مہینے میں منتخب شیٹس کی کوئی حاضری نہیں</p>';
+    return;
+  }
+
+  function cellClass(st) {
+    var k = typeof attStatusKind === 'function' ? attStatusKind(st, symbols) : '';
+    if (k === 'P') return 'att-status-present';
+    if (k === 'A') return 'att-status-absent';
+    if (k === 'L') return 'att-status-leave';
+    return '';
+  }
+  function cellLabel(st) {
+    if (!st) return '—';
+    var k = typeof attStatusKind === 'function' ? attStatusKind(st, symbols) : '';
+    if (k === 'P') return 'ح';
+    if (k === 'A') return 'غ';
+    if (k === 'L') return 'ر';
+    return String(st).slice(0, 2);
+  }
+
+  var html = '<table class="data-table" style="margin:0;font-size:12px;"><thead><tr>' +
+    '<th style="position:sticky;right:0;background:#fff;z-index:2;min-width:140px;">نام</th>' +
+    '<th style="min-width:90px;">عہدہ/درجہ</th>';
+  dates.forEach(function (d) {
+    html += '<th style="text-align:center;min-width:42px;" title="' + evtEscHtml(d) + '">' + evtEscHtml(d.slice(8)) + '</th>';
+  });
+  html += '<th style="text-align:center;">ح</th><th style="text-align:center;">غ</th><th style="text-align:center;">ر</th></tr></thead><tbody>';
+
+  people.forEach(function (person) {
+    var cP = 0, cA = 0, cL = 0;
+    html += '<tr><td style="position:sticky;right:0;background:#fff;"><strong>' + evtEscHtml(person.name) +
+      '</strong><br><small>' + evtEscHtml(person.id) + '</small></td>';
+    html += '<td>' + evtEscHtml(person.role || '') + '</td>';
+    dates.forEach(function (d) {
+      var st = matrix[person.id] && matrix[person.id][d];
+      var k = typeof attStatusKind === 'function' ? attStatusKind(st, symbols) : '';
+      if (k === 'P') cP++;
+      else if (k === 'A') cA++;
+      else if (k === 'L') cL++;
+      html += '<td class="' + cellClass(st) + '" style="text-align:center;font-weight:700;">' + cellLabel(st) + '</td>';
+    });
+    html += '<td style="text-align:center;color:#166534;font-weight:700;">' + cP + '</td>';
+    html += '<td style="text-align:center;color:#991b1b;font-weight:700;">' + cA + '</td>';
+    html += '<td style="text-align:center;color:#92400e;font-weight:700;">' + cL + '</td></tr>';
+  });
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+};
+
+/* ---------- رپورٹس (مرکزی رپورٹس جیسا؛ ڈیٹا شیٹ سیشنز سے) ---------- */
+window.evtOpenReports = function () {
+  evtShowPanel('reports');
+  var fromEl = document.getElementById('evt-rep-from');
+  var toEl = document.getElementById('evt-rep-to');
+  try {
+    var now = new Date();
+    var y = now.getFullYear();
+    var m = String(now.getMonth() + 1).padStart(2, '0');
+    if (fromEl && !fromEl.value) fromEl.value = y + '-' + m + '-01';
+    if (toEl && !toEl.value) toEl.value = now.toISOString().slice(0, 10);
+  } catch (eD) { /* ignore */ }
+  window.evtPopulateRepSheets();
+  window.evtSetReportSubMode(window._evtReportSubMode || 'summary');
+};
+
+window.evtPopulateRepSheets = function () {
+  var sel = document.getElementById('evt-rep-sheets');
+  if (!sel) return;
+  var store = evtReadStore();
+  sel.innerHTML = (store.sheets || []).map(function (s) {
+    var esc = String(s.name || s.id).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    return '<option value="' + String(s.id).replace(/"/g, '&quot;') + '">' + esc + '</option>';
+  }).join('');
+  var allCb = document.getElementById('evt-rep-all-sheets');
+  if (allCb && allCb.checked) {
+    Array.prototype.forEach.call(sel.options, function (o) { o.selected = true; });
+  }
+};
+
+window.evtToggleRepAllSheets = function (checked) {
+  var sel = document.getElementById('evt-rep-sheets');
+  if (!sel) return;
+  Array.prototype.forEach.call(sel.options, function (o) { o.selected = !!checked; });
+};
+
+function evtSelectedRepSheetIds() {
+  var sel = document.getElementById('evt-rep-sheets');
+  var ids = [];
+  if (sel) {
+    Array.prototype.forEach.call(sel.selectedOptions || [], function (o) {
+      if (o && o.value) ids.push(o.value);
+    });
+  }
+  return ids;
+}
+
+window.evtGenerateReport = function () {
+  var fromEl = document.getElementById('evt-rep-from');
+  var toEl = document.getElementById('evt-rep-to');
+  var tbody = document.getElementById('evt-report-tbody');
+  var btn = document.getElementById('btn-evt-generate-report');
+  if (!tbody) return;
+
+  var fromDate = fromEl ? String(fromEl.value || '').trim() : '';
+  var toDate = toEl ? String(toEl.value || '').trim() : '';
+  if (!fromDate || !toDate) {
+    return window.showToast('ابتدائی اور آخری تاریخ منتخب کریں', 'warning');
+  }
+  if (fromDate > toDate) {
+    return window.showToast('ابتدائی تاریخ آخری تاریخ سے بڑی نہیں ہو سکتی', 'warning');
+  }
+
+  var sheetIds = evtSelectedRepSheetIds();
+  if (!sheetIds.length) {
+    return window.showToast('کم از کم ایک شیٹ منتخب کریں (یا تمام شیٹس)', 'warning');
+  }
+
+  var symbols = {};
+  try { symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' }; }
+  catch (eS) { symbols = { P: 'P', A: 'A', L: 'L' }; }
+
+  if (btn) {
+    btn.disabled = true;
+    if (!btn.dataset.prevHtml) btn.dataset.prevHtml = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> لوڈ…';
+  }
+  attDisposeChunked('evt-report');
+  tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;"><i class="fas fa-spinner fa-spin"></i> رپورٹ تیار ہو رہی ہے...</td></tr>';
+
+  try {
+    var store = evtReadStore();
+    var sheetSet = Object.create(null);
+    sheetIds.forEach(function (id) { sheetSet[id] = true; });
+
+    var sessions = (store.sessions || []).filter(function (s) {
+      if (!s || !sheetSet[s.sheetId]) return false;
+      var d = String(s.date || '');
+      return d >= fromDate && d <= toDate;
+    });
+
+    // personId -> { name, role, marks: { date|sheetId: kind } }
+    var people = Object.create(null);
+    sessions.forEach(function (s) {
+      var sheet = evtFindSheet(store, s.sheetId);
+      var sheetName = sheet ? (sheet.name || s.sheetId) : s.sheetId;
+      (s.participants || []).forEach(function (p) {
+        if (!p || !p.id) return;
+        if (!people[p.id]) {
+          people[p.id] = { id: p.id, name: p.name || '', role: p.role || p.cls || '', marks: Object.create(null) };
+        }
+        if (p.name) people[p.id].name = p.name;
+        if (p.role || p.cls) people[p.id].role = p.role || p.cls;
+        var kind = typeof attStatusKind === 'function' ? attStatusKind(p.status, symbols) : '';
+        if (!kind || kind === 'other') return;
+        var key = String(s.date) + '|' + String(s.sheetId);
+        people[p.id].marks[key] = { kind: kind, sheet: sheetName, date: s.date };
+      });
+    });
+
+    var rowHtmlList = Object.keys(people).map(function (pid) {
+      return people[pid];
+    }).sort(function (a, b) {
+      return String(a.name).localeCompare(String(b.name), 'ur');
+    }).map(function (person) {
+      var total = 0, present = 0, absent = 0, leave = 0;
+      var noteParts = [];
+      Object.keys(person.marks).forEach(function (k) {
+        var m = person.marks[k];
+        total++;
+        if (m.kind === 'P') present++;
+        else if (m.kind === 'A') {
+          absent++;
+          noteParts.push(m.date + ' (' + m.sheet + '): غائب');
+        } else if (m.kind === 'L') {
+          leave++;
+          noteParts.push(m.date + ' (' + m.sheet + '): رخصت');
+        }
+      });
+      if (total <= 0) return null;
+      var percentage = Math.round((present / total) * 100);
+      var pctColor = percentage >= 75 ? 'var(--success)' : percentage >= 50 ? 'var(--warning)' : 'var(--danger)';
+      var remarksText = noteParts.slice(0, 8).join(' | ');
+      return '<tr>' +
+        '<td><strong>' + evtEscHtml(person.name || person.id) + '</strong><br><small style="color:#7f8c8d;">' + evtEscHtml(person.id) + '</small></td>' +
+        '<td>' + evtEscHtml(person.role || '—') + '</td>' +
+        '<td style="font-weight:bold;">' + total + '</td>' +
+        '<td class="att-status-present" style="font-weight:bold;">' + present + '</td>' +
+        '<td class="att-status-absent" style="font-weight:bold;">' + absent + '</td>' +
+        '<td class="att-status-leave" style="font-weight:bold;">' + leave + '</td>' +
+        '<td style="color:' + pctColor + ';font-weight:bold;font-size:16px;" title="حاضر / کل سیشن">' + percentage + '%</td>' +
+        '<td><input type="text" class="input-control" value="' + evtEscHtml(remarksText).replace(/"/g, '&quot;') + '" placeholder="تبصرہ / کیفیت..." style="border:none;border-bottom:1px solid #ccc;width:100%;border-radius:0;background:transparent;"></td>' +
+        '</tr>';
+    }).filter(Boolean);
+
+    window._evtReportRowHtmlCache = rowHtmlList.slice();
+
+    var titleEl = document.getElementById('evt-rep-print-title');
+    if (titleEl) {
+      titleEl.textContent = 'حاضری مطالعہ — تفصیلی خلاصہ (' + fromDate + ' تا ' + toDate + ') · شیٹس: ' + sheetIds.length;
+    }
+
+    if (!rowHtmlList.length) {
+      tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;">مطلوبہ تاریخوں میں منتخب شیٹس کا کوئی حاضری ریکارڈ نہیں۔<br><small style="color:#94a3b8;">پہلے شیٹ کھول کر تاریخوں پر حاضری محفوظ کریں۔</small></td></tr>';
+      var emptyFoot = document.getElementById('evt-report-chunk-foot');
+      if (emptyFoot) emptyFoot.textContent = '';
+      window.showToast('اس تاریخ کی حد میں کوئی ڈیٹا نہیں ملا', 'warning');
+    } else {
+      var scrollWrap = document.getElementById('evt-report-scroll-wrap');
+      attRenderChunkedRows({
+        tbody: tbody,
+        scrollEl: scrollWrap,
+        rows: rowHtmlList,
+        footId: 'evt-report-chunk-foot',
+        disposeKey: 'evt-report'
+      });
+      window.showToast('رپورٹ تیار ہو گئی (' + rowHtmlList.length + ' افراد)', 'success');
+    }
+  } catch (err) {
+    console.error('[EMS] evtGenerateReport', err);
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:20px;color:var(--danger);">رپورٹ لوڈ نہیں ہو سکی</td></tr>';
+    window.showToast('رپورٹ تیار کرنے میں خرابی', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = btn.dataset.prevHtml || '<i class="fas fa-search"></i> رپورٹ تیار کریں';
+    }
+  }
+};
+
+window.evtPrintReport = function () {
+  var cache = window._evtReportRowHtmlCache || [];
+  var tbody = document.getElementById('evt-report-tbody');
+  var scrollWrap = document.getElementById('evt-report-scroll-wrap');
+  if (tbody && cache.length) tbody.innerHTML = cache.join('');
+  var area = document.getElementById('evt-report-print-area');
+  if (!area) return;
+  if (typeof attPrintWithBranding === 'function') {
+    attPrintWithBranding(area.innerHTML, 'حاضری مطالعہ رپورٹ');
+  } else {
+    window.print();
+  }
+  if (tbody && cache.length) {
+    attRenderChunkedRows({
+      tbody: tbody,
+      scrollEl: scrollWrap,
+      rows: cache,
+      footId: 'evt-report-chunk-foot',
+      disposeKey: 'evt-report'
+    });
+  }
+};
+
+/* ---------- مطالعہ رپورٹس — درجہ وار ریکارڈ (اجتماعی حاضری جیسا) ---------- */
+window._evtReportSubMode = window._evtReportSubMode || 'summary';
+window._evtBrowseExpanded = window._evtBrowseExpanded || Object.create(null);
+window._evtBrowseStudentsByClass = window._evtBrowseStudentsByClass || Object.create(null);
+window._evtBrowseActiveStudent = window._evtBrowseActiveStudent || null;
+window._evtBrowseMonthLines = window._evtBrowseMonthLines || [];
+window._evtBrowseRequest = window._evtBrowseRequest || 0;
+
+window.evtSetReportSubMode = function (sub) {
+  window._evtReportSubMode = sub === 'browse' ? 'browse' : 'summary';
+  var summaryPane = document.getElementById('evt-rep-summary-pane');
+  var browsePane = document.getElementById('evt-rep-browse-pane');
+  var summaryBtn = document.getElementById('btn-evt-rep-sub-summary');
+  var browseBtn = document.getElementById('btn-evt-rep-sub-browse');
+  if (summaryPane) summaryPane.classList.toggle('att-col-hidden', window._evtReportSubMode !== 'summary');
+  if (browsePane) browsePane.classList.toggle('att-col-hidden', window._evtReportSubMode !== 'browse');
+  function styleBtn(btn, active) {
+    if (!btn) return;
+    btn.classList.toggle('btn-primary', active);
+    btn.classList.toggle('btn-outline', !active);
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', active ? 'true' : 'false');
+  }
+  styleBtn(summaryBtn, window._evtReportSubMode === 'summary');
+  styleBtn(browseBtn, window._evtReportSubMode === 'browse');
+  if (window._evtReportSubMode === 'browse') window.evtEnsureBrowseClassesLoaded();
+};
+
+function evtBrowseListClasses() {
+  var classes = [];
+  if (typeof attListAttendanceClasses === 'function') classes = attListAttendanceClasses() || [];
+  if (!classes.length) {
+    var seen = Object.create(null);
+    (typeof attGetUsers === 'function' ? attGetUsers() : []).forEach(function (u) {
+      var c = typeof attGetUserClass === 'function' ? attGetUserClass(u) : (u && u.class);
+      c = String(c || '').trim();
+      if (c && c !== 'نامعلوم' && !seen[c]) {
+        seen[c] = true;
+        classes.push(c);
+      }
+    });
+  }
+  return classes.sort(function (a, b) { return String(a).localeCompare(String(b), 'ur'); });
+}
+
+window.evtEnsureBrowseClassesLoaded = function () {
+  var list = document.getElementById('evt-browse-class-list');
+  if (!list) return;
+  var classes = evtBrowseListClasses();
+  if (!classes.length) {
+    list.innerHTML = '<p class="att-col-placeholder">کوئی درجہ نہیں ملا</p>';
+    return;
+  }
+  list.innerHTML = classes.map(function (cls) {
+    var open = !!window._evtBrowseExpanded[cls];
+    var students = window._evtBrowseStudentsByClass[cls] || null;
+    var body = '';
+    if (open) {
+      if (!students) {
+        body = '<div class="att-col-browse-students"><p class="att-col-placeholder" style="padding:8px;">طلباء لوڈ…</p></div>';
+      } else if (!students.length) {
+        body = '<div class="att-col-browse-students"><p class="att-col-placeholder" style="padding:8px;">اس درجے میں طالب علم نہیں</p></div>';
+      } else {
+        body = '<div class="att-col-browse-students">' + students.map(function (st) {
+          var uid = typeof attGetUserId === 'function' ? attGetUserId(st) : String(st.id || '');
+          var active = window._evtBrowseActiveStudent && window._evtBrowseActiveStudent.uid === uid ? ' active' : '';
+          var name = st.name || uid;
+          return '<button type="button" class="att-col-browse-student' + active + '" onclick="window.evtBrowseOpenStudent(\'' +
+            String(cls).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\',\'' +
+            String(uid).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')">' +
+            '<strong>' + evtEscHtml(name) + '</strong><small>' + evtEscHtml(uid) + '</small></button>';
+        }).join('') + '</div>';
+      }
+    }
+    return '<div class="att-col-browse-class' + (open ? ' open' : '') + '">' +
+      '<button type="button" class="att-col-browse-class-btn" onclick="window.evtBrowseToggleClass(\'' +
+      String(cls).replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')">' +
+      '<span>' + evtEscHtml(cls) + '</span><i class="fas fa-chevron-left chev"></i></button>' +
+      body + '</div>';
+  }).join('');
+};
+
+window.evtBrowseToggleClass = function (className) {
+  className = String(className || '');
+  if (!className) return;
+  if (window._evtBrowseExpanded[className]) {
+    delete window._evtBrowseExpanded[className];
+    window.evtEnsureBrowseClassesLoaded();
+    return;
+  }
+  window._evtBrowseExpanded[className] = true;
+  window.evtEnsureBrowseClassesLoaded();
+  if (window._evtBrowseStudentsByClass[className]) return;
+  var requestId = ++window._evtBrowseRequest;
+  var loader = typeof window.attResolveTargetUsers === 'function'
+    ? window.attResolveTargetUsers('students', className)
+    : Promise.resolve([]);
+  Promise.resolve(loader).then(function (users) {
+    if (requestId !== window._evtBrowseRequest) return;
+    window._evtBrowseStudentsByClass[className] = (users || []).slice().sort(function (a, b) {
+      return String(a.name || '').localeCompare(String(b.name || ''), 'ur');
+    });
+    window.evtEnsureBrowseClassesLoaded();
+  }).catch(function (err) {
+    console.error('[EMS] evtBrowseToggleClass', err);
+    window._evtBrowseStudentsByClass[className] = [];
+    window.evtEnsureBrowseClassesLoaded();
+    window.showToast('طلباء لوڈ نہیں ہو سکے', 'error');
+  });
+};
+
+window.evtBrowseRefresh = function () {
+  window._evtBrowseStudentsByClass = Object.create(null);
+  window.evtEnsureBrowseClassesLoaded();
+  Object.keys(window._evtBrowseExpanded).forEach(function (cls) {
+    if (!window._evtBrowseExpanded[cls]) return;
+    Promise.resolve(typeof window.attResolveTargetUsers === 'function'
+      ? window.attResolveTargetUsers('students', cls)
+      : []).then(function (users) {
+      window._evtBrowseStudentsByClass[cls] = (users || []).slice().sort(function (a, b) {
+        return String(a.name || '').localeCompare(String(b.name || ''), 'ur');
+      });
+      window.evtEnsureBrowseClassesLoaded();
+    });
+  });
+};
+
+function evtBrowseCalendarMode() {
+  var checked = document.querySelector('input[name="evt_browse_cal"]:checked');
+  return checked && checked.value === 'lunar' ? 'lunar' : 'solar';
+}
+
+function evtBrowseCollectStudentMarks(uid) {
+  var store = evtReadStore();
+  var symbols = {};
+  try { symbols = JSON.parse(localStorage.getItem('ems_att_symbols') || '{}') || { P: 'P', A: 'A', L: 'L' }; }
+  catch (eS) { symbols = { P: 'P', A: 'A', L: 'L' }; }
+  var finalMarks = Object.create(null);
+  (store.sessions || []).forEach(function (s) {
+    if (!s || !s.date) return;
+    (s.participants || []).forEach(function (p) {
+      if (!p || String(p.id) !== String(uid)) return;
+      var kind = typeof attStatusKind === 'function' ? attStatusKind(p.status, symbols) : '';
+      if (!kind || kind === 'other') return;
+      var mapKind = kind === 'P' ? 'present' : kind === 'A' ? 'absent' : kind === 'L' ? 'leave' : '';
+      if (!mapKind) return;
+      finalMarks[String(s.date) + '|' + String(s.sheetId || 'sheet')] = { kind: mapKind };
+    });
+  });
+  return finalMarks;
+}
+
+function evtBrowseBucketMarks(finalMarks, calendarMode) {
+  if (typeof window.attCollectiveCountMarksByBucket === 'function') {
+    return window.attCollectiveCountMarksByBucket(finalMarks, calendarMode);
+  }
+  // Fallback (same solar grouping) if collective helper not loaded yet
+  var buckets = Object.create(null);
+  Object.keys(finalMarks || {}).forEach(function (key) {
+    var mark = finalMarks[key];
+    if (!mark) return;
+    var iso = String(key).split('|')[0];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return;
+    var ym = iso.slice(0, 7);
+    if (!buckets[ym]) {
+      buckets[ym] = { sortKey: ym, labelMain: ym, labelSub: '', total: 0, present: 0, absent: 0, leave: 0 };
+    }
+    buckets[ym].total += 1;
+    if (mark.kind === 'present' || mark.kind === 'P') buckets[ym].present += 1;
+    else if (mark.kind === 'absent' || mark.kind === 'A') buckets[ym].absent += 1;
+    else if (mark.kind === 'leave' || mark.kind === 'L') buckets[ym].leave += 1;
+  });
+  return Object.keys(buckets).map(function (k) { return buckets[k]; })
+    .sort(function (a, b) { return String(a.sortKey).localeCompare(String(b.sortKey)); });
+}
+
+function evtBrowseRenderMonthLines(lines) {
+  var wrap = document.getElementById('evt-browse-record-wrap');
+  if (!wrap) return;
+  if (!lines || !lines.length) {
+    wrap.innerHTML = '<p class="att-col-placeholder">اس طالب علم کا مطالعہ شیٹس میں کوئی ریکارڈ نہیں ملا۔</p>';
+    return;
+  }
+  var cal = evtBrowseCalendarMode();
+  var monthHead = cal === 'lunar' ? 'قمری مہینہ (سال-مہینہ)' : 'شمسی مہینہ (سال-مہینہ)';
+  wrap.innerHTML = '<table class="att-col-browse-month-table data-table"><thead><tr>' +
+    '<th>' + monthHead + '</th><th>کل</th><th>حاضر</th><th>غیر حاضر</th><th>رخصت</th><th>فیصد</th>' +
+    '</tr></thead><tbody>' +
+    lines.map(function (row) {
+      var pct = row.total ? Math.round((row.present / row.total) * 100) : 0;
+      var color = pct >= 75 ? 'var(--success)' : pct >= 50 ? 'var(--warning)' : 'var(--danger)';
+      return '<tr><td class="month-cell">' + evtEscHtml(row.labelMain) +
+        '<small>' + evtEscHtml(row.labelSub || '') + '</small></td>' +
+        '<td style="font-weight:700;">' + row.total + '</td>' +
+        '<td class="att-status-present" style="font-weight:700;">' + row.present + '</td>' +
+        '<td class="att-status-absent" style="font-weight:700;">' + row.absent + '</td>' +
+        '<td class="att-status-leave" style="font-weight:700;">' + row.leave + '</td>' +
+        '<td style="font-weight:700;color:' + color + ';">' + pct + '%</td></tr>';
+    }).join('') + '</tbody></table>';
+}
+
+window.evtBrowseOpenStudent = function (className, uid) {
+  className = String(className || '');
+  uid = String(uid || '');
+  if (!uid) return;
+  var students = window._evtBrowseStudentsByClass[className] || [];
+  var user = students.find(function (u) {
+    var id = typeof attGetUserId === 'function' ? attGetUserId(u) : String(u.id || '');
+    return id === uid;
+  }) || { id: uid, name: uid, class: className, type: 'student' };
+
+  window._evtBrowseActiveStudent = { uid: uid, className: className, user: user };
+  window.evtEnsureBrowseClassesLoaded();
+
+  var meta = document.getElementById('evt-browse-student-meta');
+  if (meta) {
+    meta.innerHTML = '<strong>' + evtEscHtml(user.name || uid) + '</strong>' +
+      '<small>' + evtEscHtml(uid) + ' · ' + evtEscHtml(className) + ' · مطالعہ شیٹس</small>';
+  }
+  var printBtn = document.getElementById('btn-evt-browse-print');
+  if (printBtn) printBtn.disabled = true;
+
+  var wrap = document.getElementById('evt-browse-record-wrap');
+  if (wrap) wrap.innerHTML = '<p class="att-col-placeholder"><i class="fas fa-spinner fa-spin"></i> ریکارڈ لوڈ ہو رہا ہے…</p>';
+
+  try {
+    var finalMarks = evtBrowseCollectStudentMarks(uid);
+    window._evtBrowseActiveStudent.finalMarks = finalMarks;
+    window._evtBrowseMonthLines = evtBrowseBucketMarks(finalMarks, evtBrowseCalendarMode());
+    evtBrowseRenderMonthLines(window._evtBrowseMonthLines);
+    if (printBtn) printBtn.disabled = !window._evtBrowseMonthLines.length;
+    if (!window._evtBrowseMonthLines.length) window.showToast('اس طالب علم کا مطالعہ ریکارڈ نہیں ملا', 'warning');
+    else window.showToast('ریکارڈ تیار — ' + window._evtBrowseMonthLines.length + ' مہینے', 'success');
+  } catch (err) {
+    console.error('[EMS] evtBrowseOpenStudent', err);
+    if (wrap) wrap.innerHTML = '<p class="att-col-placeholder" style="color:var(--danger);">ریکارڈ لوڈ نہیں ہو سکا</p>';
+    window.showToast('ریکارڈ لوڈ نہیں ہو سکا', 'error');
+  }
+};
+
+window.evtBrowseRefreshCalendar = function () {
+  if (!window._evtBrowseActiveStudent) return;
+  if (window._evtBrowseActiveStudent.finalMarks) {
+    window._evtBrowseMonthLines = evtBrowseBucketMarks(window._evtBrowseActiveStudent.finalMarks, evtBrowseCalendarMode());
+    evtBrowseRenderMonthLines(window._evtBrowseMonthLines);
+    var printBtn = document.getElementById('btn-evt-browse-print');
+    if (printBtn) printBtn.disabled = !window._evtBrowseMonthLines.length;
+    return;
+  }
+  if (window._evtBrowseActiveStudent.uid) {
+    window.evtBrowseOpenStudent(window._evtBrowseActiveStudent.className, window._evtBrowseActiveStudent.uid);
+  }
+};
+
+window.evtBrowsePrint = function () {
+  var wrap = document.getElementById('evt-browse-record-wrap');
+  var meta = document.getElementById('evt-browse-student-meta');
+  if (!wrap || !(window._evtBrowseMonthLines || []).length) return;
+  var html = '<div style="text-align:center;margin-bottom:12px;">' +
+    '<h2 style="font-family:\'Noto Nastaliq Urdu\',serif;margin:0;">حاضری مطالعہ — طالب علم کا ماہانہ ریکارڈ</h2>' +
+    '<div>' + (meta ? meta.innerHTML : '') + '</div>' +
+    '<small>کیلنڈر: ' + (evtBrowseCalendarMode() === 'lunar' ? 'قمری' : 'شمسی') + '</small></div>' +
+    wrap.innerHTML;
+  if (typeof attPrintWithBranding === 'function') attPrintWithBranding(html, '');
+  else if (typeof window.print === 'function') window.print();
 };
 
 // ============================================================================
@@ -7814,6 +8650,8 @@ function attBuildReportRowHtml(user, allRecords, fromDate, toDate, symbols) {
     '<td><input type="text" class="input-control" value="' + remarksText.replace(/"/g, '&quot;') + '" placeholder="تبصرہ / کیفیت..." style="border:none; border-bottom:1px solid #ccc; width:100%; border-radius:0; background:transparent;"></td>' +
     '</tr>';
 }
+window.attBuildReportRowHtml = attBuildReportRowHtml;
+window.attPrintWithBranding = attPrintWithBranding;
 
 var _repSearchUsersCache = null;
 var _repSearchDebounce = null;

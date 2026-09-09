@@ -3,6 +3,7 @@
  */
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const { assertSharedPortalSessionActive } = require('./shared-portal-session');
 const { sendFcmToTokens, sendEmailSmtp } = require('./notification-delivery');
 
 function uniqueUids(list) {
@@ -211,6 +212,7 @@ const registerParentDeviceToken = functions.https.onCall(async function (data, c
     if (!linkSnap.exists || linkSnap.data().status !== 'active') {
         throw new functions.https.HttpsError('permission-denied', 'والدین رسائی نہیں۔');
     }
+    await assertSharedPortalSessionActive(db, tenantId, context, linkSnap.data() || {}, 'parent');
     const ref = db.collection('All_Madrasas').doc(tenantId)
         .collection('ParentDeviceTokens').doc(context.auth.uid);
     const existing = await ref.get();

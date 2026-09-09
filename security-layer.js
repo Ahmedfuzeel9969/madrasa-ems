@@ -312,10 +312,12 @@
         var perm = resolveStaffPerm(staffId);
         if (!perm || perm.status === 'suspended') return false;
 
-        if (perm.modules && perm.modules[modId] === true) {
-            if (!action || action === 'view') return true;
-            if (perm.actions && perm.actions[modId] && perm.actions[modId][action]) return true;
-        }
+        // Permanent permission must match the server rule exactly: the module
+        // and the requested action must both be enabled. A module heading alone
+        // must never silently grant view access.
+        if (perm.modules && perm.modules[modId] === true
+            && perm.actions && perm.actions[modId]
+            && perm.actions[modId][action] === true) return true;
 
         var tempKey = modId + '.' + action;
         if (perm.temporary && perm.temporary[tempKey]) {
@@ -327,9 +329,6 @@
             }
         }
 
-        if (action === 'view' && perm.actions && perm.actions[modId] && perm.actions[modId].view) {
-            return true;
-        }
         return false;
     };
 

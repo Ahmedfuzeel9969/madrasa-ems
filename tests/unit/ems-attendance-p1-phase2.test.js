@@ -41,10 +41,11 @@ describe('Attendance P1 Phase 2 — performance polish & sync', function () {
         expect(src).toContain('emsOfflinePersistAttendance');
         var fnIdx = src.indexOf('window.attSaveEventAttendance');
         expect(fnIdx).toBeGreaterThan(-1);
-        expect(src.substring(fnIdx, fnIdx + 1200)).toContain('attEnqueueEventsDbSync');
+        var saveFnEnd = src.indexOf('window.attDeleteEventAttendance', fnIdx);
+        expect(src.substring(fnIdx, saveFnEnd > fnIdx ? saveFnEnd : fnIdx + 4000)).toContain('attEnqueueEventsDbSync');
         var saveBtnIdx = src.indexOf("btn-save-event-att");
         expect(saveBtnIdx).toBeGreaterThan(-1);
-        expect(src.substring(saveBtnIdx, saveBtnIdx + 1200)).toContain('attSaveEventAttendance');
+        expect(src.substring(saveBtnIdx, saveBtnIdx + 1800)).toContain('attSaveEventAttendance');
     });
 
     it('ATT-P1-6: stale dash-attendance-percent replaced with dash-att-rate', function () {

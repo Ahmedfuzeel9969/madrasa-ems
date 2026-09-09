@@ -64,6 +64,12 @@
     }
 
     global.emsPersistOfflineSession = function (userOverride) {
+        // Shared-portal principals are deliberately online-only and short
+        // lived. Persisting one would outlive server revocation/expiry.
+        if (global.EMS_SHARED_PORTAL_PRINCIPAL) {
+            global.emsClearOfflineSession();
+            return false;
+        }
         var tenantId = global.CURRENT_MADRASA_TENANT_ID || global.EMS_ACTIVE_TENANT_ID;
         if (!tenantId) return false;
         var tenantRole = global.CURRENT_USER_TENANT_ROLE;
@@ -74,6 +80,10 @@
         }
         var authUid = currentAuthUid(userOverride);
         if (!authUid) return false;
+        if (/^spg_/.test(String(authUid))) {
+            global.emsClearOfflineSession();
+            return false;
+        }
 
         var snap = {
             tenantId: tenantId,
@@ -133,6 +143,7 @@
         var snap = global.emsReadOfflineSession();
         if (!snap || !snap.tenantId || !snap.madrasaData) return false;
         if (!snap.authUid) return false;
+        if (/^spg_/.test(String(snap.authUid))) return false;
         if (user && snap.authUid && user.uid !== snap.authUid) return false;
         if (snap.madrasaData.subStatus === 'suspended') return false;
         return true;

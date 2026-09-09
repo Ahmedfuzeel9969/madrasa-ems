@@ -3,6 +3,7 @@
  */
 const admin = require('firebase-admin');
 const functions = require('firebase-functions');
+const { assertSharedPortalSessionActive } = require('./shared-portal-session');
 const { assertMadrasaActive } = require('./tenant-kill-switch');
 
 const VIEW_MAP = {
@@ -70,8 +71,9 @@ function finGetMonthlyChargeFromSetup(setup) {
     return finSetupNetPayable(setup);
 }
 
-async function assertParentAccess(tenantId, studentId, uid) {
+async function assertParentAccess(tenantId, studentId, context) {
     const db = admin.firestore();
+    const uid = context.auth.uid;
     await assertMadrasaActive(db, tenantId);
     const linkRef = db.collection('All_Madrasas').doc(tenantId).collection('Parent_Links').doc(uid);
     const linkSnap = await linkRef.get();
@@ -82,6 +84,7 @@ async function assertParentAccess(tenantId, studentId, uid) {
     if (studentIds.indexOf(studentId) < 0) {
         throw new functions.https.HttpsError('permission-denied', 'یہ طالبِ علم منسلک نہیں۔');
     }
+    await assertSharedPortalSessionActive(db, tenantId, context, linkSnap.data() || {}, 'parent');
     return linkSnap.data();
 }
 
@@ -479,7 +482,7 @@ const getParentStudentData = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('invalid-argument', 'tenantId اور studentId درکار ہیں۔');
     }
 
-    await assertParentAccess(tenantId, studentId, context.auth.uid);
+    await assertParentAccess(tenantId, studentId, context);
 
     const viewPermId = VIEW_MAP[view] || view;
     await assertParentViewPermission(tenantId, studentId, viewPermId);
@@ -517,6 +520,7 @@ const getParentLinkedStudents = functions.https.onCall(async (data, context) => 
     if (!linkSnap.exists || linkSnap.data().status !== 'active') {
         throw new functions.https.HttpsError('permission-denied', 'والدین رسائی نہیں۔');
     }
+    await assertSharedPortalSessionActive(db, tenantId, context, linkSnap.data() || {}, 'parent');
 
     const studentIds = linkSnap.data().studentIds || [];
     const students = [];
@@ -555,7 +559,7 @@ const submitParentVote = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('invalid-argument', 'tenantId، studentId اور announcementId درکار ہیں۔');
     }
 
-    await assertParentAccess(tenantId, studentId, context.auth.uid);
+    await assertParentAccess(tenantId, studentId, context);
     await assertParentViewPermission(tenantId, studentId, 'announcements');
 
     const db = admin.firestore();
