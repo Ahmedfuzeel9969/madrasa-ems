@@ -1,4 +1,4 @@
-﻿var EMS_SW_BUILD_TAG = '20260909_att_evt_browse_v1';
+﻿var EMS_SW_BUILD_TAG = '20260909_att_evt_shared_portal_v1';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

@@ -4,12 +4,12 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260909_att_evt_browse_v1';
+  var CACHE_BUST = '20260909_att_evt_shared_portal_v1';
 
     // Fail closed until Functions + Firestore + Storage rules are released
     // together. The controlled release flips this only after verification.
     if (typeof global.EMS_SHARED_PORTAL_GATEWAY_ENABLED !== 'boolean') {
-        global.EMS_SHARED_PORTAL_GATEWAY_ENABLED = false;
+        global.EMS_SHARED_PORTAL_GATEWAY_ENABLED = true;
     }
 
     global.EmsCloudManifest = {

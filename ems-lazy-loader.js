@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260909_att_evt_browse_v1';
+    var CACHE_BUST = '20260909_att_evt_shared_portal_v1';
     var loaded = Object.create(null);
     var loading = Object.create(null);
 
