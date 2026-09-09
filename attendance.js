@@ -7087,25 +7087,67 @@ window.evtBulkSelectByClasses = function () {
   window.showToast(classes.length + ' درجہ — ' + window.currentEventParticipants.length + ' اساتذہ/طلباء منتخب', 'info');
 };
 
-document.getElementById('btn-create-event')?.addEventListener('click', () => {
-  const name = document.getElementById('evt-name').value.trim();
-  const date = document.getElementById('evt-date').value;
+window._evtUiMode = window._evtUiMode || 'list'; // list | builder | marking
+window._evtSheetMeta = window._evtSheetMeta || null;
 
-  if (!name || !date) return window.showToast('تقریب کا نام اور تاریخ درج کرنا لازمی ہے!', 'error');
+function evtShowPanel(mode) {
+  window._evtUiMode = mode || 'list';
+  var home = document.getElementById('evt-sheets-home');
+  var builder = document.getElementById('evt-sheet-builder');
+  var marking = document.getElementById('evt-marking-panel');
+  if (home) home.style.display = mode === 'list' ? 'block' : 'none';
+  if (builder) builder.style.display = mode === 'builder' ? 'block' : 'none';
+  if (marking) marking.style.display = mode === 'marking' ? 'block' : 'none';
+}
 
+window.evtBackToSheetsList = function () {
   window._evtEditId = null;
+  window._evtSheetMeta = null;
   window.currentEventParticipants = [];
-  document.getElementById('evt-attendance-tbody').innerHTML = '';
+  evtShowPanel('list');
+  if (typeof window.renderSavedEvents === 'function') window.renderSavedEvents();
+};
+
+window.evtCancelEdit = window.evtBackToSheetsList;
+
+function evtOpenSheetBuilder(opts) {
+  opts = opts || {};
+  window._evtUiMode = 'builder';
+  window._evtEditId = opts.id || null;
+  window.currentEventParticipants = Array.isArray(opts.participants)
+    ? JSON.parse(JSON.stringify(opts.participants))
+    : [];
+
+  var titleEl = document.getElementById('evt-builder-title');
+  if (titleEl) titleEl.textContent = opts.id ? 'شیٹ ترمیم' : 'نئی شیٹ';
+
+  var nameEl = document.getElementById('evt-name');
+  var typeEl = document.getElementById('evt-type');
+  var dateEl = document.getElementById('evt-date');
+  var timeEl = document.getElementById('evt-time');
+  if (nameEl) nameEl.value = opts.name || '';
+  if (typeEl) typeEl.value = opts.type || 'اجلاس';
+  if (dateEl) {
+    dateEl.value = opts.date || '';
+    if (!dateEl.value) {
+      try { dateEl.value = new Date().toISOString().slice(0, 10); } catch (eD) { /* ignore */ }
+    }
+  }
+  if (timeEl) timeEl.value = opts.time || '';
 
   evtEnsureParticipantSearchBound();
   evtInitParticipantSearch();
   evtPopulateIncludeClasses();
-  var allCbNew = document.getElementById('evt-class-all');
-  if (allCbNew) allCbNew.checked = false;
-
-  document.getElementById('evt-participants-panel').style.display = 'block';
+  var allCb = document.getElementById('evt-class-all');
+  if (allCb) allCb.checked = false;
+  evtPopulateExcludeClass();
+  evtShowPanel('builder');
   renderEventParticipants();
-  window.showToast('نیا رجسٹر تیار ہے۔ "فوری انتخاب" سے سب شامل کریں، پھر ضرورت کے مطابق خارج کریں۔', 'success');
+}
+
+document.getElementById('btn-create-event')?.addEventListener('click', function () {
+  evtOpenSheetBuilder({});
+  window.showToast('شیٹ فارم کھل گیا — شرکاء منتخب کر کے «شیٹ محفوظ کریں» دبائیں', 'success');
 });
 
 // فوری اجتماعی انتخاب — سب منتخب کریں
@@ -7155,12 +7197,6 @@ window.evtMarkAll = function (key) {
   renderEventParticipants();
 };
 
-window.evtCancelEdit = function () {
-  window._evtEditId = null;
-  window.currentEventParticipants = [];
-  document.getElementById('evt-participants-panel').style.display = 'none';
-};
-
 document.getElementById('btn-add-participant')?.addEventListener('click', () => {
     const uid = evtResolveSelectedParticipantUid();
     if (!uid) return window.showToast('براہ کرم تلاش کر کے فرد منتخب کریں!', 'warning');
@@ -7178,14 +7214,49 @@ document.getElementById('btn-add-participant')?.addEventListener('click', () => 
     renderEventParticipants();
   });
 
+function attBuildEventRosterRow(p) {
+  var uid = String(p.id || '').replace(/'/g, "\\'");
+  return '<tr>' +
+    '<td><small>' + (p.id || '') + '</small></td>' +
+    '<td><strong>' + (p.name || '') + '</strong><br><small style="color:var(--accent);">' + (p.role || '') + '</small></td>' +
+    '<td><button class="icon-btn delete" onclick="removeEventParticipant(\'' + uid + '\')"><i class="fas fa-trash"></i></button></td>' +
+    '</tr>';
+}
+
 function renderEventParticipants() {
+  var mode = window._evtUiMode || 'list';
+  var symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
+  var count = window.currentEventParticipants.length;
+
+  if (mode === 'builder') {
+    var rosterBody = document.getElementById('evt-roster-tbody');
+    var builderBadge = document.getElementById('evt-builder-count');
+    if (builderBadge) builderBadge.textContent = 'کل شرکاء: ' + count;
+    if (!rosterBody) return;
+    attDisposeChunked('evt-roster');
+    if (!count) {
+      rosterBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#94a3b8;">فوری انتخاب یا درجہ وار سے شرکاء شامل کریں</td></tr>';
+      return;
+    }
+    var scrollRoster = rosterBody.closest('table') && rosterBody.closest('table').parentElement;
+    attRenderChunkedRows({
+      tbody: rosterBody,
+      scrollEl: scrollRoster,
+      rows: window.currentEventParticipants.map(attBuildEventRosterRow),
+      emptyHtml: '<tr><td colspan="3" style="text-align:center;color:#94a3b8;">کوئی شریک نہیں</td></tr>',
+      disposeKey: 'evt-roster'
+    });
+    return;
+  }
+
+  if (mode !== 'marking') return;
+
   const tbody = document.getElementById('evt-attendance-tbody');
   if (!tbody) return;
   attEnsureEvtStatusDelegation();
-  const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
 
   const badge = document.getElementById('evt-count-badge');
-  if (badge) badge.textContent = `کل شرکاء: ${window.currentEventParticipants.length}`;
+  if (badge) badge.textContent = `کل شرکاء: ${count}`;
 
   var scrollEl = tbody.closest('table') && tbody.closest('table').parentElement;
   if (scrollEl && !scrollEl.style.maxHeight) {
@@ -7193,9 +7264,9 @@ function renderEventParticipants() {
     scrollEl.style.overflowY = 'auto';
   }
 
-  if (window.currentEventParticipants.length === 0) {
+  if (!count) {
     attDisposeChunked('evt');
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94a3b8;">"فوری انتخاب" سے سب شامل کریں یا انفرادی شریک تلاش کریں</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94a3b8;">اس شیٹ میں کوئی شریک نہیں — شرکاء ترمیم کریں</td></tr>';
     var evtFoot = document.getElementById('evt-chunk-foot');
     if (evtFoot) evtFoot.textContent = '';
     return;
@@ -7228,25 +7299,69 @@ function evtSyncStatusesFromUI() {
   });
 }
 
+function evtBuildPayloadFromForm(participants) {
+  var eventName = (document.getElementById('evt-name') || {}).value || '';
+  eventName = String(eventName).trim();
+  var eventDate = (document.getElementById('evt-date') || {}).value || '';
+  var meta = window._evtSheetMeta || {};
+  if (!eventName && meta.name) eventName = meta.name;
+  if (!eventDate && meta.date) eventDate = meta.date;
+  return {
+    name: eventName,
+    type: (document.getElementById('evt-type') || {}).value || meta.type || 'اجلاس',
+    date: eventDate,
+    time: (document.getElementById('evt-time') || {}).value || meta.time || '',
+    participants: participants || window.currentEventParticipants || [],
+    timestamp: new Date().getTime()
+  };
+}
+
+/** شیٹ محفوظ — فہرست میں آتی ہے؛ حاضری بعد میں کلک سے */
+document.getElementById('btn-save-event-sheet')?.addEventListener('click', function () {
+  if (window.currentEventParticipants.length === 0) {
+    return window.showToast('شیٹ میں کم از کم ایک شریک شامل کریں!', 'error');
+  }
+  var payload = evtBuildPayloadFromForm(window.currentEventParticipants);
+  if (!payload.name || !payload.date) {
+    return window.showToast('شیٹ کا نام اور تاریخ لازمی ہیں!', 'error');
+  }
+  var isEdit = !!window._evtEditId;
+  payload.id = isEdit
+    ? window._evtEditId
+    : (window.generateID ? window.generateID('EVT') : 'EVT-' + Math.floor(Math.random() * 9000));
+
+  var btn = document.getElementById('btn-save-event-sheet');
+  if (btn) btn.disabled = true;
+
+  Promise.resolve(window.attSaveEventAttendance(payload, { isEdit: isEdit })).then(function (res) {
+    if (!res || !res.ok) {
+      window.showToast('شیٹ محفوظ نہیں ہو سکی', 'error');
+      return;
+    }
+    if (typeof logAttAudit === 'function') {
+      logAttAudit(isEdit ? 'تقریب شیٹ ترمیم' : 'تقریب شیٹ', 'شیٹ: ' + payload.name + ' | شرکاء: ' + payload.participants.length);
+    }
+    window.showToast(isEdit ? 'شیٹ ترمیم محفوظ ہو گئی' : 'شیٹ محفوظ ہو گئی — فہرست سے کلک کر کے حاضری لگائیں', 'success');
+    if (res.offline && !res.synced) window.showToast('آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'info');
+    window.evtBackToSheetsList();
+  }).catch(function (err) {
+    console.error('[EMS] btn-save-event-sheet', err);
+    window.showToast('شیٹ محفوظ نہیں ہو سکی', 'error');
+  }).finally(function () {
+    if (btn) btn.disabled = false;
+  });
+});
+
+/** حاضری محفوظ — marking موڈ */
 document.getElementById('btn-save-event-att')?.addEventListener('click', () => {
   if (window.currentEventParticipants.length === 0) return window.showToast('فہرست میں کوئی شریک موجود نہیں!', 'error');
 
   evtSyncStatusesFromUI();
 
-  var eventName = document.getElementById('evt-name').value.trim();
-  var eventDate = document.getElementById('evt-date').value;
-  if (!eventName || !eventDate) {
-    return window.showToast('تقریب کا نام اور تاریخ لازمی ہیں!', 'error');
+  var payload = evtBuildPayloadFromForm(window.currentEventParticipants);
+  if (!payload.name || !payload.date) {
+    return window.showToast('شیٹ کا نام اور تاریخ لازمی ہیں!', 'error');
   }
-
-  const payload = {
-    name: eventName,
-    type: document.getElementById('evt-type').value,
-    date: eventDate,
-    time: document.getElementById('evt-time').value,
-    participants: window.currentEventParticipants,
-    timestamp: new Date().getTime(),
-  };
 
   const isEdit = !!window._evtEditId;
   if (isEdit) {
@@ -7262,41 +7377,34 @@ document.getElementById('btn-save-event-att')?.addEventListener('click', () => {
 
   Promise.resolve(window.attSaveEventAttendance(payload, { isEdit: isEdit })).then(function (res) {
     if (!res || !res.ok) {
-      window.showToast('تقریب محفوظ نہیں ہو سکی', 'error');
+      window.showToast('حاضری محفوظ نہیں ہو سکی', 'error');
       return;
     }
-    if (isEdit) {
-      window.showToast('تقریباتی رجسٹر میں ترمیم محفوظ ہو گئی!', 'success');
-      if (typeof logAttAudit === 'function') logAttAudit('تقریب ترمیم', `تقریب: ${payload.name}`);
-    } else {
-      window.showToast('تقریب کی مکمل حاضری کامیابی سے محفوظ کر لی گئی!', 'success');
-      if (typeof logAttAudit === 'function') logAttAudit('تقریب حاضری', `تقریب: ${payload.name} | شرکاء: ${payload.participants.length}`);
-    }
+    window.showToast('حاضری محفوظ ہو گئی!', 'success');
+    if (typeof logAttAudit === 'function') logAttAudit('تقریب حاضری', `تقریب: ${payload.name} | شرکاء: ${payload.participants.length}`);
     if (res.offline && !res.synced) {
       window.showToast('آف لائن محفوظ — کلاؤڈ سنک بعد میں', 'info');
     }
-    window._evtEditId = null;
-    window.currentEventParticipants = [];
-    document.getElementById('evt-participants-panel').style.display = 'none';
-    renderSavedEvents();
+    window.evtBackToSheetsList();
   }).catch(function (err) {
     console.error('[EMS] btn-save-event-att', err);
-    window.showToast('تقریب محفوظ نہیں ہو سکی', 'error');
+    window.showToast('حاضری محفوظ نہیں ہو سکی', 'error');
   }).finally(function () {
     if (btn) btn.disabled = false;
   });
 });
 
-// محفوظ شدہ تقریبات کی فہرست (CRUD)
+// محفوظ شدہ شیٹس کی فہرست — کلک = حاضری کھولیں
 window.renderSavedEvents = function () {
   const tbody = document.getElementById('evt-saved-tbody');
   if (!tbody) return;
+  evtShowPanel('list');
   const symbols = JSON.parse(localStorage.getItem('ems_att_symbols')) || { P: 'P', A: 'A', L: 'L' };
   const events = evtReadEventsDb();
 
   if (events.length === 0) {
     attDisposeChunked('evt-saved');
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">ابھی کوئی تقریب محفوظ نہیں</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">ابھی کوئی شیٹ نہیں — «نئی شیٹ بنائیں» دبائیں</td></tr>';
     var emptyFoot = document.getElementById('evt-saved-chunk-foot');
     if (emptyFoot) emptyFoot.textContent = '';
     return;
@@ -7311,21 +7419,25 @@ window.renderSavedEvents = function () {
       const leave = (e.participants || []).filter((p) => p.status === symbols.L).length;
       var eid = String(e.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
       return (
-        '<td><strong>' + (e.name || '-') + '</strong>' + (e.time ? '<br><small style="color:#7f8c8d;">' + e.time + '</small>' : '') + '</td>' +
+        '<td style="cursor:pointer;" onclick="window.openEventSheet(\'' + eid + '\')" title="حاضری کھولیں">' +
+        '<strong style="color:var(--primary);">' + (e.name || '-') + '</strong>' +
+        (e.time ? '<br><small style="color:#7f8c8d;">' + e.time + '</small>' : '') +
+        '<br><small style="color:#0d9488;"><i class="fas fa-mouse-pointer"></i> حاضری کے لیے کلک</small></td>' +
         '<td><span class="evt-type-tag">' + (e.type || '-') + '</span></td>' +
         '<td>' + (e.date || '-') + '</td>' +
         '<td style="text-align:center; font-weight:bold;">' + (e.participants || []).length + '</td>' +
         '<td style="text-align:center;"><span class="att-status-present" style="font-weight:bold;">' + present + '</span> / <span class="att-status-absent" style="font-weight:bold;">' + absent + '</span> / <span class="att-status-leave" style="font-weight:bold;">' + leave + '</span></td>' +
         '<td>' +
-        '<button class="icon-btn" style="color:var(--accent);" title="ترمیم" onclick="editEvent(\'' + eid + '\')"><i class="fas fa-edit"></i></button> ' +
-        '<button class="icon-btn delete" title="حذف" onclick="deleteEvent(\'' + eid + '\')"><i class="fas fa-trash"></i></button>' +
+        '<button class="icon-btn" style="color:var(--success);" title="حاضری" onclick="event.stopPropagation();window.openEventSheet(\'' + eid + '\')"><i class="fas fa-clipboard-check"></i></button> ' +
+        '<button class="icon-btn" style="color:var(--accent);" title="شیٹ / شرکاء ترمیم" onclick="event.stopPropagation();editEvent(\'' + eid + '\')"><i class="fas fa-edit"></i></button> ' +
+        '<button class="icon-btn delete" title="حذف" onclick="event.stopPropagation();deleteEvent(\'' + eid + '\')"><i class="fas fa-trash"></i></button>' +
         '</td>'
       );
     });
 
   var scrollEl = tbody.closest('table') && tbody.closest('table').parentElement;
   if (scrollEl && !scrollEl.style.maxHeight) {
-    scrollEl.style.maxHeight = '48vh';
+    scrollEl.style.maxHeight = '55vh';
     scrollEl.style.overflowY = 'auto';
   }
 
@@ -7334,47 +7446,82 @@ window.renderSavedEvents = function () {
     scrollEl: scrollEl,
     rows: rowHtml,
     footId: 'evt-saved-chunk-foot',
-    emptyHtml: '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">ابھی کوئی تقریب محفوظ نہیں</td></tr>',
+    emptyHtml: '<tr><td colspan="6" style="text-align:center; color:#94a3b8;">ابھی کوئی شیٹ نہیں</td></tr>',
     disposeKey: 'evt-saved'
   });
 };
 
+/** شیٹ پر کلک → فوراً حاضری مارکنگ */
+window.openEventSheet = function (id) {
+  const events = evtReadEventsDb();
+  const e = events.find((x) => x.id === id);
+  if (!e) return window.showToast('شیٹ نہیں ملی', 'error');
+
+  window._evtEditId = id;
+  window._evtSheetMeta = {
+    name: e.name || '',
+    type: e.type || 'اجلاس',
+    date: e.date || '',
+    time: e.time || ''
+  };
+  window.currentEventParticipants = JSON.parse(JSON.stringify(e.participants || []));
+
+  var nameEl = document.getElementById('evt-name');
+  var typeEl = document.getElementById('evt-type');
+  var dateEl = document.getElementById('evt-date');
+  var timeEl = document.getElementById('evt-time');
+  if (nameEl) nameEl.value = e.name || '';
+  if (typeEl) typeEl.value = e.type || 'اجلاس';
+  if (dateEl) dateEl.value = e.date || '';
+  if (timeEl) timeEl.value = e.time || '';
+
+  var title = document.getElementById('evt-marking-title');
+  var meta = document.getElementById('evt-marking-meta');
+  if (title) title.textContent = e.name || 'حاضری';
+  if (meta) {
+    meta.textContent = (e.type || '') + (e.date ? ' · ' + e.date : '') + (e.time ? ' · ' + e.time : '') +
+      ' · شرکاء: ' + (e.participants || []).length;
+  }
+
+  evtShowPanel('marking');
+  renderEventParticipants();
+  window.showToast('حاضری شیٹ کھل گئی', 'info');
+};
+
+/** شیٹ بنانے والا فارم (شرکاء ترمیم) */
 window.editEvent = function (id) {
   const events = evtReadEventsDb();
   const e = events.find((x) => x.id === id);
   if (!e) return;
+  evtOpenSheetBuilder({
+    id: id,
+    name: e.name,
+    type: e.type,
+    date: e.date,
+    time: e.time,
+    participants: e.participants || []
+  });
+  window.showToast('شیٹ ترمیم — شرکاء تبدیل کر کے محفوظ کریں', 'info');
+};
 
-  window._evtEditId = id;
-  window.currentEventParticipants = JSON.parse(JSON.stringify(e.participants || []));
-  document.getElementById('evt-name').value = e.name || '';
-  document.getElementById('evt-type').value = e.type || 'اجلاس';
-  document.getElementById('evt-date').value = e.date || '';
-  document.getElementById('evt-time').value = e.time || '';
-
-  evtEnsureParticipantSearchBound();
-  evtInitParticipantSearch();
-  evtPopulateIncludeClasses();
-
-  evtPopulateExcludeClass();
-  document.getElementById('evt-participants-panel').style.display = 'block';
-  renderEventParticipants();
-  document.getElementById('evt-participants-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  window.showToast('ترمیم کے لیے رجسٹر کھل گیا', 'info');
+window.editEventRosterFromMarking = function () {
+  if (!window._evtEditId) return;
+  window.editEvent(window._evtEditId);
 };
 
 window.deleteEvent = function (id) {
-  if (!confirm('کیا آپ واقعی یہ تقریباتی رجسٹر حذف کرنا چاہتے ہیں؟')) return;
+  if (!confirm('کیا آپ واقعی یہ تقریباتی شیٹ حذف کرنا چاہتے ہیں؟')) return;
   const events = evtReadEventsDb();
   const ev = events.find((x) => x.id === id);
   Promise.resolve(window.attDeleteEventAttendance(id)).then(function (res) {
     if (!res || !res.ok) {
-      window.showToast('تقریب حذف نہیں ہو سکی', 'error');
+      window.showToast('شیٹ حذف نہیں ہو سکی', 'error');
       return;
     }
     if (typeof moveToRecycleBin === 'function' && ev) moveToRecycleBin('تقریباتی رجسٹر', ev);
     if (typeof logAttAudit === 'function') logAttAudit('تقریب حذف', `تقریب: ${ev ? ev.name : id}`);
-    renderSavedEvents();
-    window.showToast('تقریباتی رجسٹر حذف کر دیا گیا', 'error');
+    window.evtBackToSheetsList();
+    window.showToast('شیٹ حذف کر دی گئی', 'error');
   });
 };
 

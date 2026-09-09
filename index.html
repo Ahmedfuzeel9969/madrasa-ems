@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260909_att_evt_class_v1">
+    <link rel="stylesheet" href="style.css?v=20260909_att_evt_sheet_flow_v1">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -1710,76 +1710,138 @@
         
             <div id="att-event-register" class="att-panel" style="display:none;">
                 <div class="premium-card">
-                    <h3 style="margin-top:0;"><i class="fas fa-star"></i> پروگرام، امتحانات اور ورکشاپس کی حاضری</h3>
-                    <div class="form-grid" style="background: #eef2f6; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
-                        <div class="input-group">
-                            <label>تقریب کا نام</label>
-                            <input type="text" id="evt-name" class="input-control" placeholder="مثلاً: سالانہ جلسہ، تربیتی ورکشاپ">
-                        </div>
-                        <div class="input-group">
-                            <label>نوعیت (Type)</label>
-                            <select id="evt-type" class="input-control">
-                                <option value="اجلاس">اجلاس / میٹنگ</option>
-                                <option value="امتحان">امتحانی ڈیوٹی</option>
-                                <option value="پروگرام">عمومی پروگرام</option>
-                                <option value="رات کا قیام">رات کا قیام</option>
-                                <option value="مطالعاتی نشست">مطالعاتی نشست</option>
-                                <option value="خصوصی اجتماع">خصوصی اجتماع</option>
-                                <option value="تربیتی نشست">تربیتی نشست</option>
-                                <option value="سالانہ پروگرام">سالانہ پروگرام</option>
-                            </select>
-                        </div>
-                        <div class="input-group">
-                            <label>تاریخ اور وقت</label>
-                            <div style="display:flex; gap:5px;">
-                                <input type="date" id="evt-date" class="input-control" style="flex:1;">
-                                <input type="time" id="evt-time" class="input-control" style="flex:1;">
-                            </div>
-                        </div>
-                        <div class="input-group" style="justify-content: flex-end;">
-                            <button class="btn btn-primary" id="btn-create-event"><i class="fas fa-plus"></i> نیا رجسٹر بنائیں</button>
-                        </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;">
+                        <h3 style="margin:0;"><i class="fas fa-star"></i> تقریباتی حاضری شیٹس</h3>
+                        <button type="button" class="btn btn-primary" id="btn-create-event"><i class="fas fa-plus"></i> نئی شیٹ بنائیں</button>
                     </div>
-        
-                    <div id="evt-participants-panel" style="display:none;">
-                        <!-- فوری اجتماعی انتخاب: سب منتخب کریں پھر خارج کریں -->
-                        <div class="evt-bulk-bar">
-                            <div class="evt-bulk-group">
-                                <span class="evt-bulk-label"><i class="fas fa-users"></i> فوری انتخاب:</span>
-                                <button class="btn btn-primary btn-sm" onclick="evtBulkSelect('all')">پورا مدرسہ</button>
-                                <button class="btn btn-success btn-sm" onclick="evtBulkSelect('teachers_students_staff')" title="اساتذہ + تمام طلباء + عملہ"><i class="fas fa-user-friends"></i> اساتذہ + طلباء + عملہ</button>
-                                <button class="btn btn-outline btn-sm" onclick="evtBulkSelect('student')">تمام طلبہ</button>
-                                <button class="btn btn-outline btn-sm" onclick="evtBulkSelect('teacher')">تمام اساتذہ</button>
-                                <button class="btn btn-outline btn-sm" onclick="evtBulkSelect('staff')">تمام عملہ</button>
-                                <button class="btn btn-danger btn-sm" onclick="evtBulkSelect('clear')"><i class="fas fa-times"></i> سب خالی</button>
-                            </div>
-                            <div class="evt-bulk-group">
-                                <span class="evt-bulk-label"><i class="fas fa-user-minus"></i> خارج کریں:</span>
-                                <select id="evt-exclude-class" class="input-control input-sm" style="min-width:150px;"><option value="">پورا درجہ/شعبہ خارج کریں...</option></select>
-                            </div>
-                            <div class="evt-bulk-group evt-bulk-classes" style="width:100%;">
-                                <span class="evt-bulk-label"><i class="fas fa-layer-group"></i> درجہ وار:</span>
-                                <label class="evt-class-all-label" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-                                    <input type="checkbox" id="evt-class-all" onchange="window.evtToggleAllClasses(this.checked)"> تمام درجات
-                                </label>
-                                <select id="evt-include-classes" class="input-control input-sm" multiple size="4" style="min-width:220px;min-height:88px;" title="ایک یا زیادہ درجات (Ctrl/Cmd سے کئی)"></select>
-                                <button type="button" class="btn btn-primary btn-sm" onclick="window.evtBulkSelectByClasses()"><i class="fas fa-filter"></i> منتخب درجوں کے اساتذہ/طلباء</button>
-                            </div>
-                        </div>
+                    <p style="color:#64748b;font-size:13px;margin:0 0 14px;">پہلے شیٹ بنائیں (شرکاء منتخب کریں)، پھر شیٹ پر کلک کر کے فوراً حاضری لگائیں۔</p>
 
-                        <div class="form-grid" style="margin: 12px 0; padding: 10px; border: 1px dashed var(--accent); border-radius:6px;">
-                            <div class="input-group form-grid-full">
-                                <label>انفرادی شریک شامل کریں (لائیو سرچ)</label>
-                                <div style="display:flex; gap:10px;">
-                                    <div style="flex:1; position:relative;">
-                                        <input type="text" id="evt-participant-search" class="input-control" placeholder="نام، آئی ڈی یا درجہ تلاش کریں..." autocomplete="off">
-                                        <div id="evt-participant-results" style="display:none; position:absolute; z-index:20; left:0; right:0; top:100%; max-height:220px; overflow-y:auto; background:#fff; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 8px 24px rgba(15,23,42,0.12);"></div>
-                                    </div>
-                                    <button class="btn btn-success" id="btn-add-participant"><i class="fas fa-user-plus"></i> شامل کریں</button>
+                    <!-- 1) شیٹس کی فہرست -->
+                    <div id="evt-sheets-home">
+                        <h4 style="border-bottom:2px solid #eef2f6; padding-bottom:8px;margin:0 0 10px;"><i class="fas fa-folder-open"></i> محفوظ شدہ شیٹس</h4>
+                        <div style="max-height:55vh;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;">
+                        <table class="data-table" id="evt-saved-table" style="margin:0;">
+                            <thead>
+                                <tr>
+                                    <th>شیٹ / تقریب</th>
+                                    <th style="width:120px;">نوعیت</th>
+                                    <th style="width:110px;">تاریخ</th>
+                                    <th style="width:80px;">شرکاء</th>
+                                    <th style="width:140px;">حاضر/غیرحاضر/رخصت</th>
+                                    <th style="width:160px;">کارروائی</th>
+                                </tr>
+                            </thead>
+                            <tbody id="evt-saved-tbody"><tr><td colspan="6" style="text-align:center;">ابھی کوئی شیٹ نہیں — «نئی شیٹ بنائیں» دبائیں</td></tr></tbody>
+                        </table>
+                        </div>
+                        <div id="evt-saved-chunk-foot" style="font-size:12px;color:#94a3b8;text-align:center;padding:8px 4px;"></div>
+                    </div>
+
+                    <!-- 2) شیٹ بنانے / ترمیم کا پینل (تمام انتخاب سہولیات) -->
+                    <div id="evt-sheet-builder" style="display:none;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                            <h4 style="margin:0;color:var(--primary);"><i class="fas fa-file-invoice"></i> <span id="evt-builder-title">نئی شیٹ</span></h4>
+                            <button type="button" class="btn btn-outline btn-sm" onclick="window.evtBackToSheetsList()"><i class="fas fa-arrow-right"></i> فہرست</button>
+                        </div>
+                        <div class="form-grid" style="background:#eef2f6;padding:15px;border-radius:6px;margin-bottom:14px;">
+                            <div class="input-group">
+                                <label>شیٹ / تقریب کا نام</label>
+                                <input type="text" id="evt-name" class="input-control" placeholder="مثلاً: سالانہ جلسہ، تربیتی ورکشاپ">
+                            </div>
+                            <div class="input-group">
+                                <label>نوعیت (Type)</label>
+                                <select id="evt-type" class="input-control">
+                                    <option value="اجلاس">اجلاس / میٹنگ</option>
+                                    <option value="امتحان">امتحانی ڈیوٹی</option>
+                                    <option value="پروگرام">عمومی پروگرام</option>
+                                    <option value="رات کا قیام">رات کا قیام</option>
+                                    <option value="مطالعاتی نشست">مطالعاتی نشست</option>
+                                    <option value="خصوصی اجتماع">خصوصی اجتماع</option>
+                                    <option value="تربیتی نشست">تربیتی نشست</option>
+                                    <option value="سالانہ پروگرام">سالانہ پروگرام</option>
+                                </select>
+                            </div>
+                            <div class="input-group">
+                                <label>تاریخ اور وقت</label>
+                                <div style="display:flex; gap:5px;">
+                                    <input type="date" id="evt-date" class="input-control" style="flex:1;">
+                                    <input type="time" id="evt-time" class="input-control" style="flex:1;">
                                 </div>
                             </div>
                         </div>
-        
+
+                        <div id="evt-participants-panel">
+                            <div class="evt-bulk-bar">
+                                <div class="evt-bulk-group">
+                                    <span class="evt-bulk-label"><i class="fas fa-users"></i> فوری انتخاب:</span>
+                                    <button class="btn btn-primary btn-sm" onclick="evtBulkSelect('all')">پورا مدرسہ</button>
+                                    <button class="btn btn-success btn-sm" onclick="evtBulkSelect('teachers_students_staff')" title="اساتذہ + تمام طلباء + عملہ"><i class="fas fa-user-friends"></i> اساتذہ + طلباء + عملہ</button>
+                                    <button class="btn btn-outline btn-sm" onclick="evtBulkSelect('student')">تمام طلبہ</button>
+                                    <button class="btn btn-outline btn-sm" onclick="evtBulkSelect('teacher')">تمام اساتذہ</button>
+                                    <button class="btn btn-outline btn-sm" onclick="evtBulkSelect('staff')">تمام عملہ</button>
+                                    <button class="btn btn-danger btn-sm" onclick="evtBulkSelect('clear')"><i class="fas fa-times"></i> سب خالی</button>
+                                </div>
+                                <div class="evt-bulk-group">
+                                    <span class="evt-bulk-label"><i class="fas fa-user-minus"></i> خارج کریں:</span>
+                                    <select id="evt-exclude-class" class="input-control input-sm" style="min-width:150px;"><option value="">پورا درجہ/شعبہ خارج کریں...</option></select>
+                                </div>
+                                <div class="evt-bulk-group evt-bulk-classes" style="width:100%;">
+                                    <span class="evt-bulk-label"><i class="fas fa-layer-group"></i> درجہ وار:</span>
+                                    <label class="evt-class-all-label" style="display:inline-flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                                        <input type="checkbox" id="evt-class-all" onchange="window.evtToggleAllClasses(this.checked)"> تمام درجات
+                                    </label>
+                                    <select id="evt-include-classes" class="input-control input-sm" multiple size="4" style="min-width:220px;min-height:88px;" title="ایک یا زیادہ درجات (Ctrl/Cmd سے کئی)"></select>
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="window.evtBulkSelectByClasses()"><i class="fas fa-filter"></i> منتخب درجوں کے اساتذہ/طلباء</button>
+                                </div>
+                            </div>
+
+                            <div class="form-grid" style="margin:12px 0;padding:10px;border:1px dashed var(--accent);border-radius:6px;">
+                                <div class="input-group form-grid-full">
+                                    <label>انفرادی شریک شامل کریں (لائیو سرچ)</label>
+                                    <div style="display:flex; gap:10px;">
+                                        <div style="flex:1; position:relative;">
+                                            <input type="text" id="evt-participant-search" class="input-control" placeholder="نام، آئی ڈی یا درجہ تلاش کریں..." autocomplete="off">
+                                            <div id="evt-participant-results" style="display:none; position:absolute; z-index:20; left:0; right:0; top:100%; max-height:220px; overflow-y:auto; background:#fff; border:1px solid #e2e8f0; border-radius:6px; box-shadow:0 8px 24px rgba(15,23,42,0.12);"></div>
+                                        </div>
+                                        <button class="btn btn-success" id="btn-add-participant"><i class="fas fa-user-plus"></i> شامل کریں</button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="evt-status-bar">
+                                <span id="evt-builder-count" class="evt-count-badge">کل شرکاء: 0</span>
+                            </div>
+                            <div style="max-height:36vh; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px;">
+                            <table class="data-table" id="evt-roster-table" style="margin:0;">
+                                <thead>
+                                    <tr>
+                                        <th style="width:90px;">آئی ڈی</th>
+                                        <th>نام و عہدہ</th>
+                                        <th style="width:50px;">حذف</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="evt-roster-tbody"></tbody>
+                            </table>
+                            </div>
+                            <div style="margin-top:15px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                                <button type="button" class="btn btn-outline" onclick="window.evtBackToSheetsList()"><i class="fas fa-times"></i> منسوخ</button>
+                                <button type="button" class="btn btn-success" id="btn-save-event-sheet"><i class="fas fa-save"></i> شیٹ محفوظ کریں</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 3) حاضری مارکنگ — شیٹ کلک پر کھلتی ہے -->
+                    <div id="evt-marking-panel" style="display:none;">
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+                            <div>
+                                <h4 style="margin:0;color:var(--primary);"><i class="fas fa-clipboard-check"></i> <span id="evt-marking-title">حاضری</span></h4>
+                                <div id="evt-marking-meta" style="font-size:12px;color:#64748b;margin-top:4px;"></div>
+                            </div>
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                                <button type="button" class="btn btn-outline btn-sm" onclick="window.editEventRosterFromMarking()"><i class="fas fa-users-cog"></i> شرکاء ترمیم</button>
+                                <button type="button" class="btn btn-outline btn-sm" onclick="window.evtBackToSheetsList()"><i class="fas fa-arrow-right"></i> فہرست</button>
+                            </div>
+                        </div>
                         <div class="evt-status-bar">
                             <span id="evt-count-badge" class="evt-count-badge">کل شرکاء: 0</span>
                             <div style="display:flex; gap:6px;">
@@ -1788,7 +1850,6 @@
                                 <button class="btn btn-sm" style="background:var(--warning);color:#fff;" onclick="evtMarkAll('L')">سب رخصت</button>
                             </div>
                         </div>
-
                         <div style="max-height:48vh; overflow-y:auto; border:1px solid #e2e8f0; border-radius:6px;">
                         <table class="data-table" id="evt-attendance-table" style="margin:0;">
                             <thead>
@@ -1802,29 +1863,11 @@
                             <tbody id="evt-attendance-tbody"></tbody>
                         </table>
                         </div>
-                        <div style="margin-top: 15px; display:flex; justify-content:space-between; align-items:center;">
-                            <button class="btn btn-outline" onclick="evtCancelEdit()"><i class="fas fa-times"></i> منسوخ</button>
-                            <button class="btn btn-success" id="btn-save-event-att"><i class="fas fa-save"></i> تقریب کی حاضری محفوظ کریں</button>
+                        <div id="evt-chunk-foot" style="font-size:12px;color:#94a3b8;text-align:center;padding:6px;"></div>
+                        <div style="margin-top:15px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+                            <button type="button" class="btn btn-outline" onclick="window.evtBackToSheetsList()"><i class="fas fa-times"></i> بند کریں</button>
+                            <button type="button" class="btn btn-success" id="btn-save-event-att"><i class="fas fa-save"></i> حاضری محفوظ کریں</button>
                         </div>
-                    </div>
-
-                    <!-- محفوظ شدہ تقریبات کی فہرست (ترمیم/حذف) -->
-                    <div style="margin-top:22px;">
-                        <h3 style="border-bottom:2px solid #eef2f6; padding-bottom:8px;"><i class="fas fa-folder-open"></i> محفوظ شدہ تقریباتی رجسٹر</h3>
-                        <table class="data-table" id="evt-saved-table">
-                            <thead>
-                                <tr>
-                                    <th>تقریب</th>
-                                    <th style="width:130px;">نوعیت</th>
-                                    <th style="width:120px;">تاریخ</th>
-                                    <th style="width:90px;">شرکاء</th>
-                                    <th style="width:150px;">حاضر/غیرحاضر/رخصت</th>
-                                    <th style="width:150px;">کارروائی</th>
-                                </tr>
-                            </thead>
-                            <tbody id="evt-saved-tbody"><tr><td colspan="6" style="text-align:center;">ابھی کوئی تقریب محفوظ نہیں</td></tr></tbody>
-                        </table>
-                        <div id="evt-saved-chunk-foot" style="font-size:12px;color:#94a3b8;text-align:center;padding:8px 4px;"></div>
                     </div>
                 </div>
             </div>
@@ -6763,7 +6806,7 @@
     <script defer src="ems-query-utils.js?v=20260704attfix1"></script>
     <script defer src="ems-repository.js?v=20260703repo1"></script>
     <script defer src="ems-online-mode.js?v=20260708_search_index_v3"></script>
-    <script defer src="cloud/ems-cloud-manifest.js?v=20260909_att_evt_class_v1"></script>
+    <script defer src="cloud/ems-cloud-manifest.js?v=20260909_att_evt_sheet_flow_v1"></script>
     <script defer src="cloud/ems-cloud-loader.js?v=20260708_search_index_v3"></script>
     <script defer src="ems-deferred-libs.js?v=20260809_pdf1"></script>
     <script defer src="ems-utils.js?v=20260809_att_print_bw"></script>
@@ -6788,10 +6831,10 @@
     <script defer src="ems-offline-session-cache.js?v=20260705desktopfix6"></script>
     <script defer src="ems-offline-policy.js?v=20260707_sync_hardening_v1"></script>
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
-    <script defer src="auth.js?v=20260909_att_evt_class_v1"></script>
+    <script defer src="auth.js?v=20260909_att_evt_sheet_flow_v1"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260909_att_evt_class_v1"></script>
-    <script defer src="ems-lazy-loader.js?v=20260909_att_evt_class_v1"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260909_att_evt_sheet_flow_v1"></script>
+    <script defer src="ems-lazy-loader.js?v=20260909_att_evt_sheet_flow_v1"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>
