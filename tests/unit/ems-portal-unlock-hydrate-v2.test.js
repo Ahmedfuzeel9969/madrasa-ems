@@ -44,7 +44,7 @@ describe('Portal unlock hydrate v2', function () {
 
     it('index.html bumps auth.js cache bust', function () {
         const html = read('index.html');
-        expect(html).toContain('auth.js?v=20260911_portal_permissions_cloud_v1');
+        expect(html).toContain('auth.js?v=20260911_portal_permissions_cloud_v2');
     });
 
     it('offline module store includes Admin permission keys', function () {

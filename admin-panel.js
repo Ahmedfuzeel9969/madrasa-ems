@@ -2104,11 +2104,6 @@
             }
             if (target.checked) {
                 if (moduleCheck) moduleCheck.checked = true;
-                if (viewCheck) viewCheck.checked = true;
-            } else if (target.getAttribute('data-act') === 'view'
-                && actionChecks.some(function (cb) { return cb !== target && cb.checked; })) {
-                target.checked = true;
-                apToast('کسی کام کے اختیار کے ساتھ «دیکھیں» کی اجازت لازم ہے۔', 'warning');
             } else if (!actionChecks.some(function (cb) { return cb.checked; }) && moduleCheck) {
                 moduleCheck.checked = false;
             }
@@ -2230,14 +2225,14 @@
             if (newActions[mod]) newActions[mod][act] = cb.checked;
         });
 
-        // بے معنی یا خطرناک امتزاج نہ بننے دیں: کوئی بھی عملی اختیار ہو تو
-        // متعلقہ شعبہ اور اس کا دیکھنے کا اختیار بھی لازماً فعال ہو۔
+        // غیر چیک شعبہ اپنے سب پرانے/چھپے اعمال لازماً ختم کرے۔ شعبہ چیک ہو
+        // مگر کوئی عمل منتخب نہ ہو تو کم از کم "دیکھیں" کی صریح اجازت بنے۔
+        // کسی دوسرے عمل کے ساتھ "دیکھیں" خود شامل نہیں کرتے تاکہ زائد اختیار نہ ملے۔
         apGetOrderedStaffModules().forEach(function (m) {
             var hasAnyAction = window.ADMIN_ACTIONS.some(function (a) { return newActions[m.id][a.id] === true; });
-            if (hasAnyAction) {
-                newModules[m.id] = true;
-                newActions[m.id].view = true;
-            } else if (newModules[m.id]) {
+            if (!newModules[m.id]) {
+                newActions[m.id] = emptyActions();
+            } else if (!hasAnyAction) {
                 newActions[m.id].view = true;
             }
         });

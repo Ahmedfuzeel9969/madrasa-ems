@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260911_portal_permissions_cloud_v1';
+  var CACHE_BUST = '20260911_portal_permissions_cloud_v2';
 
     // Fail closed until Functions + Firestore + Storage rules are released
     // together. The controlled release flips this only after verification.

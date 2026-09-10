@@ -35,7 +35,9 @@ describe('اساتذہ و والدین پورٹل — اختیار اور کلا
         expect(admin).toContain('ap-perm-module-card');
         expect(admin).toContain('ap-parent-view-map');
         expect(admin).toContain('apGetOrderedStaffModules().map');
-        expect(admin).toContain("newActions[m.id].view = true");
+        expect(admin).toContain("newActions[m.id] = emptyActions()");
+        expect(admin).toContain("else if (!hasAnyAction)");
+        expect(admin).toContain("if (moduleCheck) moduleCheck.checked = true");
         expect(css).toContain('.ap-software-permission-map');
         expect(css).toContain('.ap-parent-view-card');
     });
@@ -73,7 +75,7 @@ describe('اساتذہ و والدین پورٹل — اختیار اور کلا
     });
 
     it('نیا نسخہ تمام متعلقہ لوڈروں میں یکساں ہے', function () {
-        const tag = '20260911_portal_permissions_cloud_v1';
+        const tag = '20260911_portal_permissions_cloud_v2';
         expect(read('service-worker.js')).toContain(tag);
         expect(read('ems-sw-update.js')).toContain(tag);
         expect(read('ems-post-auth-loader.js')).toContain(tag);
@@ -82,4 +84,3 @@ describe('اساتذہ و والدین پورٹل — اختیار اور کلا
         expect(read('index.html')).toContain(tag);
     });
 });
-

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-    var CACHE_BUST = '20260911_portal_permissions_cloud_v1';
+    var CACHE_BUST = '20260911_portal_permissions_cloud_v2';
     var criticalReady = false;
     var allReady = false;
     var loadPromise = null;
