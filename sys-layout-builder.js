@@ -26,7 +26,7 @@
       complaints: { order: ['cmp-list', 'cmp-new', 'cmp-dashboard'], hidden: [] },
       announcements: { order: ['ann-win-dashboard', 'ann-win-compose', 'ann-win-archive', 'ann-win-messaging', 'ann-win-programs', 'ann-win-designer', 'ann-win-templates', 'ann-win-print', 'ann-win-audit', 'ann-win-settings'], hidden: [] },
       'sys-settings': { order: ['sys-win-theme', 'sys-win-terminology', 'sys-win-buttons', 'sys-win-fields', 'sys-win-layout', 'sys-win-reports', 'sys-win-profiles', 'sys-win-permissions', 'sys-win-audit', 'sys-win-security'], hidden: [] },
-      'admin-panel': { order: ['ap-win-staff', 'ap-win-templates', 'ap-win-history', 'ap-win-parents', 'ap-win-shared-portal', 'ap-win-comm', 'ap-win-backup'], hidden: [] }
+      'admin-panel': { order: ['ap-win-dashboard', 'ap-win-staff', 'ap-win-templates', 'ap-win-history', 'ap-win-parents', 'ap-win-shared-portal', 'ap-win-comm', 'ap-win-backup'], hidden: [] }
     },
     tables: {
       'reg-users-table': {
@@ -123,6 +123,13 @@
     var cfg = deepMerge(DEFAULT, readJson(CONFIG_KEY, null));
     if (cfg.ribbon && arraysEqual(cfg.ribbon.order, LEGACY_RIBBON_ORDER)) {
       cfg.ribbon.order = DEFAULT.ribbon.order.slice();
+    }
+    var adminLayout = cfg.modules && cfg.modules['admin-panel'];
+    if (adminLayout && adminLayout.order.indexOf('ap-win-dashboard') < 0) {
+      adminLayout.order.unshift('ap-win-dashboard');
+      adminLayout.hidden = (adminLayout.hidden || []).filter(function (panelId) {
+        return panelId !== 'ap-win-dashboard';
+      });
     }
     return cfg;
   };

@@ -1502,6 +1502,7 @@
         window.apRenderStaffTable();
         window.apRenderTemplates();
         window.apRenderHistory();
+        if (typeof window.apRenderDashboard === 'function') window.apRenderDashboard();
     };
 
     function assignedModulesSummary(perm) {
@@ -1641,6 +1642,205 @@
         return map[type] || type;
     }
 
+    // ----------------------- کنٹرول پینل ڈیش بورڈ ---------------------------
+    function apDashboardSetText(id, value) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = value;
+    }
+
+    function apDashboardHistoryRows(perms, staffMap) {
+        var rows = [];
+        Object.keys(perms || {}).forEach(function (staffId) {
+            var p = perms[staffId] || {};
+            (Array.isArray(p.history) ? p.history : []).forEach(function (entry) {
+                rows.push({
+                    staff: staffMap[staffId] || staffId,
+                    type: entry.type,
+                    detail: entry.detail,
+                    by: entry.by,
+                    at: entry.at
+                });
+            });
+        });
+        rows.sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
+        return rows.slice(0, 5);
+    }
+
+    function apDashboardParentAccessActive(p) {
+        if (!p || p.status !== 'active') return false;
+        if (Object.keys(p.views || {}).some(function (viewId) { return !!p.views[viewId]; })) return true;
+        return Object.keys(p.temporary || {}).some(function (viewId) {
+            var item = p.temporary[viewId] || {};
+            return !!item.expiry && new Date(item.expiry).getTime() > Date.now();
+        });
+    }
+
+    function apBuildDashboardSnapshot(nowMs) {
+        nowMs = typeof nowMs === 'number' ? nowMs : Date.now();
+        var staff = getStaffList();
+        var students = getStudentList();
+        var perms = getAllPerms();
+        var parentPerms = getAllParentPerms();
+        var staffMap = {};
+        var active = 0;
+        var disabled = 0;
+        var withoutAccess = 0;
+        var activeTemporary = 0;
+        var expiringSoon = 0;
+
+        staff.forEach(function (person) {
+            staffMap[person.id] = person.name || person.id;
+            var p = migratePerm(perms[person.id], person.id);
+            var isActive = p.status === 'active';
+            var hasAccess = assignedModulesSummary(p).length > 0;
+            if (isActive) active += 1;
+            else disabled += 1;
+            if (isActive && !hasAccess) withoutAccess += 1;
+
+            Object.keys(p.temporary || {}).forEach(function (key) {
+                var expiry = new Date(((p.temporary || {})[key] || {}).expiry).getTime();
+                if (!isNaN(expiry) && expiry > nowMs) {
+                    activeTemporary += 1;
+                    if (expiry - nowMs <= 7 * 86400000) expiringSoon += 1;
+                }
+            });
+        });
+
+        var parentActive = students.filter(function (student) {
+            var raw = parentPerms[student.id];
+            return !!raw && apDashboardParentAccessActive(migrateParentPerm(raw, student.id));
+        }).length;
+
+        var coverage = apGetOrderedStaffModules().map(function (moduleInfo) {
+            var allowed = staff.filter(function (person) {
+                var p = migratePerm(perms[person.id], person.id);
+                if (p.status !== 'active') return false;
+                if (p.modules && p.modules[moduleInfo.id]) return true;
+                return window.ADMIN_ACTIONS.some(function (action) {
+                    return tempActive(p, moduleInfo.id, action.id);
+                });
+            }).length;
+            return {
+                id: moduleInfo.id,
+                name: moduleInfo.name,
+                allowed: allowed,
+                percent: staff.length ? Math.round((allowed / staff.length) * 100) : 0
+            };
+        });
+
+        var ready = active - withoutAccess;
+        return {
+            total: staff.length,
+            studentTotal: students.length,
+            teachers: staff.filter(function (person) { return person.type === 'teacher'; }).length,
+            otherStaff: staff.filter(function (person) { return person.type === 'staff'; }).length,
+            active: active,
+            disabled: disabled,
+            ready: ready,
+            withoutAccess: withoutAccess,
+            activeTemporary: activeTemporary,
+            expiringSoon: expiringSoon,
+            parentActive: parentActive,
+            attention: disabled + withoutAccess + expiringSoon,
+            healthPercent: staff.length ? Math.round((ready / staff.length) * 100) : 0,
+            coverage: coverage,
+            recentHistory: apDashboardHistoryRows(perms, staffMap)
+        };
+    }
+
+    window.apBuildDashboardSnapshot = apBuildDashboardSnapshot;
+
+    function apRenderDashboardPortalMode(options) {
+        options = options || {};
+        var target = document.getElementById('ap-dash-portal-mode');
+        if (!target || options.skipPortal) return;
+        if (window.EmsSharedPortalGateway && typeof window.EmsSharedPortalGateway.enabled === 'function'
+            && !window.EmsSharedPortalGateway.enabled()) {
+            target.textContent = 'سروری سہولت غیر فعال ہے';
+            return;
+        }
+        if (typeof window.emsLoadSharedPortalConfig !== 'function') {
+            target.textContent = 'ترتیب دستیاب نہیں';
+            return;
+        }
+        target.textContent = 'حالت دیکھی جا رہی ہے…';
+        Promise.resolve(window.emsLoadSharedPortalConfig(apGetUid())).then(function (config) {
+            var labels = {
+                individual: 'ہر فرد کا الگ اکاؤنٹ',
+                single: 'تمام پورٹل کے لیے ایک مشترک اکاؤنٹ',
+                separate: 'اساتذہ، طلبہ اور والدین کے الگ مشترک اکاؤنٹ'
+            };
+            target.textContent = labels[(config || {}).mode] || 'انفرادی اکاؤنٹ ترتیب';
+        }).catch(function () {
+            target.textContent = 'حالت حاصل نہیں ہو سکی';
+        });
+    }
+
+    window.apRenderDashboard = function (options) {
+        var root = document.getElementById('ap-win-dashboard');
+        if (!root) return null;
+        var snapshot = apBuildDashboardSnapshot();
+        apDashboardSetText('ap-dash-staff-total', snapshot.total);
+        apDashboardSetText('ap-dash-teacher-total', snapshot.teachers);
+        apDashboardSetText('ap-dash-other-staff', snapshot.otherStaff);
+        apDashboardSetText('ap-dash-staff-active', snapshot.active);
+        apDashboardSetText('ap-dash-parent-active', snapshot.parentActive);
+        apDashboardSetText('ap-dash-attention-total', snapshot.attention);
+        apDashboardSetText('ap-dash-health-percent', snapshot.healthPercent + '٪');
+
+        var healthBar = document.getElementById('ap-dash-health-bar');
+        if (healthBar) healthBar.style.width = snapshot.healthPercent + '%';
+        apDashboardSetText(
+            'ap-dash-health-text',
+            snapshot.total
+                ? snapshot.ready + ' افراد فعال ہیں اور کم از کم ایک شعبے کی اجازت رکھتے ہیں۔'
+                : 'ابھی کوئی استاد یا عملہ درج نہیں ہے۔'
+        );
+
+        var alerts = [];
+        if (snapshot.disabled) {
+            alerts.push('<button type="button" class="ap-dashboard-alert ap-alert-danger" onclick="window.apOpenPanel(\'ap-win-staff\')"><i class="fas fa-user-slash"></i><span>' + snapshot.disabled + ' اجازت نامے غیر فعال ہیں</span><i class="fas fa-chevron-left"></i></button>');
+        }
+        if (snapshot.withoutAccess) {
+            alerts.push('<button type="button" class="ap-dashboard-alert ap-alert-warning" onclick="window.apOpenPanel(\'ap-win-staff\')"><i class="fas fa-unlock-alt"></i><span>' + snapshot.withoutAccess + ' فعال افراد کو کوئی شعبہ نہیں دیا گیا</span><i class="fas fa-chevron-left"></i></button>');
+        }
+        if (snapshot.expiringSoon) {
+            alerts.push('<button type="button" class="ap-dashboard-alert ap-alert-warning" onclick="window.apOpenPanel(\'ap-win-history\')"><i class="fas fa-hourglass-half"></i><span>' + snapshot.expiringSoon + ' عارضی اجازتیں سات دن میں ختم ہوں گی</span><i class="fas fa-chevron-left"></i></button>');
+        }
+        if (snapshot.studentTotal && !snapshot.parentActive) {
+            alerts.push('<button type="button" class="ap-dashboard-alert ap-alert-info" onclick="window.apOpenPanel(\'ap-win-parents\')"><i class="fas fa-user-friends"></i><span>کسی طالب علم کے لیے والدین رسائی فعال نہیں</span><i class="fas fa-chevron-left"></i></button>');
+        }
+        var alertBox = document.getElementById('ap-dash-alerts');
+        if (alertBox) {
+            alertBox.innerHTML = alerts.length
+                ? alerts.join('')
+                : '<div class="ap-dashboard-all-good"><i class="fas fa-check-circle"></i> کوئی فوری خرابی سامنے نہیں آئی۔</div>';
+        }
+
+        var coverageBody = document.getElementById('ap-dash-module-coverage');
+        if (coverageBody) {
+            coverageBody.innerHTML = snapshot.coverage.length ? snapshot.coverage.map(function (item) {
+                return '<tr><td>' + apEsc(item.name) + '</td><td><strong>' + item.allowed + '</strong></td><td><span class="ap-dashboard-ratio"><i style="width:' + item.percent + '%"></i></span>' + item.percent + '٪</td></tr>';
+            }).join('') : '<tr><td colspan="3">کوئی شعبہ موجود نہیں۔</td></tr>';
+        }
+
+        var historyBox = document.getElementById('ap-dash-recent-history');
+        if (historyBox) {
+            historyBox.innerHTML = snapshot.recentHistory.length ? snapshot.recentHistory.map(function (row) {
+                return '<div class="ap-dashboard-history-row"><i class="fas fa-user-shield"></i><div><strong>' + apEsc(row.staff) + '</strong><span>' + apEsc(row.detail || apHistoryTypeLabel(row.type)) + '</span><small>' + apEsc(apFormatDateTime(row.at)) + ' • ' + apEsc(row.by || '-') + '</small></div></div>';
+            }).join('') : '<p class="ap-dashboard-muted">ابھی کوئی اجازت تبدیلی ریکارڈ نہیں ہوئی۔</p>';
+        }
+
+        apDashboardSetText('ap-dashboard-updated', 'آخری تازہ کاری: ' + new Date().toLocaleTimeString('ur-PK'));
+        apRenderSyncStatus();
+        apRenderDashboardPortalMode(options);
+        return snapshot;
+    };
+
+    function apRefreshDashboardLocal() {
+        if (typeof window.apRenderDashboard === 'function') window.apRenderDashboard({ skipPortal: true });
+    }
+
     // ------------------------- اسٹیٹس toggle --------------------------------
     window.apToggleStatus = function (staffId) {
         var perms = getAllPerms();
@@ -1659,6 +1859,7 @@
         apToast(p.status === 'active' ? 'عملہ فعال کر دیا گیا۔' : 'عملہ غیر فعال کر دیا گیا۔', p.status === 'active' ? 'success' : 'warning');
         window.apRenderStaffTable();
         window.apRenderHistory();
+        apRefreshDashboardLocal();
     };
 
     // ------------------------ استاد پورٹل readiness چیک لسٹ -----------------------------
@@ -1879,6 +2080,7 @@
         if (listEl) listEl.innerHTML = apRenderTempList(p);
         window.apRenderStaffTable();
         window.apRenderHistory();
+        apRefreshDashboardLocal();
     };
 
     window.apRemoveTemp = function (staffId, key) {
@@ -1900,6 +2102,7 @@
             if (listEl) listEl.innerHTML = apRenderTempList(p);
             window.apRenderStaffTable();
             window.apRenderHistory();
+            apRefreshDashboardLocal();
         }
     };
 
@@ -1997,6 +2200,7 @@
         if (typeof window.closeModal === 'function') window.closeModal('ap-staff-modal');
         window.apRenderStaffTable();
         window.apRenderHistory();
+        apRefreshDashboardLocal();
     };
 
     // -------------------------- فی عملہ ہسٹری ماڈل ---------------------------
@@ -2101,6 +2305,7 @@
         if (typeof window.closeModal === 'function') window.closeModal('ap-create-modal');
         window.apRenderStaffTable();
         window.apRenderHistory();
+        apRefreshDashboardLocal();
     };
 
     // ========================================================================
@@ -2238,9 +2443,11 @@
         }).then(function () {
             apToast(p.status === 'active' ? 'والدین رسائی فعال۔' : 'والدین رسائی بند۔', p.status === 'active' ? 'success' : 'warning');
             window.apRenderParentsTable();
+            apRefreshDashboardLocal();
         }).catch(function () {
             apToast('اسٹیٹس محفوظ ہوا؛ کلاؤڈ سنک چیک کریں۔', 'warning');
             window.apRenderParentsTable();
+            apRefreshDashboardLocal();
         });
     };
 
@@ -2377,6 +2584,7 @@
                     setStatus('مکمل: Link + Views + Key تیار۔ Key ابھی والدین کو دیں: ' + key);
                     apToast('والدین فعال: Key ' + key, 'success');
                     window.apRenderParentsTable();
+                    apRefreshDashboardLocal();
                     return key;
                 });
             });
@@ -2421,6 +2629,7 @@
         var listEl = document.getElementById('ap-ptemp-list');
         if (listEl) listEl.innerHTML = apRenderParentTempList(p);
         window.apRenderParentsTable();
+        apRefreshDashboardLocal();
     };
 
     window.apRemoveParentTemp = function (studentId, vid) {
@@ -2436,6 +2645,7 @@
             var listEl = document.getElementById('ap-ptemp-list');
             if (listEl) listEl.innerHTML = apRenderParentTempList(p);
             window.apRenderParentsTable();
+            apRefreshDashboardLocal();
         }
     };
 
@@ -2480,6 +2690,7 @@
         });
         if (typeof window.closeModal === 'function') window.closeModal('ap-parent-modal');
         window.apRenderParentsTable();
+        apRefreshDashboardLocal();
     };
 
     window.apOpenParentHistory = function (studentId) {
@@ -2824,8 +3035,15 @@
     }
 
     function apRenderSyncStatus() {
-        var box = document.getElementById('ap-sync-status-box');
-        if (!box) return;
+        var boxes = [
+            document.getElementById('ap-sync-status-box'),
+            document.getElementById('ap-dashboard-sync-status')
+        ].filter(function (box) { return !!box; });
+        if (!boxes.length) return;
+
+        function setBoxes(html) {
+            boxes.forEach(function (box) { box.innerHTML = html; });
+        }
 
         var netAvail = typeof window.emsIsNetworkAvailable === 'function'
             ? window.emsIsNetworkAvailable()
@@ -2835,7 +3053,7 @@
         if (probeState === true) netLabel += ' (Firestore)';
         else if (probeState === false) netLabel += ' (probe failed)';
 
-        box.innerHTML = '<strong>نیٹ ورک:</strong> ' + netLabel + ' | <em style="opacity:.7">قطار لوڈ…</em>';
+        setBoxes('<strong>نیٹ ورک:</strong> ' + netLabel + ' | <em style="opacity:.7">قطار لوڈ…</em>');
 
         var countP = typeof window.emsPendingSyncCount === 'function'
             ? window.emsPendingSyncCount()
@@ -2852,7 +3070,7 @@
             var parts = [];
 
             parts.push('<strong>نیٹ ورک:</strong> ' + netLabel);
-            parts.push('<strong>آف لائن قطار:</strong> <span id="ap-sync-outbox-count" style="font-size:15px;font-weight:700;color:#b45309;">' + outboxPending + '</span> منتظر اپ لوڈ');
+            parts.push('<strong>آف لائن قطار:</strong> <span class="ap-sync-outbox-count" style="font-size:15px;font-weight:700;color:#b45309;">' + outboxPending + '</span> منتظر اپ لوڈ');
             if (failed > 0) {
                 parts.push('<strong style="color:#dc2626;">ناکام:</strong> ' + failed);
             }
@@ -2873,10 +3091,10 @@
                 var limit = window.EmsCachePolicy.LS_SOFT_LIMIT;
                 parts.push('<strong>کیشے:</strong> ' + Math.round(usage / 1024) + ' KB / ' + Math.round(limit / 1024) + ' KB');
             }
-            box.innerHTML = parts.join(' | ');
+            setBoxes(parts.join(' | '));
             apUpdateOutboxStrip(outboxPending, failed, deadLetter);
         }).catch(function () {
-            box.innerHTML = '<strong>نیٹ ورک:</strong> ' + netLabel + ' | <span style="color:#dc2626;">قطار لوڈ ناکام</span>';
+            setBoxes('<strong>نیٹ ورک:</strong> ' + netLabel + ' | <span style="color:#dc2626;">قطار لوڈ ناکام</span>');
         });
     }
 
@@ -3115,11 +3333,12 @@
     };
 
     var AP_PANEL_IDS = [
-        'ap-win-staff', 'ap-win-templates', 'ap-win-history', 'ap-win-parents',
+        'ap-win-dashboard', 'ap-win-staff', 'ap-win-templates', 'ap-win-history', 'ap-win-parents',
         'ap-win-shared-portal', 'ap-win-comm', 'ap-win-backup'
     ];
 
     function apLoadPanelData(panelId) {
+        if (panelId === 'ap-win-dashboard' && typeof window.apRenderDashboard === 'function') window.apRenderDashboard();
         if (panelId === 'ap-win-staff' && typeof window.apLoadStaff === 'function') window.apLoadStaff();
         if (panelId === 'ap-win-templates' && typeof window.apRenderTemplates === 'function') window.apRenderTemplates();
         if (panelId === 'ap-win-history' && typeof window.apRenderHistory === 'function') window.apRenderHistory();
@@ -3163,6 +3382,11 @@
         if (tabButton && typeof tabButton.focus === 'function') tabButton.focus({ preventScroll: true });
         apLoadPanelData(panelId);
         return true;
+    };
+
+    window.apOpenPanel = function (panelId) {
+        var button = document.querySelector('#ap-ribbon-menu .reg-tab[data-ap-panel="' + panelId + '"]');
+        return window.apSwitchTab(panelId, button || null);
     };
 
     function apBindModuleListeners() {

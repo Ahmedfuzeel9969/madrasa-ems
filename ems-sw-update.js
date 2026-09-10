@@ -5,7 +5,7 @@
     'use strict';
 
     /** Must match service-worker.js EMS_SW_BUILD_TAG on each deploy. */
-  global.EMS_BUILD_TAG = '20260903_att_holiday_joined_vertical_v1';
+  global.EMS_BUILD_TAG = '20260910_att_admin_dash_desktop_full_v1';
 
     var _state = {
         bound: false,

@@ -200,6 +200,71 @@
         return { roster: {}, marks: {}, dayNum: dayNumOf(dateStr), dateStr: dateStr, periodFilter: periodFilter || '' };
     }
 
+    /** Merge حاضری مطالعہ day statuses into metrics finalDataset (roster-scoped). */
+    function attDashApplyStudyMarksToFinal(finalDataset, dateStr, rosterUsers) {
+        finalDataset = finalDataset || { roster: {}, marks: {} };
+        if (!finalDataset.marks) finalDataset.marks = Object.create(null);
+        if (typeof global.evtDashDayStatusByUser !== 'function') return finalDataset;
+        var studyMap = global.evtDashDayStatusByUser(dateStr, rosterUsers) || {};
+        Object.keys(studyMap).forEach(function (uid) {
+            var studySt = studyMap[uid];
+            if (!studySt) return;
+            var mark = finalDataset.marks[uid];
+            if (!mark) {
+                var rosterInfo = (finalDataset.roster && finalDataset.roster[uid]) || null;
+                mark = {
+                    status: '',
+                    kind: 'UNMARKED',
+                    hasObservation: false,
+                    cleared: false,
+                    classId: rosterInfo ? rosterInfo.classId : '',
+                    role: rosterInfo ? rosterInfo.role : '',
+                    ts: 0,
+                    sourceKey: '',
+                    metric: global.ATT_METRIC_DAILY || 'daily'
+                };
+                finalDataset.marks[uid] = mark;
+            }
+            if (!mark.status) {
+                mark.status = studySt;
+                mark.kind = studySt;
+                mark.hasObservation = true;
+                mark.sourceKey = mark.sourceKey || 'study';
+                mark.fromStudy = true;
+                return;
+            }
+            if (mark.status === studySt) {
+                mark.fromStudy = true;
+                return;
+            }
+            if (mark.status === 'PARTIAL' || mark.status === 'INCOMPLETE') {
+                mark.fromStudy = true;
+                return;
+            }
+            mark.status = 'PARTIAL';
+            mark.kind = 'PARTIAL';
+            mark.hasObservation = true;
+            mark.fromStudy = true;
+        });
+        return finalDataset;
+    }
+
+    function attDashNormSourceOpts(sourceOpts) {
+        sourceOpts = sourceOpts || {};
+        return {
+            collective: sourceOpts.collective !== false,
+            study: sourceOpts.study !== false
+        };
+    }
+
+    function attDashSourceLabel(sourceOpts) {
+        var s = attDashNormSourceOpts(sourceOpts);
+        var parts = [];
+        if (s.collective) parts.push('اجتماعی');
+        if (s.study) parts.push('مطالعہ');
+        return parts.length ? parts.join(' + ') : 'کوئی ذریعہ نہیں';
+    }
+
     function attDashAssertStatsInvariant(stats, ctx) {
         var p = stats.present || 0;
         var a = stats.absent || 0;
@@ -786,29 +851,44 @@
     }
 
     /** Count P/A/L for a given day from sheets + user roster (deduped final-state). */
-    function attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets, periodFilter) {
+    function attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets, periodFilter, sourceOpts) {
         users = users || attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter, dateStr);
         var total = users.length;
+        var sources = attDashNormSourceOpts(sourceOpts);
         if (attDashIsFutureDate(dateStr)) {
             return {
                 present: 0, absent: 0, leave: 0, partial: 0, incomplete: 0, other: 0,
                 notMarked: total, total: total, observedTotal: 0,
-                markedTotal: 0, rate: null, notTaken: true, lockedSheets: 0, source: 'local'
+                markedTotal: 0, rate: null, notTaken: true, lockedSheets: 0, source: 'local',
+                sourceOpts: sources
+            };
+        }
+        if (!sources.collective && !sources.study) {
+            return {
+                present: 0, absent: 0, leave: 0, partial: 0, incomplete: 0, other: 0,
+                notMarked: total, total: total, observedTotal: 0,
+                markedTotal: 0, rate: null, notTaken: true, lockedSheets: 0, source: 'local',
+                sourceOpts: sources
             };
         }
 
-        sheets = sheets || [];
+        sheets = sources.collective ? (sheets || []) : [];
         var lockedSheets = 0;
         sheets.forEach(function (sh) {
             if (sh.data && sh.data.locked) lockedSheets++;
         });
 
         var finalDataset = attDashBuildFinalMarksForDay(dateStr, sheets, users, periodFilter);
+        // مطالعہ سیشنز گھنٹہ فلٹر نہیں رکھتے — صرف یومیہ خلاصہ میں شامل
+        if (sources.study && !String(periodFilter || '').trim()) {
+            finalDataset = attDashApplyStudyMarksToFinal(finalDataset, dateStr, users);
+        }
         var stats = attDashStatsFromFinalMarks(finalDataset, users);
         stats.lockedSheets = lockedSheets;
         stats.source = 'local';
+        stats.sourceOpts = sources;
         stats.periodFilter = String(periodFilter || '').trim();
-        if (!periodFilter && users.length && users.every(function (u) { return attDashNormType(u) === 'teacher'; })
+        if (sources.collective && !periodFilter && users.length && users.every(function (u) { return attDashNormType(u) === 'teacher'; })
             && typeof global.attMetricsTeacherRosterDayAggregate === 'function') {
             stats.teacherPeriod = global.attMetricsTeacherRosterDayAggregate(dateStr, sheets, users);
             if (stats.teacherPeriod && stats.teacherPeriod.periodAttendanceRate != null) {
@@ -819,13 +899,18 @@
         return stats;
     }
 
-    function attDashClassBreakdown(dateStr, roleFilter, classFilter, sheets, periodFilter) {
+    function attDashClassBreakdown(dateStr, roleFilter, classFilter, sheets, periodFilter, sourceOpts) {
         if (roleFilter !== 'student' && roleFilter !== 'all') return [];
         if (attDashIsFutureDate(dateStr)) return [];
+        var sources = attDashNormSourceOpts(sourceOpts);
+        if (!sources.collective && !sources.study) return [];
 
         var users = attDashFilterUsers(attDashGetUsers(), 'student', classFilter || '');
-        sheets = sheets || [];
+        sheets = sources.collective ? (sheets || []) : [];
         var finalDataset = attDashBuildFinalMarksForDay(dateStr, sheets, users, periodFilter);
+        if (sources.study && !String(periodFilter || '').trim()) {
+            finalDataset = attDashApplyStudyMarksToFinal(finalDataset, dateStr, users);
+        }
         var rows = attDashClassBreakdownFromFinal(finalDataset, users);
         if (classFilter) {
             rows = rows.filter(function (r) { return r.className === classFilter; });
@@ -833,22 +918,93 @@
         return rows;
     }
 
-    function attDashMonthlySummary(monthStr, roleFilter, classFilter, sheets) {
+    function attDashMonthlySummary(monthStr, roleFilter, classFilter, sheets, sourceOpts) {
         var users = attDashFilterUsers(attDashGetUsers(), roleFilter, classFilter, monthStr + '-01');
-        sheets = sheets || [];
-        if (typeof global.attMetricsMonthlySummary === 'function') {
+        var sources = attDashNormSourceOpts(sourceOpts);
+        if (!sources.collective && !sources.study) {
+            return { activeDays: 0, monthRate: 0, totalMarks: 0 };
+        }
+        sheets = sources.collective ? (sheets || []) : [];
+        if (sources.collective && !sources.study && typeof global.attMetricsMonthlySummary === 'function') {
             return global.attMetricsMonthlySummary(monthStr, sheets, users);
         }
-        return { activeDays: 0, monthRate: 0, totalMarks: 0 };
+        var days = [];
+        try {
+            if (typeof global.attMetricsDaysInMonth === 'function') {
+                days = global.attMetricsDaysInMonth(monthStr) || [];
+            }
+        } catch (eDays) { days = []; }
+        if (!days.length) {
+            var y = Number(String(monthStr).slice(0, 4));
+            var m = Number(String(monthStr).slice(5, 7));
+            var dim = new Date(y, m, 0).getDate();
+            for (var d = 1; d <= dim; d++) {
+                days.push(monthStr + '-' + (d < 10 ? '0' + d : String(d)));
+            }
+        }
+        var totalPresentMarks = 0;
+        var totalMarked = 0;
+        var activeDays = 0;
+        days.forEach(function (dateStr) {
+            var dayStats = attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets, '', sources);
+            if ((dayStats.observedTotal || dayStats.markedTotal) > 0) {
+                activeDays++;
+                totalPresentMarks += dayStats.present || 0;
+                totalMarked += (dayStats.markedTotal || 0) + (dayStats.partial || 0) + (dayStats.incomplete || 0);
+            }
+        });
+        return {
+            activeDays: activeDays,
+            monthRate: totalMarked > 0 ? Math.round((totalPresentMarks / totalMarked) * 100) : 0,
+            totalMarks: totalPresentMarks
+        };
     }
 
-    function attDashLowAttendanceAlerts(monthStr, sheets) {
+    function attDashLowAttendanceAlerts(monthStr, sheets, sourceOpts) {
         var users = attDashFilterUsers(attDashGetUsers(), 'student', '');
-        sheets = sheets || [];
-        if (typeof global.attMetricsLowAttendanceAlerts === 'function') {
+        var sources = attDashNormSourceOpts(sourceOpts);
+        if (!sources.collective && !sources.study) return [];
+        sheets = sources.collective ? (sheets || []) : [];
+        if (sources.collective && !sources.study && typeof global.attMetricsLowAttendanceAlerts === 'function') {
             return global.attMetricsLowAttendanceAlerts(monthStr, sheets, users);
         }
-        return [];
+        var stats = Object.create(null);
+        users.forEach(function (u) {
+            var id = typeof global.attGetUserId === 'function' ? global.attGetUserId(u) : String((u && u.id) || '');
+            if (!id) return;
+            stats[id] = { user: u, present: 0, total: 0 };
+        });
+        var days = [];
+        try {
+            if (typeof global.attMetricsDaysInMonth === 'function') {
+                days = global.attMetricsDaysInMonth(monthStr) || [];
+            }
+        } catch (eA) { days = []; }
+        days.forEach(function (dateStr) {
+            var sheetsDay = sheets;
+            var finalDs = attDashBuildFinalMarksForDay(dateStr, sheetsDay, users, '');
+            if (sources.study) finalDs = attDashApplyStudyMarksToFinal(finalDs, dateStr, users);
+            Object.keys(finalDs.marks || {}).forEach(function (uid) {
+                if (!stats[uid]) return;
+                var st = finalDs.marks[uid].status;
+                if (!st) return;
+                stats[uid].total++;
+                if (st === 'P') stats[uid].present++;
+            });
+        });
+        return Object.keys(stats).map(function (id) {
+            var s = stats[id];
+            if (s.total < 3) return null;
+            var rate = Math.round((s.present / s.total) * 100);
+            if (rate >= 75) return null;
+            return {
+                name: s.user.name || id,
+                className: s.user.class || s.user.className || '—',
+                rate: rate,
+                present: s.present,
+                total: s.total
+            };
+        }).filter(Boolean).sort(function (a, b) { return a.rate - b.rate; }).slice(0, 8);
     }
 
     function attDashPopulateClassFilter() {
@@ -994,6 +1150,8 @@
         var classEl = document.getElementById('att-dash-class-filter');
         var periodEl = document.getElementById('att-dash-period-filter');
         var calcEl = document.getElementById('att-dash-calc-mode');
+        var colEl = document.getElementById('att-dash-source-collective');
+        var studyEl = document.getElementById('att-dash-source-study');
         var calcMode = (calcEl && calcEl.value) || 'daily';
         if (calcMode !== 'period_order') calcMode = 'daily';
         var periodFilter = (periodEl && periodEl.value) || '';
@@ -1004,7 +1162,9 @@
             roleFilter: (roleEl && roleEl.value) || 'all',
             classFilter: (classEl && classEl.value) || '',
             periodFilter: periodFilter,
-            calcMode: calcMode
+            calcMode: calcMode,
+            sourceCollective: !colEl || !!colEl.checked,
+            sourceStudy: !studyEl || !!studyEl.checked
         };
     }
 
@@ -1058,10 +1218,10 @@
         return out;
     }
 
-    function attDashBuildPeriodSequenceStats(dateStr, roleFilter, classFilter, users, sheets) {
+    function attDashBuildPeriodSequenceStats(dateStr, roleFilter, classFilter, users, sheets, sourceOpts) {
         var periods = attDashOrderedPeriodsForDay(dateStr, classFilter);
         return periods.map(function (p, idx) {
-            var st = attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets, p.id);
+            var st = attDashStatsForDay(dateStr, roleFilter, classFilter, users, sheets, p.id, sourceOpts);
             return {
                 index: idx + 1,
                 periodId: String(p.id),
@@ -1176,7 +1336,7 @@
     }
 
     /** Last N days attendance rate trend — offline-first from local sheets. */
-    function attDashComputeLocalTrend(days, roleFilter, classFilter, users, sheetsByMonth, periodFilter) {
+    function attDashComputeLocalTrend(days, roleFilter, classFilter, users, sheetsByMonth, periodFilter, sourceOpts) {
         days = days || 7;
         sheetsByMonth = sheetsByMonth || Object.create(null);
         var points = [];
@@ -1184,7 +1344,7 @@
             var dateStr = attDashDateOffset(i);
             var monthStr = monthOf(dateStr);
             var monthSheets = attDashSheetsForMonth(sheetsByMonth, monthStr);
-            var dayStats = attDashStatsForDay(dateStr, roleFilter, classFilter, users, monthSheets, periodFilter);
+            var dayStats = attDashStatsForDay(dateStr, roleFilter, classFilter, users, monthSheets, periodFilter, sourceOpts);
             var point = {
                 date: dateStr,
                 label: attDashWeekdayLabel(dateStr),
@@ -1228,19 +1388,28 @@
         var roleLabels = { all: 'تمام رجسٹر', student: 'طلباء', teacher: 'اساتذہ', staff: 'عملہ' };
         var role = roleLabels[f.roleFilter] || 'تمام';
         var cls = f.classFilter ? (' · درجہ: ' + f.classFilter) : '';
+        var srcOpts = { collective: f.sourceCollective !== false, study: f.sourceStudy !== false };
+        var srcPart = ' · ذریعہ: ' + attDashSourceLabel(srcOpts);
         var periodPart = f.periodFilter
             ? (' · گھنٹہ: ' + attDashPeriodLabel(f.periodFilter))
             : (f.calcMode === 'period_order' ? ' · گھنٹوں کی ترتیب' : ' · یومیہ');
+        if (f.sourceStudy && (f.periodFilter || f.calcMode === 'period_order')) {
+            periodPart += ' (مطالعہ صرف یومیہ میں)';
+        }
         setTxt('att-dash-period-label', f.periodFilter
             ? attDashPeriodLabel(f.periodFilter)
             : (f.calcMode === 'period_order' ? 'گھنٹوں کی ترتیب' : 'یومیہ'));
         setTxt('att-dash-calc-mode-label', f.calcMode === 'period_order' ? 'گھنٹوں کی ترتیب سے' : 'یومیہ خلاصہ');
+        if (!srcOpts.collective && !srcOpts.study) {
+            el.textContent = 'کم از کم ایک ذریعہ منتخب کریں: اجتماعی حاضری یا حاضری مطالعہ۔';
+            return;
+        }
         if (stats.total === 0) {
-            el.textContent = 'منتخب فلٹر (' + role + cls + periodPart + ') کے لیے کوئی حاضری ہدف نہیں — رجسٹر یا فلٹر چیک کریں۔';
+            el.textContent = 'منتخب فلٹر (' + role + cls + periodPart + srcPart + ') کے لیے کوئی حاضری ہدف نہیں — رجسٹر یا فلٹر چیک کریں۔';
             return;
         }
         if (stats.notTaken || attDashIsFutureDate(f.dateStr)) {
-            el.textContent = f.dateStr + ' — ' + role + cls + periodPart + ': حاضری نہیں لی گئی (نشان زد نہیں: ' +
+            el.textContent = f.dateStr + ' — ' + role + cls + periodPart + srcPart + ': حاضری نہیں لی گئی (نشان زد نہیں: ' +
                 fmt(stats.notMarked != null ? stats.notMarked : stats.total) + ' / ' + fmt(stats.total) + ')';
             return;
         }
@@ -1255,7 +1424,7 @@
                 ratePart += ' · گھنٹہ تکمیل ' + stats.teacherPeriod.completionRate + '%';
             }
         }
-        el.textContent = f.dateStr + ' — ' + role + cls + periodPart + ': ' +
+        el.textContent = f.dateStr + ' — ' + role + cls + periodPart + srcPart + ': ' +
             fmt(stats.present) + ' حاضر، ' + fmt(stats.absent) + ' غائب، ' +
             fmt(stats.leave) + ' رخصت' + extra + '، ' + fmt(stats.notMarked) + ' نشان زد نہیں (کل ' + fmt(stats.total) + ') — ' + ratePart;
     }
@@ -1502,17 +1671,19 @@
 
         setTxt('att-dash-source', 'لوڈ...');
 
+        var sourceOpts = { collective: f.sourceCollective !== false, study: f.sourceStudy !== false };
+
         return attDashCollectSheetsMapAsync(monthsToLoad).then(function (sheetsByMonth) {
-        setTxt('att-dash-source', 'مقامی');
-        var sheets = sheetsByMonth[monthStr] || [];
+        setTxt('att-dash-source', attDashSourceLabel(sourceOpts));
+        var sheets = sourceOpts.collective ? (sheetsByMonth[monthStr] || []) : [];
 
         setTxt('att-dash-total-roster', allUsers.length);
         setTxt('att-dash-date-label', f.dateStr);
 
-        var stats = attDashStatsForDay(f.dateStr, f.roleFilter, f.classFilter, allUsers, sheets, f.periodFilter);
-        var classRows = attDashClassBreakdown(f.dateStr, f.roleFilter, f.classFilter, sheets, f.periodFilter);
+        var stats = attDashStatsForDay(f.dateStr, f.roleFilter, f.classFilter, allUsers, sheets, f.periodFilter, sourceOpts);
+        var classRows = attDashClassBreakdown(f.dateStr, f.roleFilter, f.classFilter, sheets, f.periodFilter, sourceOpts);
         var periodSeqRows = f.calcMode === 'period_order'
-            ? attDashBuildPeriodSequenceStats(f.dateStr, f.roleFilter, f.classFilter, allUsers, sheets)
+            ? attDashBuildPeriodSequenceStats(f.dateStr, f.roleFilter, f.classFilter, allUsers, sheets, sourceOpts)
             : [];
         // Single pipeline snapshot for print/debug — summary and class-wise must match.
         global._attDashLastCalc = {
@@ -1521,6 +1692,8 @@
             classFilter: f.classFilter,
             periodFilter: f.periodFilter || '',
             calcMode: f.calcMode || 'daily',
+            sourceCollective: sourceOpts.collective,
+            sourceStudy: sourceOpts.study,
             target: stats.total,
             present: stats.present,
             absent: stats.absent,
@@ -1540,12 +1713,12 @@
         };
         attDashApplyStatsKpis(stats);
         setTxt('att-dash-locked', stats.lockedSheets);
-        setTxt('att-dash-source', stats.source === 'local' ? 'مقامی' : '—');
+        setTxt('att-dash-source', attDashSourceLabel(sourceOpts) + (stats.source === 'local' ? ' · مقامی' : ''));
         attDashUpdateLiveIndicator(stats.source);
         attDashRenderSummary(stats, f);
         attDashRenderPeriodSequence(periodSeqRows, f);
 
-        var monthSummary = attDashMonthlySummary(monthStr, f.roleFilter, f.classFilter, sheets);
+        var monthSummary = attDashMonthlySummary(monthStr, f.roleFilter, f.classFilter, sheets, sourceOpts);
         setTxt('att-dash-month-rate', monthSummary.monthRate + '%');
         setTxt('att-dash-active-days', monthSummary.activeDays);
         setTxt('att-dash-month-marks', fmt(monthSummary.totalMarks));
@@ -1553,10 +1726,10 @@
         attDashRenderClassTable(classRows);
         attDashRenderClassHighlights(classRows);
 
-        var alerts = attDashLowAttendanceAlerts(monthStr, sheets);
+        var alerts = attDashLowAttendanceAlerts(monthStr, sheets, sourceOpts);
         attDashRenderAlerts(alerts);
 
-        var localTrend = attDashComputeLocalTrend(7, f.roleFilter, f.classFilter, allUsers, sheetsByMonth, f.periodFilter);
+        var localTrend = attDashComputeLocalTrend(7, f.roleFilter, f.classFilter, allUsers, sheetsByMonth, f.periodFilter, sourceOpts);
         attDashRenderCharts(stats, localTrend, classRows);
         attDashRenderTrendSummary(localTrend);
 
@@ -1565,12 +1738,14 @@
         }
 
         return Promise.resolve().then(function () {
-            // Cloud daily summary is یومیہ only — skip when hour filter / period-order detail is active.
+            // Cloud daily summary is یومیہ / اجتماعی only — skip when study-only or hour detail is active.
             if (typeof global.emsFetchTodayAttendanceStats === 'function'
                 && f.roleFilter === 'all'
                 && !f.classFilter
                 && !f.periodFilter
                 && f.calcMode !== 'period_order'
+                && sourceOpts.collective
+                && !sourceOpts.study
                 && f.dateStr === todayStr()) {
                 return attDashPromiseTimeout(global.emsFetchTodayAttendanceStats(), 3000, null)
                     .then(function (remote) {
@@ -1585,7 +1760,8 @@
                             global._attDashLastCalc.source = stats.source;
                         }
                         attDashApplyStatsKpis(stats);
-                        setTxt('att-dash-source', remote.source === 'summary' ? 'Summary' : (remote.source === 'firestore' ? 'Firestore' : 'کلاؤڈ'));
+                        setTxt('att-dash-source', attDashSourceLabel(sourceOpts) + ' · ' +
+                            (remote.source === 'summary' ? 'Summary' : (remote.source === 'firestore' ? 'Firestore' : 'کلاؤڈ')));
                         attDashUpdateLiveIndicator(remote.source || 'cloud');
                         attDashRenderSummary(stats, f);
                         attDashRenderCharts(stats, localTrend, classRows);
@@ -1731,7 +1907,7 @@
                 return _attDashManualRefreshInflight;
             });
         }
-        ['att-dash-date', 'att-dash-role-filter', 'att-dash-class-filter', 'att-dash-period-filter', 'att-dash-calc-mode'].forEach(function (id) {
+        ['att-dash-date', 'att-dash-role-filter', 'att-dash-class-filter', 'att-dash-period-filter', 'att-dash-calc-mode', 'att-dash-source-collective', 'att-dash-source-study'].forEach(function (id) {
             var el = document.getElementById(id);
             if (el && !el._attDashBound) {
                 el._attDashBound = true;

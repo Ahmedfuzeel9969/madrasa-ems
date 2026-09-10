@@ -190,6 +190,22 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
   padding: 14px;
   margin-bottom: 10px;
 }
+#att-dashboard-panel .att-dash-source-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: center;
+  min-height: 42px;
+}
+#att-dashboard-panel .att-dash-source-checks .checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
 #att-dashboard-panel .att-dash-refresh-wrap .btn {
   width: 100%;
   min-height: 42px;
@@ -854,7 +870,7 @@ body { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; backgr
 
 /* ================= Registration Enterprise Layout (Phase 2) ================= */
 /* فل-اسکرین: رجسٹریشن ماڈیول مزید چوڑائی استعمال کرے */
-body .main-content:has(#module-admission.active) { max-width: 1840px; }
+body .main-content:has(#module-admission.active) { max-width: none; }
 
 /* مربوط نیویگیشن ٹاپ بار (Main + Sub یکجا) — theme-aware contrast */
 .reg-topbar {
@@ -1253,7 +1269,13 @@ body .main-content:has(#module-admission.active) { max-width: 1840px; }
 .reg-pg-dots { color:#94a3b8; padding:0 4px; }
 
 /* ================= حصہ 4: فارم کا ڈھانچہ ================= */
-.main-content { padding: 20px; max-width: 1600px; margin: 0 auto; }
+.main-content {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 20px 0;
+    box-sizing: border-box;
+}
 .module-view { display: none; animation: fadeSlide 0.3s ease-out; }
 .module-view.active { display: block; }
 @keyframes fadeSlide { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -2505,6 +2527,259 @@ body.theme-style-3d .premium-card {
     padding-bottom: 10px;
     margin-bottom: 18px;
 }
+.ap-dashboard {
+    --ap-dash-accent: #0f766e;
+    background: linear-gradient(180deg, #f8fffd 0%, #ffffff 250px);
+}
+.ap-dashboard-toolbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+.ap-dashboard-toolbar h2 {
+    margin: 0 0 5px;
+    border: 0;
+    padding: 0;
+    color: #0f766e;
+}
+.ap-dashboard-toolbar p,
+.ap-dashboard-muted {
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+    line-height: 1.7;
+}
+.ap-dashboard-toolbar-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.ap-dashboard-updated {
+    color: #64748b;
+    font-size: 12px;
+}
+.ap-dashboard-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(130px, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.ap-dashboard-kpi {
+    min-height: 94px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px;
+    border: 1px solid #dbe7e4;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 3px 14px rgba(15, 118, 110, .07);
+}
+.ap-dashboard-kpi > i {
+    width: 38px;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 38px;
+    border-radius: 11px;
+    background: #e6fffa;
+    color: #0f766e;
+    font-size: 17px;
+}
+.ap-dashboard-kpi span {
+    display: block;
+    color: #0f172a;
+    font-size: 25px;
+    font-weight: 800;
+    line-height: 1.1;
+}
+.ap-dashboard-kpi small {
+    display: block;
+    margin-top: 5px;
+    color: #64748b;
+    font-size: 11px;
+    line-height: 1.35;
+}
+.ap-kpi-teachers > i { background:#e0f2fe; color:#0369a1; }
+.ap-kpi-staff > i { background:#ede9fe; color:#6d28d9; }
+.ap-kpi-active > i { background:#dcfce7; color:#15803d; }
+.ap-kpi-parents > i { background:#dbeafe; color:#1d4ed8; }
+.ap-kpi-alert > i { background:#fef3c7; color:#b45309; }
+.ap-dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+}
+.ap-dashboard-grid-lower {
+    grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr);
+}
+.ap-dashboard-panel {
+    min-width: 0;
+    padding: 17px;
+    border: 1px solid #dbe7e4;
+    border-radius: 13px;
+    background: #fff;
+    box-shadow: 0 3px 14px rgba(15, 23, 42, .045);
+}
+.ap-dashboard-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 13px;
+}
+.ap-dashboard-panel-head h3,
+.ap-dashboard-quick h3 {
+    margin: 0;
+    color: #0f766e;
+    font-size: 15px;
+}
+.ap-dashboard-panel-head > strong {
+    color: #0f766e;
+    font-size: 20px;
+}
+.ap-dashboard-text-btn {
+    border: 0;
+    padding: 3px;
+    background: transparent;
+    color: #0f766e;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+}
+.ap-dashboard-text-btn:hover { text-decoration: underline; }
+.ap-dashboard-progress {
+    height: 9px;
+    overflow: hidden;
+    margin-bottom: 10px;
+    border-radius: 99px;
+    background: #e2e8f0;
+}
+.ap-dashboard-progress span {
+    display: block;
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #14b8a6, #0f766e);
+    transition: width .25s ease;
+}
+.ap-dashboard-sync,
+.ap-dashboard-portal {
+    margin-top: 12px;
+    padding: 10px 12px;
+    border: 1px solid #ccfbf1;
+    border-radius: 9px;
+    background: #f0fdfa;
+    color: #115e59;
+    font-size: 12px;
+    line-height: 1.7;
+}
+.ap-dashboard-portal { margin-top: 8px; }
+.ap-dashboard-alerts {
+    display: grid;
+    gap: 8px;
+}
+.ap-dashboard-alert {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 24px 1fr 16px;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 11px;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    background: #f8fafc;
+    color: #334155;
+    text-align: right;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+}
+.ap-dashboard-alert:hover { border-color:#94a3b8; transform:translateY(-1px); }
+.ap-alert-danger { border-color:#fecaca; background:#fff7f7; color:#991b1b; }
+.ap-alert-warning { border-color:#fde68a; background:#fffbeb; color:#92400e; }
+.ap-alert-info { border-color:#bfdbfe; background:#eff6ff; color:#1e40af; }
+.ap-dashboard-all-good {
+    padding: 18px;
+    border: 1px solid #bbf7d0;
+    border-radius: 10px;
+    background: #f0fdf4;
+    color: #166534;
+    text-align: center;
+    font-size: 13px;
+}
+.ap-dashboard-table { font-size: 12px; }
+.ap-dashboard-table th,
+.ap-dashboard-table td { padding: 8px; }
+.ap-dashboard-ratio {
+    width: 70px;
+    height: 6px;
+    display: inline-block;
+    overflow: hidden;
+    margin-left: 5px;
+    border-radius: 99px;
+    background: #e2e8f0;
+    vertical-align: middle;
+}
+.ap-dashboard-ratio i {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: #14b8a6;
+}
+.ap-dashboard-history-row {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 9px;
+    padding: 9px 0;
+    border-bottom: 1px dashed #e2e8f0;
+}
+.ap-dashboard-history-row:last-child { border-bottom: 0; }
+.ap-dashboard-history-row > i { color:#0f766e; margin-top:4px; }
+.ap-dashboard-history-row strong,
+.ap-dashboard-history-row span,
+.ap-dashboard-history-row small { display:block; }
+.ap-dashboard-history-row strong { color:#0f172a; font-size:12px; }
+.ap-dashboard-history-row span { margin-top:2px; color:#475569; font-size:12px; }
+.ap-dashboard-history-row small { margin-top:2px; color:#94a3b8; font-size:10px; }
+.ap-dashboard-quick {
+    padding: 17px;
+    border: 1px solid #dbe7e4;
+    border-radius: 13px;
+    background: #fff;
+}
+.ap-dashboard-quick-grid {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(110px, 1fr));
+    gap: 9px;
+    margin-top: 13px;
+}
+.ap-dashboard-quick-grid button {
+    min-height: 70px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 10px;
+    border: 1px solid #ccfbf1;
+    border-radius: 10px;
+    background: #f0fdfa;
+    color: #0f766e;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 700;
+}
+.ap-dashboard-quick-grid button:hover { border-color:#14b8a6; background:#ccfbf1; }
+.ap-dashboard-quick-grid i { font-size:17px; }
 .ap-table-wrap {
     max-height: 540px;
     overflow-y: auto;
@@ -2571,6 +2846,16 @@ body.theme-style-3d .premium-card {
 }
 @media screen and (max-width: 768px) {
     .ap-mod-grid { grid-template-columns: 1fr !important; }
+    .ap-dashboard-toolbar { flex-direction:column; }
+    .ap-dashboard-toolbar-actions { width:100%; justify-content:space-between; }
+    .ap-dashboard-kpi-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .ap-dashboard-grid,
+    .ap-dashboard-grid-lower { grid-template-columns:1fr; }
+    .ap-dashboard-quick-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+}
+@media screen and (min-width: 769px) and (max-width: 1180px) {
+    .ap-dashboard-kpi-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+    .ap-dashboard-quick-grid { grid-template-columns:repeat(3, minmax(0, 1fr)); }
 }
 
 /* ---- Stage 2: تفصیلی اجازت میٹرکس ---- */
@@ -2691,7 +2976,7 @@ body.theme-style-3d .premium-card {
 /* ============================================================
    حاضری ماڈیول — فل اسکرین + کمپیکٹ رجسٹر (مرحلہ 2)
    ============================================================ */
-#module-attendance.active { max-width: 1840px; margin-left: auto; margin-right: auto; }
+#module-attendance.active { width: 100%; max-width: none; margin-left: 0; margin-right: 0; }
 #module-attendance .premium-card { padding: 14px 16px; }
 
 /* کمپیکٹ اسمارٹ رجسٹر جدول */
@@ -2806,7 +3091,7 @@ body.theme-style-3d .premium-card {
 /* ============================================================
    شعبۂ شکایات — enterprise UI
    ============================================================ */
-#module-complaints.active, #module-exams.active, #module-finance.active, #module-ledger.active, #module-announcements.active, #module-sys-settings.active { max-width: 1840px; margin-left: auto; margin-right: auto; }
+#module-complaints.active, #module-exams.active, #module-finance.active, #module-ledger.active, #module-announcements.active, #module-sys-settings.active { width: 100%; max-width: none; margin-left: 0; margin-right: 0; }
 #module-finance .fee-tab-content, #module-ledger .ledger-tab-content, #module-announcements .ann-tab-content, #module-sys-settings .sys-tab-content { margin-top: 16px; }
 .ann-recent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .ann-recent-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; cursor: pointer; transition: box-shadow .15s; }

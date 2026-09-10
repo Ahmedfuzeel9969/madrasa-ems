@@ -6834,6 +6834,53 @@ function evtReadStore() {
   }
 }
 
+/**
+ * Dashboard helper: one status per roster user for a calendar day from مطالعہ sessions.
+ * Multiple sheet sessions same day → same status kept; mixed → PARTIAL.
+ * @returns {Object.<string, string>} uid -> 'P'|'A'|'L'|'PARTIAL'
+ */
+function evtDashDayStatusByUser(dateStr, rosterUsers) {
+  dateStr = String(dateStr || '').trim();
+  var out = Object.create(null);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return out;
+  var rosterSet = Object.create(null);
+  (rosterUsers || []).forEach(function (u) {
+    var id = typeof attGetUserId === 'function' ? attGetUserId(u) : String((u && (u.id || u.uid)) || '');
+    id = String(id || '').trim();
+    if (id) rosterSet[id] = true;
+  });
+  if (!Object.keys(rosterSet).length) return out;
+
+  var symbols = {};
+  try { symbols = JSON.parse(localStorage.getItem('ems_att_symbols') || '{}') || { P: 'P', A: 'A', L: 'L' }; }
+  catch (eSym) { symbols = { P: 'P', A: 'A', L: 'L' }; }
+
+  var byUid = Object.create(null);
+  var store = evtReadStore();
+  (store.sessions || []).forEach(function (s) {
+    if (!s || String(s.date || '') !== dateStr) return;
+    (s.participants || []).forEach(function (p) {
+      if (!p || !p.id) return;
+      var uid = String(p.id);
+      if (!rosterSet[uid]) return;
+      var kind = typeof attStatusKind === 'function' ? attStatusKind(p.status, symbols) : '';
+      if (kind !== 'P' && kind !== 'A' && kind !== 'L') return;
+      if (!byUid[uid]) byUid[uid] = [];
+      byUid[uid].push(kind);
+    });
+  });
+  Object.keys(byUid).forEach(function (uid) {
+    var kinds = byUid[uid];
+    if (!kinds.length) return;
+    var first = kinds[0];
+    out[uid] = kinds.every(function (k) { return k === first; }) ? first : 'PARTIAL';
+  });
+  return out;
+}
+
+window.evtReadStore = evtReadStore;
+window.evtDashDayStatusByUser = evtDashDayStatusByUser;
+
 /** Legacy helper: flat sessions list (compat). Prefer evtReadStore(). */
 function evtReadEventsDb() {
   var store = evtReadStore();

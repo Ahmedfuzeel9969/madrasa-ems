@@ -14,7 +14,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <link rel="stylesheet" href="style.css?v=20260909_att_evt_shared_portal_v1">
+    <link rel="stylesheet" href="style.css?v=20260910_att_admin_dash_desktop_full_v1">
     <link rel="stylesheet" href="landing.css?v=20260716_mobile_phase4">
     <script>
         // Runtime mode resolution (SSOT for data stays LOCAL either way; cloud sync
@@ -1319,6 +1319,13 @@
                                 <option value="daily">یومیہ خلاصہ</option>
                                 <option value="period_order">گھنٹوں کی ترتیب سے</option>
                             </select>
+                        </div>
+                        <div class="input-group att-dash-source-toggles">
+                            <label>ڈیٹا کے ذرائع</label>
+                            <div class="att-dash-source-checks" role="group" aria-label="حاضری ذرائع">
+                                <label class="checkbox-label"><input type="checkbox" id="att-dash-source-collective" checked> اجتماعی حاضری</label>
+                                <label class="checkbox-label"><input type="checkbox" id="att-dash-source-study" checked> حاضری مطالعہ</label>
+                            </div>
                         </div>
                         <div class="input-group att-dash-refresh-wrap">
                             <label>&nbsp;</label>
@@ -5769,7 +5776,8 @@
     <div class="reg-topbar ap-header-card">
         <div class="reg-topbar-title"><i class="fas fa-users-cog"></i> ادارہ ایڈمن کنٹرول پینل</div>
         <div class="reg-tabs" id="ap-ribbon-menu" role="tablist" aria-label="ادارہ ایڈمن پینل کے ذیلی شعبے">
-            <button type="button" id="ap-tab-staff" class="reg-tab active-sub-tab" role="tab" aria-selected="true" aria-controls="ap-win-staff" tabindex="0" data-ap-panel="ap-win-staff" onclick="window.apSwitchTab('ap-win-staff', this)"><i class="fas fa-users-cog"></i> عملہ و اجازت</button>
+            <button type="button" id="ap-tab-dashboard" class="reg-tab active-sub-tab" role="tab" aria-selected="true" aria-controls="ap-win-dashboard" tabindex="0" data-ap-panel="ap-win-dashboard" onclick="window.apSwitchTab('ap-win-dashboard', this)"><i class="fas fa-chart-pie"></i> ڈیش بورڈ</button>
+            <button type="button" id="ap-tab-staff" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-staff" tabindex="-1" data-ap-panel="ap-win-staff" onclick="window.apSwitchTab('ap-win-staff', this)"><i class="fas fa-users-cog"></i> عملہ و اجازت</button>
             <button type="button" id="ap-tab-templates" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-templates" tabindex="-1" data-ap-panel="ap-win-templates" onclick="window.apSwitchTab('ap-win-templates', this)"><i class="fas fa-layer-group"></i> ٹیمپلیٹس</button>
             <button type="button" id="ap-tab-history" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-history" tabindex="-1" data-ap-panel="ap-win-history" onclick="window.apSwitchTab('ap-win-history', this)"><i class="fas fa-history"></i> اجازت ہسٹری</button>
             <button type="button" id="ap-tab-parents" class="reg-tab" role="tab" aria-selected="false" aria-controls="ap-win-parents" tabindex="-1" data-ap-panel="ap-win-parents" onclick="window.apSwitchTab('ap-win-parents', this)"><i class="fas fa-user-friends"></i> والدین رسائی</button>
@@ -5780,8 +5788,75 @@
     </div>
     <div id="ap-outbox-pending-strip" role="status" aria-live="polite" style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:8px 12px;margin:10px 0;display:none;"></div>
 
+    <!-- ===== کنٹرول پینل ڈیش بورڈ ===== -->
+    <div id="ap-win-dashboard" class="premium-card ap-tab-content ap-dashboard" role="tabpanel" aria-labelledby="ap-tab-dashboard">
+        <div class="ap-dashboard-toolbar">
+            <div>
+                <h2><i class="fas fa-chart-pie"></i> کنٹرول پینل ڈیش بورڈ</h2>
+                <p>عملہ، اجازتوں، والدین رسائی اور حفاظتی حالت کا ایک ہی جگہ قابلِ عمل خلاصہ</p>
+            </div>
+            <div class="ap-dashboard-toolbar-actions">
+                <span id="ap-dashboard-updated" class="ap-dashboard-updated" role="status" aria-live="polite">اعداد تیار ہو رہے ہیں…</span>
+                <button type="button" class="btn btn-outline" onclick="window.apRenderDashboard()"><i class="fas fa-sync-alt"></i> تازہ کریں</button>
+            </div>
+        </div>
+
+        <div class="ap-dashboard-kpi-grid" aria-label="کنٹرول پینل اہم اعداد">
+            <article class="ap-dashboard-kpi ap-kpi-total"><i class="fas fa-users"></i><div><span id="ap-dash-staff-total">0</span><small>کل اساتذہ و عملہ</small></div></article>
+            <article class="ap-dashboard-kpi ap-kpi-teachers"><i class="fas fa-chalkboard-teacher"></i><div><span id="ap-dash-teacher-total">0</span><small>اساتذہ</small></div></article>
+            <article class="ap-dashboard-kpi ap-kpi-staff"><i class="fas fa-user-tie"></i><div><span id="ap-dash-other-staff">0</span><small>دیگر عملہ</small></div></article>
+            <article class="ap-dashboard-kpi ap-kpi-active"><i class="fas fa-user-check"></i><div><span id="ap-dash-staff-active">0</span><small>فعال اجازت نامے</small></div></article>
+            <article class="ap-dashboard-kpi ap-kpi-parents"><i class="fas fa-user-friends"></i><div><span id="ap-dash-parent-active">0</span><small>والدین رسائی فعال</small></div></article>
+            <article class="ap-dashboard-kpi ap-kpi-alert"><i class="fas fa-exclamation-circle"></i><div><span id="ap-dash-attention-total">0</span><small>توجہ طلب امور</small></div></article>
+        </div>
+
+        <div class="ap-dashboard-grid">
+            <section class="ap-dashboard-panel">
+                <div class="ap-dashboard-panel-head"><h3><i class="fas fa-shield-alt"></i> رسائی کی مجموعی صحت</h3><strong id="ap-dash-health-percent">0٪</strong></div>
+                <div class="ap-dashboard-progress" aria-hidden="true"><span id="ap-dash-health-bar"></span></div>
+                <p id="ap-dash-health-text" class="ap-dashboard-muted">حساب جاری ہے…</p>
+                <div id="ap-dashboard-sync-status" class="ap-dashboard-sync">ہم وقت سازی کی حالت دیکھی جا رہی ہے…</div>
+                <div class="ap-dashboard-portal"><i class="fas fa-door-open"></i> مشترک پورٹل: <strong id="ap-dash-portal-mode">حالت دیکھی جا رہی ہے…</strong></div>
+            </section>
+
+            <section class="ap-dashboard-panel">
+                <div class="ap-dashboard-panel-head"><h3><i class="fas fa-bell"></i> توجہ طلب امور</h3></div>
+                <div id="ap-dash-alerts" class="ap-dashboard-alerts"><p class="ap-dashboard-muted">جائزہ لیا جا رہا ہے…</p></div>
+            </section>
+        </div>
+
+        <div class="ap-dashboard-grid ap-dashboard-grid-lower">
+            <section class="ap-dashboard-panel">
+                <div class="ap-dashboard-panel-head"><h3><i class="fas fa-sitemap"></i> شعبہ وار عملہ رسائی</h3><button type="button" class="ap-dashboard-text-btn" onclick="window.apOpenPanel('ap-win-staff')">تفصیل کھولیں</button></div>
+                <div class="table-responsive">
+                    <table class="data-table ap-dashboard-table">
+                        <thead><tr><th>شعبہ</th><th>فعال مجاز افراد</th><th>کل عملہ میں تناسب</th></tr></thead>
+                        <tbody id="ap-dash-module-coverage"><tr><td colspan="3">حساب جاری ہے…</td></tr></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="ap-dashboard-panel">
+                <div class="ap-dashboard-panel-head"><h3><i class="fas fa-history"></i> حالیہ اجازت تبدیلیاں</h3><button type="button" class="ap-dashboard-text-btn" onclick="window.apOpenPanel('ap-win-history')">مکمل ہسٹری</button></div>
+                <div id="ap-dash-recent-history" class="ap-dashboard-history"><p class="ap-dashboard-muted">اندراجات تیار ہو رہے ہیں…</p></div>
+            </section>
+        </div>
+
+        <section class="ap-dashboard-quick">
+            <h3><i class="fas fa-bolt"></i> فوری کام</h3>
+            <div class="ap-dashboard-quick-grid">
+                <button type="button" onclick="window.apOpenCreateStaff()"><i class="fas fa-user-plus"></i><span>نیا عملہ شامل کریں</span></button>
+                <button type="button" onclick="window.apOpenPanel('ap-win-staff')"><i class="fas fa-user-cog"></i><span>عملہ اجازتیں</span></button>
+                <button type="button" onclick="window.apOpenPanel('ap-win-parents')"><i class="fas fa-user-friends"></i><span>والدین رسائی</span></button>
+                <button type="button" onclick="window.apOpenPanel('ap-win-shared-portal')"><i class="fas fa-door-open"></i><span>مشترک پورٹل</span></button>
+                <button type="button" onclick="window.apOpenPanel('ap-win-comm')"><i class="fas fa-comments"></i><span>پیغام رسانی</span></button>
+                <button type="button" onclick="window.apOpenPanel('ap-win-backup')"><i class="fas fa-shield-alt"></i><span>بیک اپ و حفاظت</span></button>
+            </div>
+        </section>
+    </div>
+
     <!-- ===== عملہ مینجمنٹ ===== -->
-    <div id="ap-win-staff" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-staff">
+    <div id="ap-win-staff" class="premium-card ap-tab-content" role="tabpanel" aria-labelledby="ap-tab-staff" style="display:none;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:15px;">
             <h2 style="margin:0; border:none; padding:0;"><i class="fas fa-chalkboard-teacher"></i> عملہ کی فہرست و شعبہ جات</h2>
             <div class="btn-action-group" style="margin:0;">
@@ -7044,7 +7119,7 @@
     <script defer src="ems-query-utils.js?v=20260704attfix1"></script>
     <script defer src="ems-repository.js?v=20260703repo1"></script>
     <script defer src="ems-online-mode.js?v=20260708_search_index_v3"></script>
-    <script defer src="cloud/ems-cloud-manifest.js?v=20260909_att_evt_shared_portal_v1"></script>
+    <script defer src="cloud/ems-cloud-manifest.js?v=20260910_att_admin_dash_desktop_full_v1"></script>
     <script defer src="cloud/ems-cloud-loader.js?v=20260708_search_index_v3"></script>
     <script defer src="ems-deferred-libs.js?v=20260809_pdf1"></script>
     <script defer src="ems-utils.js?v=20260809_att_print_bw"></script>
@@ -7062,17 +7137,17 @@
     <script defer src="ems-cloud-pull.js?v=20260901_owais_timetable_103_guard_v14"></script>
     <script defer src="ems-tenant-resolver.js?v=20260809_tenant_loop"></script>
     <script defer src="department-context.js?v=20260620dept4"></script>
-    <script defer src="ems-sw-update.js?v=20260903_att_holiday_joined_vertical_v1"></script>
-    <script defer src="core.js?v=20260903_att_holiday_joined_vertical_v1"></script>
+    <script defer src="ems-sw-update.js?v=20260910_att_admin_dash_desktop_full_v1"></script>
+    <script defer src="core.js?v=20260910_att_admin_dash_desktop_full_v1"></script>
     <script defer src="portal-access.js?v=20260809_tenant_loop"></script>
     <script defer src="landing.js?v=20260710_remove_guest_portal"></script>
     <script defer src="ems-offline-session-cache.js?v=20260705desktopfix6"></script>
     <script defer src="ems-offline-policy.js?v=20260707_sync_hardening_v1"></script>
     <script defer src="ems-native-google-auth.js?v=20260716_native_google_noscope1"></script>
-    <script defer src="auth.js?v=20260909_att_evt_shared_portal_v1"></script>
+    <script defer src="auth.js?v=20260910_att_admin_dash_desktop_full_v1"></script>
     <script defer src="ems-boot-gate.js?v=20260809_tenant_loop"></script>
-    <script defer src="ems-post-auth-loader.js?v=20260909_att_evt_shared_portal_v1"></script>
-    <script defer src="ems-lazy-loader.js?v=20260909_att_evt_shared_portal_v1"></script>
+    <script defer src="ems-post-auth-loader.js?v=20260910_att_admin_dash_desktop_full_v1"></script>
+    <script defer src="ems-lazy-loader.js?v=20260910_att_admin_dash_desktop_full_v1"></script>
     <script defer src="ems-offline-mode.js?v=20260628offline1"></script>
     <script defer src="ems-offline-config.js?v=20260628offline1"></script>
     <script defer src="ems-device-identity.js?v=20260628offline1"></script>

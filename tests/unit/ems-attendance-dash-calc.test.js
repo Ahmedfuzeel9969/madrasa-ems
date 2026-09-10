@@ -11,8 +11,8 @@ describe('Attendance dashboard calculation fixes', function () {
         expect(js).toContain('function attDashStatusAbsent');
         expect(js).toContain('function attDashComputeRate');
         expect(js).toContain('function attDashBuildFinalMarksForDay');
-        expect(js).toMatch(/attDashStatsForDay[\s\S]{0,1200}attDashBuildFinalMarksForDay/);
-        expect(js).not.toMatch(/attDashStatsForDay[\s\S]{0,1800}total - present - leave/);
+        expect(js).toMatch(/attDashStatsForDay[\s\S]{0,2500}attDashBuildFinalMarksForDay/);
+        expect(js).not.toMatch(/attDashStatsForDay[\s\S]{0,2500}total - present - leave/);
         expect(js).toMatch(/attDashComputeRate[\s\S]{0,400}markedTotal <= 0[\s\S]{0,120}rate: null/);
     });
 
@@ -83,6 +83,24 @@ describe('Attendance dashboard calculation fixes', function () {
         expect(js).toContain('function attDashIsEligibleRegistration');
         expect(js).toMatch(/attDashGetUsers[\s\S]{0,500}filter\(attDashIsEligibleRegistration\)/);
         expect(js).toContain("s === 'inactive'");
+    });
+
+    it('supports separate collective and study source checkboxes', function () {
+        var js = fs.readFileSync(path.join(ROOT, 'att-dashboard.js'), 'utf8');
+        var html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+        var att = fs.readFileSync(path.join(ROOT, 'attendance.js'), 'utf8');
+        expect(html).toContain('id="att-dash-source-collective"');
+        expect(html).toContain('id="att-dash-source-study"');
+        expect(html).toContain('اجتماعی حاضری');
+        expect(html).toContain('حاضری مطالعہ');
+        expect(js).toContain('sourceCollective');
+        expect(js).toContain('sourceStudy');
+        expect(js).toContain('attDashApplyStudyMarksToFinal');
+        expect(js).toContain('attDashSourceLabel');
+        expect(js).toContain('att-dash-source-collective');
+        expect(js).toContain('evtDashDayStatusByUser');
+        expect(att).toContain('window.evtDashDayStatusByUser');
+        expect(att).toContain('window.evtReadStore');
     });
 
     it('main dashboard snapshot uses marked denominator not residual absent', function () {
