@@ -155,6 +155,27 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "Staff_Links",
+      "fieldPath": "authUid",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "Parent_Links",
+      "fieldPath": "authUid",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "Student_Links",
+      "fieldPath": "authUid",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
       "collectionGroup": "Registrations",
       "fieldPath": "name",
       "indexes": [
