@@ -10,7 +10,6 @@ var phase0 = require('./attendance-phase0-snapshot');
 
 var ROOT = path.resolve(__dirname, '..');
 var PROJECT = 'madrasa-mangment-app';
-var DEFAULT_TENANT = 'bpV58OqWSKhRbvXL57CvihIlDj63';
 
 function readArg(name, fallback) {
   var prefix = '--' + name + '=';
@@ -35,9 +34,19 @@ function activeActions(permission) {
   }, 0);
 }
 
-function summarizeStaff(permissionsSnap, linksSnap) {
+function usableKey(data) {
+  data = data || {};
+  var hasHash = typeof data.accessKeyHash === 'string' && data.accessKeyHash.length > 20;
+  var expires = data.accessKeyExpiresAt;
+  var expiresMs = expires && typeof expires.toMillis === 'function' ? expires.toMillis() : Number(expires || 0);
+  return hasHash && (!expiresMs || expiresMs > Date.now());
+}
+
+function summarizeStaff(permissionsSnap, linksSnap, keysSnap) {
   var permissions = Object.create(null);
   permissionsSnap.forEach(function (doc) { permissions[doc.id] = doc.data() || {}; });
+  var keyById = Object.create(null);
+  keysSnap.forEach(function (doc) { keyById[doc.id] = doc.data() || {}; });
   var activeLinks = linksSnap.docs.filter(function (doc) {
     return String((doc.data() || {}).status || '') === 'active';
   });
@@ -69,7 +78,11 @@ function summarizeStaff(permissionsSnap, linksSnap) {
     linkDocuments: linksSnap.size,
     linkStatuses: statusCounts(linksSnap.docs),
     activeLinks: activeLinks.length,
-    activeLinksMissingPermission: missingPermissions
+    activeLinksMissingPermission: missingPermissions,
+    accessKeyDocuments: keysSnap.size,
+    permissionsWithUsableKey: permissionsSnap.docs.filter(function (doc) {
+      return usableKey(keyById[doc.id]) || usableKey(doc.data() || {});
+    }).length
   };
 }
 
@@ -80,7 +93,7 @@ function parentStudentIds(link) {
   return ids.map(String).filter(Boolean);
 }
 
-function summarizeParents(permissionsSnap, linksSnap) {
+function summarizeParents(permissionsSnap, linksSnap, keysSnap) {
   var permissions = Object.create(null);
   permissionsSnap.forEach(function (doc) { permissions[doc.id] = doc.data() || {}; });
   var activeLinks = linksSnap.docs.filter(function (doc) {
@@ -100,13 +113,19 @@ function summarizeParents(permissionsSnap, linksSnap) {
     linkStatuses: statusCounts(linksSnap.docs),
     activeLinks: activeLinks.length,
     distinctLinkedStudents: linkedIds.length,
-    linkedStudentsMissingPermission: linkedIds.filter(function (id) { return !permissions[id]; }).length
+    linkedStudentsMissingPermission: linkedIds.filter(function (id) { return !permissions[id]; }).length,
+    accessKeyDocuments: keysSnap.size,
+    permissionsWithUsableKey: permissionsSnap.docs.filter(function (doc) {
+      var key = keysSnap.docs.find(function (keyDoc) { return keyDoc.id === doc.id; });
+      return !!key && usableKey(key.data() || {});
+    }).length
   };
 }
 
 async function main() {
   var projectId = readArg('project', PROJECT);
-  var tenantId = readArg('tenant', DEFAULT_TENANT);
+  var tenantId = readArg('tenant', '');
+  if (!tenantId) throw new Error('Required argument missing: --tenant=<tenant-id>');
   if (!(await phase0.setupCliCredentials(projectId))) throw new Error('Firebase CLI credentials not found');
   var admin = phase0.loadAdmin(projectId);
   var db = admin.firestore();
@@ -115,8 +134,10 @@ async function main() {
     tenantRef.get(),
     tenantRef.collection('StaffPermissions').get(),
     tenantRef.collection('Staff_Links').get(),
+    tenantRef.collection('StaffAccessKeys').get(),
     tenantRef.collection('ParentPermissions').get(),
-    tenantRef.collection('Parent_Links').get()
+    tenantRef.collection('Parent_Links').get(),
+    tenantRef.collection('ParentAccessKeys').get()
   ]);
   if (!reads[0].exists) throw new Error('Tenant not found: ' + tenantId);
   var tenant = reads[0].data() || {};
@@ -126,8 +147,8 @@ async function main() {
     projectId: projectId,
     tenantId: tenantId,
     tenantName: tenant.name || tenant.madrasaName || tenant.instituteName || '',
-    staffPortal: summarizeStaff(reads[1], reads[2]),
-    parentPortal: summarizeParents(reads[3], reads[4])
+    staffPortal: summarizeStaff(reads[1], reads[2], reads[3]),
+    parentPortal: summarizeParents(reads[4], reads[5], reads[6])
   }, null, 2));
 }
 
@@ -135,4 +156,3 @@ main().catch(function (err) {
   console.error(err && err.stack ? err.stack : err);
   process.exitCode = 1;
 });
-
