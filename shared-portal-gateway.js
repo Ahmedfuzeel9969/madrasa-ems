@@ -122,11 +122,29 @@
 
     function urduError(err, context) {
         var code = normalizedErrorCode(err);
+        // Callable functions already return carefully worded Urdu validation
+        // reasons. Keep those reasons visible to the owner instead of replacing
+        // them with a generic sentence that makes a deliberate safety rejection
+        // look like a broken Save button.
+        var serverMessage = String((err && err.message) || '').trim();
+        var safeServerCodes = [
+            'invalid-argument', 'failed-precondition', 'already-exists',
+            'aborted', 'permission-denied', 'resource-exhausted'
+        ];
+        if (safeServerCodes.indexOf(code) !== -1
+            && serverMessage
+            && serverMessage !== code
+            && serverMessage.length <= 320
+            && /[\u0600-\u06ff]/.test(serverMessage)) {
+            return serverMessage;
+        }
         var map = {
             'unauthenticated': 'آپ کا لاگ اِن سیشن ختم ہو گیا ہے۔ دوبارہ گوگل سے داخل ہوں۔',
             'permission-denied': 'آپ کو یہ ترتیب دیکھنے یا بدلنے کی اجازت نہیں ہے۔',
             'invalid-argument': 'درج کی گئی معلومات درست یا مکمل نہیں ہیں۔',
             'failed-precondition': 'محفوظ مشترک داخلے کی ضروری سروری ترتیب ابھی مکمل نہیں ہے۔',
+            'already-exists': 'یہ مشترک گوگل کھاتہ پہلے ہی کسی دوسرے ادارے کے ساتھ منسلک ہے۔',
+            'aborted': 'ترتیب اس دوران بدل گئی ہے۔ دوبارہ لوڈ کرکے پھر محفوظ کریں۔',
             'not-found': 'درج کردہ شناختی نمبر اس پورٹل میں نہیں ملا۔',
             'principal-not-found': 'اس شناختی نمبر کا فعال رکن نہیں ملا۔ منتظم سے رابطہ کریں۔',
             'access-key-invalid': 'شناختی نمبر یا رسائی کلید درست نہیں ہے۔',
@@ -214,7 +232,13 @@
     }
 
     function normalizeEmail(value) {
-        return String(value || '').trim().toLowerCase();
+        var email = String(value || '').trim().toLowerCase();
+        var match = email.match(/^([^@\s]{1,64})@([^@\s]{1,253})$/);
+        if (!match) return email;
+        var local = match[1];
+        var domain = match[2] === 'googlemail.com' ? 'gmail.com' : match[2];
+        if (domain === 'gmail.com') local = local.split('+')[0].replace(/\./g, '');
+        return local + '@' + domain;
     }
 
     function validEmail(value) {
@@ -1083,7 +1107,7 @@
         box.appendChild(node(
             'p',
             'ems-spg-muted',
-            'ہر فرد کا الگ گوگل اکاؤنٹ رکھیں، ایک مخصوص گوگل اکاؤنٹ تینوں پورٹل کے لیے رکھیں، یا تینوں پورٹل کے الگ مشترک اکاؤنٹس مقرر کریں۔ مالک کا گوگل اکاؤنٹ مشترک اکاؤنٹ نہیں بن سکتا۔'
+            'ہر فرد کا الگ گوگل اکاؤنٹ رکھیں، ایک مخصوص گوگل اکاؤنٹ تینوں پورٹل کے لیے رکھیں، یا تینوں پورٹل کے الگ مشترک اکاؤنٹس مقرر کریں۔ مشترک اکاؤنٹ کے لیے ایسا الگ گوگل ای میل رکھیں جو کسی ادارے کے مالک، استاد، عملے، طالب علم یا والدین کی ذاتی شناخت کے طور پر پہلے سے استعمال نہ ہو۔'
         ));
 
         var modeWrap = node('div', 'ems-spg-modes');
@@ -1297,6 +1321,8 @@
         modes: MODES,
         portals: PORTALS,
         callableNames: getCallableNames,
+        formatError: urduError,
+        normalizeEmail: normalizeEmail,
         enabled: isFeatureEnabled,
         maybeIntercept: maybeIntercept,
         canLoadAppData: canLoadAppData,

@@ -4,7 +4,7 @@
 (function (global) {
     'use strict';
 
-  var CACHE_BUST = '20260910_att_admin_dash_desktop_full_v1';
+  var CACHE_BUST = '20260910_shared_portal_save_feedback_v2';
 
     // Fail closed until Functions + Firestore + Storage rules are released
     // together. The controlled release flips this only after verification.
