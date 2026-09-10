@@ -2186,13 +2186,13 @@ window.emsAuthContinueAsTeacher = function (user, ctx) {
             var perm = (staffIdGate && typeof window.emsResolveStaffPerm === 'function')
                 ? window.emsResolveStaffPerm(staffIdGate)
                 : null;
-            // Hard-deny only when suspended. Missing module grants used to block the whole portal
-            // even after a valid Access Key — allow shell unlock so admin can still grant later.
-            if (perm && perm.status === 'suspended') {
+            // غیر فعال یا معطل اجازت نامہ پورٹل نہیں کھول سکتا۔ خالی شعبہ جاتی
+            // اجازت الگ حالت ہے؛ اس میں خول کھلتا ہے مگر کوئی شعبہ دستیاب نہیں ہوتا۔
+            if (perm && (perm.status || 'active') !== 'active') {
                 if (typeof window.emsShowAccessDenied === 'function') {
                     window.emsShowAccessDenied(
-                        'اکاؤنٹ معطل',
-                        'منتظم نے اس عملہ اکاؤنٹ کو معطل کر دیا ہے۔'
+                        'اکاؤنٹ غیر فعال',
+                        'منتظم نے اس عملہ اکاؤنٹ کی رسائی بند کر دی ہے۔'
                     );
                 }
                 return;

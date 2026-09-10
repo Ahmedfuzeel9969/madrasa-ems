@@ -1,4 +1,4 @@
-﻿var EMS_SW_BUILD_TAG = '20260910_att_admin_dash_desktop_full_v1';
+﻿var EMS_SW_BUILD_TAG = '20260911_portal_permissions_cloud_v1';
 const CACHE_NAME = 'ems-offline-v16-' + EMS_SW_BUILD_TAG;
 const SHELL = [
     './index.html',

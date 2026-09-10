@@ -116,6 +116,20 @@ describeEmulator('Shared portal Firestore session boundary', { timeout: 30000 },
     )));
   });
 
+  it('denies a teacher permission explicitly marked disabled', async function () {
+    const seeded = await seedTeacher();
+    await testEnv.withSecurityRulesDisabled(async function (context) {
+      await updateDoc(doc(
+        context.firestore(), 'All_Madrasas', seeded.tenantId,
+        'StaffPermissions', seeded.personId
+      ), { status: 'disabled' });
+    });
+    await assertFails(getDoc(doc(
+      sharedDb(seeded), 'All_Madrasas', seeded.tenantId,
+      'Attendance', 'att_rec_2026-09_teachers_all_all'
+    )));
+  });
+
   it('denies wrong person, wrong tenant, revoked, expired, and revision-mismatched sessions', async function () {
     const seeded = await seedTeacher();
     const refParts = ['All_Madrasas', seeded.tenantId, 'Attendance', 'att_rec_2026-09_teachers_all_all'];

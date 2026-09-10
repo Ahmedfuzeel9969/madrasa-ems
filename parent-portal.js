@@ -511,29 +511,39 @@
     window.initParentPortal = function () {
         var container = document.getElementById('pp-content');
         if (!container) return;
-
-        var studentIds = typeof window.emsGetLinkedStudentIds === 'function'
-            ? window.emsGetLinkedStudentIds() : [];
-
-        if (typeof window.emsRecordMatchesDepartment === 'function') {
-            var allUsers = getUsers();
-            studentIds = studentIds.filter(function (sid) {
-                var u = allUsers.find(function (x) { return x.id === sid; });
-                return !u || window.emsRecordMatchesDepartment(u);
-            });
-        }
-
-        if (!studentIds.length) {
-            container.innerHTML = '<p style="text-align:center; color:#64748b;">کوئی منسلک طالبِ علم نہیں۔ ادارے سے Parent Link کروائیں۔</p>';
-            return;
-        }
-
         container.innerHTML = '<p style="text-align:center; color:#64748b;">ڈیٹا لوڈ ہو رہا ہے...</p>';
 
         var tenantId = getTenantId();
-        var pulls = [pullLinkedStudentsForParent(tenantId), syncParentMessagesFromServer()];
+        // سرور اصل ماخذ ہے۔ پہلے مقامی فہرست خالی ہونے پر یہ فنکشن یہیں رک جاتا
+        // تھا، اس لیے درست Parent Link موجود ہونے کے باوجود پورٹل خالی دکھتا تھا۔
+        Promise.all([pullLinkedStudentsForParent(tenantId), syncParentMessagesFromServer()]).then(function (results) {
+            var linkedData = results[0] || {};
+            var serverIds = Array.isArray(linkedData.studentIds) ? linkedData.studentIds.slice() : [];
+            if (Array.isArray(linkedData.students)) {
+                linkedData.students.forEach(function (student) {
+                    if (student && student.id && serverIds.indexOf(student.id) < 0) serverIds.push(student.id);
+                });
+            }
+            var studentIds = serverIds.length
+                ? serverIds
+                : (typeof window.emsGetLinkedStudentIds === 'function' ? window.emsGetLinkedStudentIds() : []);
 
-        Promise.all(pulls).then(function () {
+            window.CURRENT_PARENT_LINK = Object.assign({}, window.CURRENT_PARENT_LINK || {}, {
+                studentIds: studentIds
+            });
+
+            if (typeof window.emsRecordMatchesDepartment === 'function') {
+                var allUsers = getUsers();
+                studentIds = studentIds.filter(function (sid) {
+                    var u = allUsers.find(function (x) { return x.id === sid; });
+                    return !u || window.emsRecordMatchesDepartment(u);
+                });
+            }
+
+            if (!studentIds.length) {
+                container.innerHTML = '<p style="text-align:center; color:#64748b;">کوئی منسلک طالبِ علم نہیں۔ ادارے سے والدین رابطہ بنوائیں۔</p>';
+                return;
+            }
             renderParentPortalCards(container, studentIds);
             if (typeof window.emsRenderParentMfaBanner === 'function') {
                 window.emsRenderParentMfaBanner(container);

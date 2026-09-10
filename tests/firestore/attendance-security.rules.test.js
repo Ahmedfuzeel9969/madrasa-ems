@@ -107,6 +107,20 @@ describeEmulator('Attendance Firestore rules — real emulator boundary', functi
     )));
   });
 
+  it('denies ordinary staff after its permission is marked disabled', async function () {
+    const seeded = await seedTenant({ view: true });
+    await testEnv.withSecurityRulesDisabled(async function (context) {
+      await updateDoc(doc(
+        context.firestore(), 'All_Madrasas', seeded.tenantId,
+        'StaffPermissions', seeded.staffId
+      ), { status: 'disabled' });
+    });
+    await assertFails(getDoc(doc(
+      userDb(seeded.staffUid),
+      'All_Madrasas', seeded.tenantId, 'Attendance', 'att_rec_2026-09_students_Class-A_all'
+    )));
+  });
+
   it('denies a valid staff user from a different tenant', async function () {
     await seedTenant({ tenantId: 'tenant-a', staffUid: 'staff-a', view: true });
     await seedTenant({ tenantId: 'tenant-b', staffUid: 'staff-b', view: true });

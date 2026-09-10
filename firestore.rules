@@ -237,7 +237,7 @@ service cloud.firestore {
       let perm = staffPerm(madrasaId);
       return isStaffOf(madrasaId)
         && staffPermExists(madrasaId)
-        && perm.status != 'suspended'
+        && perm.get('status', 'active') == 'active'
         && moduleId in perm.modules
         && perm.modules[moduleId] == true;
     }
@@ -348,7 +348,7 @@ service cloud.firestore {
       return personId != ''
         && sharedStaffLinkMatches(madrasaId)
         && exists(permPath)
-        && perm.get('status', 'active') != 'suspended'
+        && perm.get('status', 'active') == 'active'
         && moduleId in modules
         && modules[moduleId] == true
         && moduleId in actions

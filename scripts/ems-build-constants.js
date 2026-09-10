@@ -12,7 +12,7 @@ module.exports = {
     swUpdate: '20260708_sw_update_v1',
     searchIndex: '20260709_phase_a_drafts',
     offline: '20260628offline5',
-    postAuthLoader: '20260910_att_admin_dash_desktop_full_v1',
+    postAuthLoader: '20260911_portal_permissions_cloud_v1',
     core: '20260708_sw_update_v1'
   },
   /** Resolve script path — cloud/ prefix when file lives under cloud/ */

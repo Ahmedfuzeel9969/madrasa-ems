@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const ROOT = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
-const CACHE = '20260910_att_admin_dash_desktop_full_v1';
+const CACHE = '20260911_portal_permissions_cloud_v1';
 
 function read(name) {
     return fs.readFileSync(path.join(ROOT, name), 'utf8');

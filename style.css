@@ -2882,6 +2882,125 @@ body.theme-style-3d .premium-card {
 .ap-modrow-label input { width: 17px; height: 17px; cursor: pointer; }
 .ap-act-check { width: 17px; height: 17px; cursor: pointer; }
 
+/* ---- سافٹ ویئر جیسا شعبہ وار اجازت نقشہ ---- */
+.ap-perm-map-note,
+.ap-control-cloud-status {
+    padding: 9px 12px;
+    border: 1px solid #bae6fd;
+    border-radius: 9px;
+    background: #f0f9ff;
+    color: #075985;
+    font-size: 12px;
+    line-height: 1.75;
+}
+.ap-control-cloud-status { margin: 0 0 14px; }
+.ap-software-permission-map {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+.ap-perm-module-card {
+    overflow: hidden;
+    border: 1px solid #dbe7e4;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 3px 10px rgba(15, 118, 110, .06);
+}
+.ap-perm-module-head {
+    display: grid;
+    grid-template-columns: auto 38px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 12px;
+    border-bottom: 1px solid #dbe7e4;
+    background: linear-gradient(135deg, #f0fdfa, #ecfeff);
+    cursor: pointer;
+}
+.ap-perm-module-head > input { width: 19px; height: 19px; accent-color:#0f766e; }
+.ap-perm-module-icon {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: #0f766e;
+    color: #fff;
+}
+.ap-perm-module-head small,
+.ap-perm-module-head strong { display:block; }
+.ap-perm-module-head small { color:#64748b; font-size:10px; }
+.ap-perm-module-head strong { color:#0f172a; font-size:14px; margin-top:2px; }
+.ap-perm-check-label { color:#0f766e; font-size:11px; font-weight:700; }
+.ap-perm-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 10px;
+}
+.ap-perm-action {
+    position: relative;
+    min-width: 0;
+    cursor: pointer;
+}
+.ap-perm-action input {
+    position: absolute;
+    inset-inline-start: 7px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    accent-color:#0f766e;
+}
+.ap-perm-action span {
+    min-height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 6px 23px 6px 5px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    color:#475569;
+    background:#f8fafc;
+    font-size:10px;
+    text-align:center;
+}
+.ap-perm-action input:checked + span {
+    border-color:#5eead4;
+    background:#ccfbf1;
+    color:#115e59;
+    font-weight:700;
+}
+.ap-perm-save-status { min-height:20px; margin:10px 0 0; font-size:12px; }
+.ap-parent-view-map {
+    display:grid;
+    grid-template-columns:repeat(3, minmax(0, 1fr));
+    gap:9px;
+}
+.ap-parent-view-card {
+    position:relative;
+    min-height:92px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:7px;
+    padding:12px 8px;
+    border:1px solid #dbeafe;
+    border-radius:11px;
+    background:#f8fafc;
+    text-align:center;
+    cursor:pointer;
+}
+.ap-parent-view-card > input { position:absolute; top:8px; inset-inline-start:8px; width:18px; height:18px; accent-color:#2563eb; }
+.ap-parent-view-icon { width:34px; height:34px; display:flex; align-items:center; justify-content:center; border-radius:10px; background:#dbeafe; color:#1d4ed8; }
+.ap-parent-view-card strong,
+.ap-parent-view-card small { display:block; }
+.ap-parent-view-card strong { color:#0f172a; font-size:12px; }
+.ap-parent-view-card small { margin-top:3px; color:#64748b; font-size:9px; line-height:1.5; }
+.ap-parent-view-card:has(input:checked) { border-color:#60a5fa; background:#eff6ff; box-shadow:inset 0 0 0 1px #93c5fd; }
+
 /* ---- عارضی اجازت ---- */
 .ap-temp-section {
     margin-top: 12px;
@@ -2911,6 +3030,9 @@ body.theme-style-3d .premium-card {
 .ap-temp-meta { color: #92400e; font-size: 11px; }
 @media screen and (max-width: 768px) {
     .ap-temp-granter { grid-template-columns: 1fr 1fr; }
+    .ap-software-permission-map { grid-template-columns:1fr; }
+    .ap-parent-view-map { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+    .ap-perm-actions { grid-template-columns:repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---- Stage 3: والدین + پیغام رسانی ---- */

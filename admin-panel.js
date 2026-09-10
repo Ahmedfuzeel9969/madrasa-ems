@@ -1270,11 +1270,29 @@
         return savePromise;
     }
 
-    /** P0: write one permission doc to Firestore so teacher/parent login hydrate sees it immediately. */
-    function apPushPermissionDoc(collectionName, docId, data) {
+    function apDeepClone(value) {
+        try { return JSON.parse(JSON.stringify(value)); }
+        catch (e) { return value; }
+    }
+
+    function apPermissionCloudError(message) {
+        var err = new Error(message || 'فائر بیس سے محفوظ رابطہ دستیاب نہیں۔');
+        err.code = 'permission-cloud-unavailable';
+        return err;
+    }
+
+    /**
+     * ایک اجازت نامہ براہِ راست Firestore میں لکھیں۔ `strict` کے ساتھ ناکامی
+     * چھپائی نہیں جاتی، تاکہ کنٹرول پینل غلط طور پر "محفوظ" نہ دکھائے۔
+     */
+    function apPushPermissionDoc(collectionName, docId, data, options) {
+        options = options || {};
         var tenantId = (typeof window.emsGetTenantId === 'function' ? window.emsGetTenantId() : null) || apGetUid();
         var db = typeof window.getDbOrNull === 'function' ? window.getDbOrNull() : null;
-        if (!tenantId || !db || !docId || !data) return Promise.resolve({ skipped: true });
+        if (!tenantId || !db || !docId || !data) {
+            var unavailable = apPermissionCloudError();
+            return options.strict === true ? Promise.reject(unavailable) : Promise.resolve({ skipped: true });
+        }
         var payload = Object.assign({}, data);
         payload.updatedAt = payload.updatedAt || apNow();
         payload.updatedBy = payload.updatedBy || apCurrentAdmin();
@@ -1283,13 +1301,45 @@
             .then(function () { return { ok: true, collection: collectionName, docId: docId }; })
             .catch(function (err) {
                 console.warn('apPushPermissionDoc:', collectionName, docId, err && err.message);
+                if (options.strict === true) throw err;
                 return { ok: false, error: err && err.message };
             });
+    }
+
+    function apSetPermissionSaveState(kind, busy, message, isError) {
+        var buttonId = kind === 'parent' ? 'ap-parent-save-btn' : 'ap-staff-save-btn';
+        var statusId = kind === 'parent' ? 'ap-parent-save-status' : 'ap-staff-save-status';
+        var btn = document.getElementById(buttonId);
+        var status = document.getElementById(statusId);
+        if (btn) {
+            btn.disabled = !!busy;
+            btn.innerHTML = busy
+                ? '<i class="fas fa-spinner fa-spin"></i> فائر بیس پر محفوظ ہو رہا ہے…'
+                : '<i class="fas fa-save"></i> محفوظ کریں';
+        }
+        if (status) {
+            status.textContent = message || '';
+            status.style.color = isError ? '#b91c1c' : '#047857';
+        }
     }
 
     function apConfirmCloudPushAfterPermSave() {
         if (typeof window.emsCloudPushNow !== 'function') return Promise.resolve({ skipped: true });
         return window.emsCloudPushNow().catch(function () { return { ok: false }; });
+    }
+
+    function apCommitStaffPermission(staffId, permission, perms) {
+        return apPushPermissionDoc('StaffPermissions', staffId, permission, { strict: true }).then(function (result) {
+            perms[staffId] = permission;
+            return Promise.resolve(saveAllPerms(perms)).then(function () { return result; });
+        });
+    }
+
+    function apCommitParentPermission(studentId, permission, perms) {
+        return apPushPermissionDoc('ParentPermissions', studentId, permission, { strict: true }).then(function (result) {
+            perms[studentId] = permission;
+            return Promise.resolve(saveAllParentPerms(perms)).then(function () { return result; });
+        });
     }
 
     function apPushStaffClaimsForStaffId(staffId) {
@@ -1362,7 +1412,11 @@
         return Object.keys(p.modules).some(function (k) { return !!p.modules[k]; });
     }
 
-    /** Phase 4: empty teacher perms → apply teacher template once */
+    /**
+     * خالی استاد کے لیے صرف ماڈل میں تجویز دکھائیں۔ پہلے صرف کھڑکی کھولنے سے
+     * یہ ٹیمپلیٹ مقامی طور پر محفوظ ہو جاتا تھا، یعنی منتظم کے محفوظ بٹن کے
+     * بغیر اختیار بدل سکتا تھا۔ اصل تبدیلی اب صرف صریح محفوظ پر ہوگی۔
+     */
     function ensureTeacherDefaultPerm(staffId, staff, perm) {
         if (!staff || staff.type !== 'teacher') return perm;
         if (staffHasAnyModule(perm) || (perm.template && perm.template !== '')) return perm;
@@ -1374,9 +1428,6 @@
             by: apCurrentAdmin(),
             at: apNow()
         });
-        var perms = getAllPerms();
-        perms[staffId] = perm;
-        saveAllPerms(perms);
         return perm;
     }
 
@@ -1844,7 +1895,7 @@
     // ------------------------- اسٹیٹس toggle --------------------------------
     window.apToggleStatus = function (staffId) {
         var perms = getAllPerms();
-        var p = migratePerm(perms[staffId], staffId);
+        var p = migratePerm(apDeepClone(perms[staffId]), staffId);
         p.status = (p.status === 'active') ? 'disabled' : 'active';
         p.history.push({
             type: 'status_changed',
@@ -1854,12 +1905,17 @@
         });
         p.updatedAt = apNow();
         p.updatedBy = apCurrentAdmin();
-        perms[staffId] = p;
-        saveAllPerms(perms);
-        apToast(p.status === 'active' ? 'عملہ فعال کر دیا گیا۔' : 'عملہ غیر فعال کر دیا گیا۔', p.status === 'active' ? 'success' : 'warning');
-        window.apRenderStaffTable();
-        window.apRenderHistory();
-        apRefreshDashboardLocal();
+        apToast('فائر بیس پر حالت بدلی جا رہی ہے…', 'warning');
+        apCommitStaffPermission(staffId, p, perms).then(function () {
+            return apPushStaffClaimsForStaffId(staffId);
+        }).then(function () {
+            apToast(p.status === 'active' ? 'عملہ فعال کر دیا گیا۔' : 'عملہ غیر فعال کر دیا گیا۔', p.status === 'active' ? 'success' : 'warning');
+            window.apRenderStaffTable();
+            window.apRenderHistory();
+            apRefreshDashboardLocal();
+        }).catch(function () {
+            apToast('حالت نہیں بدلی؛ فائر بیس نے تبدیلی قبول نہیں کی۔', 'error');
+        });
     };
 
     // ------------------------ استاد پورٹل readiness چیک لسٹ -----------------------------
@@ -1959,21 +2015,24 @@
                 return '<option value="' + k + '"' + (perm.template === k ? ' selected' : '') + '>' + window.ADMIN_TEMPLATES[k].name + '</option>';
             }).join('');
 
-        // اعمال میٹرکس ٹیبل
-        var actionHead = window.ADMIN_ACTIONS.map(function (a) {
-            return '<th title="' + a.name + '"><i class="fas ' + a.icon + '"></i><br>' + a.name + '</th>';
-        }).join('');
-
-        var matrixRows = apGetOrderedStaffModules().map(function (m) {
+        // مرکزی سافٹ ویئر کے شعبہ وار مینو جیسا بصری نقشہ۔ ترتیب براہِ راست
+        // اوپر موجود اصل ربن سے آتی ہے، اس لیے نئی ترتیب میں یہ خود ساتھ چلے گا۔
+        var permissionCards = apGetOrderedStaffModules().map(function (m, index) {
             var modOn = perm.modules[m.id];
-            var actCells = window.ADMIN_ACTIONS.map(function (a) {
+            var actionToggles = window.ADMIN_ACTIONS.map(function (a) {
                 var checked = perm.actions[m.id] && perm.actions[m.id][a.id] ? ' checked' : '';
-                return '<td style="text-align:center;"><input type="checkbox" class="ap-act-check" data-mod="' + m.id + '" data-act="' + a.id + '"' + checked + '></td>';
+                return '<label class="ap-perm-action" title="' + a.name + '">' +
+                    '<input type="checkbox" class="ap-act-check" data-mod="' + m.id + '" data-act="' + a.id + '"' + checked + '>' +
+                    '<span><i class="fas ' + a.icon + '"></i> ' + a.name + '</span></label>';
             }).join('');
-            return '<tr data-modrow="' + m.id + '">' +
-                '<td><label class="ap-modrow-label"><input type="checkbox" class="ap-mod-check" data-mod="' + m.id + '"' + (modOn ? ' checked' : '') + '> <i class="fas ' + m.icon + '"></i> ' + m.name + '</label></td>' +
-                actCells +
-                '</tr>';
+            return '<section class="ap-perm-module-card" data-modcard="' + m.id + '">' +
+                '<label class="ap-perm-module-head">' +
+                '<input type="checkbox" class="ap-mod-check" data-mod="' + m.id + '"' + (modOn ? ' checked' : '') + '>' +
+                '<span class="ap-perm-module-icon"><i class="fas ' + m.icon + '"></i></span>' +
+                '<span><small>شعبہ ' + (index + 1) + '</small><strong>' + m.name + '</strong></span>' +
+                '<span class="ap-perm-check-label">اختیار</span></label>' +
+                '<div class="ap-perm-actions">' + actionToggles + '</div>' +
+                '</section>';
         }).join('');
 
         // عارضی اجازت — موجودہ فہرست
@@ -1996,12 +2055,9 @@
             '<button type="button" class="btn btn-outline" onclick="window.apApplyTemplateInModal()" style="white-space:nowrap;">لاگو کریں</button>' +
             '</div></div>' +
 
-            '<div style="background:#f8fafc; padding:6px 12px; border-radius:6px; margin-bottom:10px; font-size:12px; color:#64748b;">' +
-            '<i class="fas fa-info-circle"></i> «فعال» کالم شعبے کو آن کرتا ہے؛ ہر عمل (دیکھیں/بنائیں/ترمیم/حذف/رپورٹ) الگ سے کنٹرول ہوتا ہے۔</div>' +
-
-            '<div class="table-responsive"><table class="data-table ap-matrix">' +
-            '<thead><tr><th style="text-align:right;">شعبہ (فعال)</th>' + actionHead + '</tr></thead>' +
-            '<tbody>' + matrixRows + '</tbody></table></div>' +
+            '<div class="ap-perm-map-note"><i class="fas fa-info-circle"></i> یہ نقشہ سافٹ ویئر کے اصل شعبوں کی ترتیب میں ہے۔ جس شعبے کا اختیار دینا ہو اسے چیک کریں؛ غیر چیک شعبہ اور اس کے تمام کام بند رہیں گے۔</div>' +
+            '<div class="ap-software-permission-map" role="group" aria-label="سافٹ ویئر کے شعبوں کا اجازت نقشہ">' + permissionCards + '</div>' +
+            '<p id="ap-staff-save-status" class="ap-perm-save-status" role="status" aria-live="polite"></p>' +
 
             '<div class="ap-temp-section">' +
             '<h4 style="margin:14px 0 8px;"><i class="fas fa-clock"></i> عارضی اجازت دیں</h4>' +
@@ -2034,6 +2090,30 @@
         var saveBtn = document.getElementById('ap-staff-save-btn');
         if (saveBtn) saveBtn.onclick = function () { window.apSaveStaffPerm(staffId); };
 
+        body.onchange = function (event) {
+            var target = event && event.target;
+            if (!target || (!target.classList.contains('ap-mod-check') && !target.classList.contains('ap-act-check'))) return;
+            var mod = target.getAttribute('data-mod');
+            var moduleCheck = body.querySelector('.ap-mod-check[data-mod="' + mod + '"]');
+            var actionChecks = Array.prototype.slice.call(body.querySelectorAll('.ap-act-check[data-mod="' + mod + '"]'));
+            var viewCheck = body.querySelector('.ap-act-check[data-mod="' + mod + '"][data-act="view"]');
+            if (target.classList.contains('ap-mod-check')) {
+                if (!target.checked) actionChecks.forEach(function (cb) { cb.checked = false; });
+                else if (viewCheck) viewCheck.checked = true;
+                return;
+            }
+            if (target.checked) {
+                if (moduleCheck) moduleCheck.checked = true;
+                if (viewCheck) viewCheck.checked = true;
+            } else if (target.getAttribute('data-act') === 'view'
+                && actionChecks.some(function (cb) { return cb !== target && cb.checked; })) {
+                target.checked = true;
+                apToast('کسی کام کے اختیار کے ساتھ «دیکھیں» کی اجازت لازم ہے۔', 'warning');
+            } else if (!actionChecks.some(function (cb) { return cb.checked; }) && moduleCheck) {
+                moduleCheck.checked = false;
+            }
+        };
+
         if (typeof window.openModal === 'function') window.openModal('ap-staff-modal');
     };
 
@@ -2060,7 +2140,7 @@
         if (!mod || !act) return;
 
         var perms = getAllPerms();
-        var p = migratePerm(perms[staffId], staffId);
+        var p = migratePerm(apDeepClone(perms[staffId]), staffId);
         var key = mod + '.' + act;
         var expiryMs = Date.now() + dur * 86400000;
         var expiry = new Date(expiryMs).toISOString();
@@ -2072,20 +2152,22 @@
             at: apNow()
         });
         p.updatedAt = apNow();
-        perms[staffId] = p;
-        saveAllPerms(perms);
-        apToast(dur + ' دن کی عارضی اجازت دے دی گئی۔', 'success');
-
-        var listEl = document.getElementById('ap-temp-list');
-        if (listEl) listEl.innerHTML = apRenderTempList(p);
-        window.apRenderStaffTable();
-        window.apRenderHistory();
-        apRefreshDashboardLocal();
+        apToast('عارضی اجازت فائر بیس پر محفوظ ہو رہی ہے…', 'warning');
+        apCommitStaffPermission(staffId, p, perms).then(function () {
+            apToast(dur + ' دن کی عارضی اجازت دے دی گئی۔', 'success');
+            var listEl = document.getElementById('ap-temp-list');
+            if (listEl) listEl.innerHTML = apRenderTempList(p);
+            window.apRenderStaffTable();
+            window.apRenderHistory();
+            apRefreshDashboardLocal();
+        }).catch(function () {
+            apToast('عارضی اجازت محفوظ نہیں ہوئی؛ فائر بیس رابطہ چیک کریں۔', 'error');
+        });
     };
 
     window.apRemoveTemp = function (staffId, key) {
         var perms = getAllPerms();
-        var p = migratePerm(perms[staffId], staffId);
+        var p = migratePerm(apDeepClone(perms[staffId]), staffId);
         if (p.temporary[key]) {
             delete p.temporary[key];
             p.history.push({
@@ -2095,14 +2177,16 @@
                 at: apNow()
             });
             p.updatedAt = apNow();
-            perms[staffId] = p;
-            saveAllPerms(perms);
-            apToast('عارضی اجازت ہٹا دی گئی۔', 'warning');
-            var listEl = document.getElementById('ap-temp-list');
-            if (listEl) listEl.innerHTML = apRenderTempList(p);
-            window.apRenderStaffTable();
-            window.apRenderHistory();
-            apRefreshDashboardLocal();
+            apCommitStaffPermission(staffId, p, perms).then(function () {
+                apToast('عارضی اجازت ہٹا دی گئی۔', 'warning');
+                var listEl = document.getElementById('ap-temp-list');
+                if (listEl) listEl.innerHTML = apRenderTempList(p);
+                window.apRenderStaffTable();
+                window.apRenderHistory();
+                apRefreshDashboardLocal();
+            }).catch(function () {
+                apToast('عارضی اجازت نہیں ہٹی؛ فائر بیس نے تبدیلی قبول نہیں کی۔', 'error');
+            });
         }
     };
 
@@ -2129,7 +2213,7 @@
 
     window.apSaveStaffPerm = function (staffId) {
         var perms = getAllPerms();
-        var oldP = migratePerm(perms[staffId], staffId);
+        var oldP = migratePerm(apDeepClone(perms[staffId]), staffId);
 
         var newModules = {};
         var newActions = {};
@@ -2144,6 +2228,18 @@
             var mod = cb.getAttribute('data-mod');
             var act = cb.getAttribute('data-act');
             if (newActions[mod]) newActions[mod][act] = cb.checked;
+        });
+
+        // بے معنی یا خطرناک امتزاج نہ بننے دیں: کوئی بھی عملی اختیار ہو تو
+        // متعلقہ شعبہ اور اس کا دیکھنے کا اختیار بھی لازماً فعال ہو۔
+        apGetOrderedStaffModules().forEach(function (m) {
+            var hasAnyAction = window.ADMIN_ACTIONS.some(function (a) { return newActions[m.id][a.id] === true; });
+            if (hasAnyAction) {
+                newModules[m.id] = true;
+                newActions[m.id].view = true;
+            } else if (newModules[m.id]) {
+                newActions[m.id].view = true;
+            }
         });
 
         // تبدیلیوں کی ہسٹری (diff)
@@ -2178,9 +2274,11 @@
             });
         }
 
-        perms[staffId] = oldP;
-        saveAllPerms(perms).then(function () {
-            return apPushPermissionDoc('StaffPermissions', staffId, oldP);
+        apSetPermissionSaveState('staff', true, 'فائر بیس پر اجازت نامہ محفوظ اور تصدیق ہو رہا ہے…', false);
+        apPushPermissionDoc('StaffPermissions', staffId, oldP, { strict: true }).then(function (docRes) {
+            // براہِ راست کلاؤڈ کامیابی کے بعد ہی مقامی نقل بدلیں۔
+            perms[staffId] = oldP;
+            return Promise.resolve(saveAllPerms(perms)).then(function () { return docRes; });
         }).then(function (docRes) {
             return apPushStaffClaimsForStaffId(staffId).then(function (syncRes) {
                 return { docRes: docRes, syncRes: syncRes };
@@ -2188,19 +2286,21 @@
         }).then(function (pack) {
             return apConfirmCloudPushAfterPermSave().then(function (pushRes) {
                 var msg = changes.length > 0 ? 'اجازتیں محفوظ (' + changes.length + ' تبدیلیاں)۔' : 'محفوظ ہو گیا (کوئی تبدیلی نہیں)۔';
-                if (pack && pack.docRes && pack.docRes.ok) msg += ' کلاؤڈ پر بھی بھیج دیا۔';
-                else if (pack && pack.docRes && pack.docRes.ok === false) msg += ' ⚠️ کلاؤڈ دستاویز ناکام — سنک چیک کریں۔';
+                if (pack && pack.docRes && pack.docRes.ok) msg += ' فائر بیس سے تصدیق ہو گئی۔';
                 if (pack && pack.syncRes && pack.syncRes.synced) msg += ' JWT claims تازہ۔';
                 if (pushRes && pushRes.ok === false) msg += ' قطار سنک زیر التواء۔';
-                apToast(msg, (pack && pack.docRes && pack.docRes.ok === false) ? 'warning' : 'success');
+                apSetPermissionSaveState('staff', false, 'محفوظ: فائر بیس نے تبدیلی قبول کر لی۔', false);
+                apToast(msg, 'success');
+                if (typeof window.closeModal === 'function') window.closeModal('ap-staff-modal');
+                window.apRenderStaffTable();
+                window.apRenderHistory();
+                apRefreshDashboardLocal();
             });
-        }).catch(function () {
-            apToast('اجازتیں مقامی محفوظ ہوئیں؛ کلاؤڈ سنک ناکام۔', 'warning');
+        }).catch(function (err) {
+            var detail = (err && err.message) ? err.message : 'نامعلوم خرابی';
+            apSetPermissionSaveState('staff', false, 'محفوظ نہیں ہوا: ' + detail, true);
+            apToast('اجازت نامہ محفوظ نہیں ہوا؛ فائر بیس رابطہ یا مالک کا اختیار چیک کریں۔', 'error');
         });
-        if (typeof window.closeModal === 'function') window.closeModal('ap-staff-modal');
-        window.apRenderStaffTable();
-        window.apRenderHistory();
-        apRefreshDashboardLocal();
     };
 
     // -------------------------- فی عملہ ہسٹری ماڈل ---------------------------
@@ -2277,19 +2377,6 @@
             date: new Date().toISOString().split('T')[0],
             createdVia: 'admin-panel'
         };
-        if (typeof window.emsRegRepoUpsert === 'function') {
-            try {
-                var upsertRes = window.emsRegRepoUpsert(newUser);
-                if (upsertRes && typeof upsertRes.then === 'function') {
-                    upsertRes.catch(function () { /* ignore */ });
-                }
-            } catch (eUpsert) { /* fall through to legacy */ }
-        } else {
-            var users = getUsers().slice();
-            users.push(newUser);
-            try { localStorage.setItem(DB_USERS, JSON.stringify(users)); } catch (eSet) { /* ignore */ }
-        }
-
         var perms = getAllPerms();
         var p = defaultPerm(newId);
         p.history.push({ type: 'created', detail: 'اکاؤنٹ ایڈمن پینل سے بنایا', by: apCurrentAdmin(), at: apNow() });
@@ -2298,14 +2385,23 @@
             applyTemplateActions(p, templateKey);
             p.history.push({ type: 'template_applied', detail: 'ٹیمپلیٹ: ' + window.ADMIN_TEMPLATES[templateKey].name, by: apCurrentAdmin(), at: apNow() });
         }
-        perms[newId] = p;
-        saveAllPerms(perms);
-
-        apToast('نیا عملہ «' + name + '» (' + newId + ') شامل ہو گیا۔', 'success');
-        if (typeof window.closeModal === 'function') window.closeModal('ap-create-modal');
-        window.apRenderStaffTable();
-        window.apRenderHistory();
-        apRefreshDashboardLocal();
+        apCommitStaffPermission(newId, p, perms).then(function () {
+            if (typeof window.emsRegRepoUpsert === 'function') {
+                return Promise.resolve(window.emsRegRepoUpsert(newUser));
+            }
+            var users = getUsers().slice();
+            users.push(newUser);
+            localStorage.setItem(DB_USERS, JSON.stringify(users));
+            return null;
+        }).then(function () {
+            apToast('نیا عملہ «' + name + '» (' + newId + ') اور اس کا اختیار فائر بیس پر محفوظ ہو گیا۔', 'success');
+            if (typeof window.closeModal === 'function') window.closeModal('ap-create-modal');
+            window.apRenderStaffTable();
+            window.apRenderHistory();
+            apRefreshDashboardLocal();
+        }).catch(function () {
+            apToast('نیا عملہ مکمل طور پر محفوظ نہیں ہوا؛ دوبارہ کوشش کریں۔', 'error');
+        });
     };
 
     // ========================================================================
@@ -2424,7 +2520,7 @@
     /** Phase 3: parent portal access on/off without deleting views */
     window.apToggleParentStatus = function (studentId) {
         var perms = getAllParentPerms();
-        var p = migrateParentPerm(perms[studentId], studentId);
+        var p = migrateParentPerm(apDeepClone(perms[studentId]), studentId);
         p.status = (p.status === 'active') ? 'disabled' : 'active';
         p.updatedAt = apNow();
         p.updatedBy = apCurrentAdmin();
@@ -2435,19 +2531,15 @@
             by: apCurrentAdmin(),
             at: apNow()
         });
-        perms[studentId] = p;
-        Promise.resolve(saveAllParentPerms(perms)).then(function () {
-            return apPushPermissionDoc('ParentPermissions', studentId, p);
-        }).then(function () {
+        apToast('فائر بیس پر حالت بدلی جا رہی ہے…', 'warning');
+        apCommitParentPermission(studentId, p, perms).then(function () {
             return apConfirmCloudPushAfterPermSave();
         }).then(function () {
             apToast(p.status === 'active' ? 'والدین رسائی فعال۔' : 'والدین رسائی بند۔', p.status === 'active' ? 'success' : 'warning');
             window.apRenderParentsTable();
             apRefreshDashboardLocal();
         }).catch(function () {
-            apToast('اسٹیٹس محفوظ ہوا؛ کلاؤڈ سنک چیک کریں۔', 'warning');
-            window.apRenderParentsTable();
-            apRefreshDashboardLocal();
+            apToast('والدین کی حالت نہیں بدلی؛ فائر بیس نے تبدیلی قبول نہیں کی۔', 'error');
         });
     };
 
@@ -2461,9 +2553,10 @@
 
         var viewsHTML = window.PARENT_VIEWS.map(function (pv) {
             var checked = perm.views[pv.id] ? ' checked' : '';
-            return '<label class="ap-mod-toggle">' +
+            return '<label class="ap-parent-view-card">' +
                 '<input type="checkbox" class="ap-pview-check" data-view="' + pv.id + '"' + checked + '>' +
-                '<span><i class="fas ' + pv.icon + '"></i> ' + pv.name + '</span>' +
+                '<span class="ap-parent-view-icon"><i class="fas ' + pv.icon + '"></i></span>' +
+                '<span><strong>' + pv.name + '</strong><small>والدین پورٹل میں یہ خانہ دکھائیں</small></span>' +
                 '</label>';
         }).join('');
 
@@ -2487,8 +2580,10 @@
             '<input type="email" id="ap-parent-link-email" class="input-control" placeholder="parent@example.com" value="' + (perm.parentEmail || '') + '" style="direction:ltr; margin-bottom:8px;">' +
             '<button type="button" class="btn btn-outline btn-sm" onclick="window.apLinkParentAccount(\'' + studentId + '\')"><i class="fas fa-user-check"></i> صرف Link</button>' +
 
-            '<h4 style="margin:14px 0 6px;"><i class="fas fa-eye"></i> ② مستقل رسائی (Views)</h4>' +
-            '<div class="ap-mod-grid">' + viewsHTML + '</div>' +
+            '<h4 style="margin:14px 0 6px;"><i class="fas fa-eye"></i> ② والدین پورٹل کا ظاہری نقشہ</h4>' +
+            '<p class="ap-perm-map-note"><i class="fas fa-info-circle"></i> جو معلومات والدین کو دکھانی ہوں انہیں چیک کریں؛ باقی خانے غیر چیک رہنے دیں۔</p>' +
+            '<div class="ap-parent-view-map" role="group" aria-label="والدین پورٹل معلوماتی اختیارات">' + viewsHTML + '</div>' +
+            '<p id="ap-parent-save-status" class="ap-perm-save-status" role="status" aria-live="polite"></p>' +
 
             '<div class="ap-temp-section">' +
             '<h4 style="margin:10px 0 8px;"><i class="fas fa-clock"></i> عارضی رسائی دیں</h4>' +
@@ -2550,7 +2645,7 @@
         setStatus('① Link بن رہا ہے...');
         window.emsCreateParentLink(uid, studentId, email).then(function () {
             var perms = getAllParentPerms();
-            var oldP = migrateParentPerm(perms[studentId], studentId);
+            var oldP = migrateParentPerm(apDeepClone(perms[studentId]), studentId);
             var newViews = {};
             viewChecks.forEach(function (cb) {
                 newViews[cb.getAttribute('data-view')] = !!cb.checked;
@@ -2566,11 +2661,8 @@
                 by: apCurrentAdmin(),
                 at: apNow()
             });
-            perms[studentId] = oldP;
-            setStatus('② Views محفوظ / کلاؤڈ...');
-            return Promise.resolve(saveAllParentPerms(perms)).then(function () {
-                return apPushPermissionDoc('ParentPermissions', studentId, oldP);
-            }).then(function () {
+            setStatus('② اختیارات فائر بیس پر محفوظ ہو رہے ہیں...');
+            return apCommitParentPermission(studentId, oldP, perms).then(function () {
                 return apConfirmCloudPushAfterPermSave();
             }).then(function () {
                 setStatus('③ Access Key جاری...');
@@ -2613,7 +2705,7 @@
         var dur = parseInt((document.getElementById('ap-ptemp-dur') || {}).value, 10) || 1;
         if (!vid) return;
         var perms = getAllParentPerms();
-        var p = migrateParentPerm(perms[studentId], studentId);
+        var p = migrateParentPerm(apDeepClone(perms[studentId]), studentId);
         p.temporary[vid] = {
             expiry: new Date(Date.now() + dur * 86400000).toISOString(),
             expiryAt: Date.now() + dur * 86400000,
@@ -2623,35 +2715,39 @@
         };
         p.history.push({ type: 'temp_granted', detail: 'عارضی رسائی (' + dur + ' دن): ' + apParentViewName(vid), by: apCurrentAdmin(), at: apNow() });
         p.updatedAt = apNow();
-        perms[studentId] = p;
-        saveAllParentPerms(perms);
-        apToast(dur + ' دن کی عارضی رسائی دے دی گئی۔', 'success');
-        var listEl = document.getElementById('ap-ptemp-list');
-        if (listEl) listEl.innerHTML = apRenderParentTempList(p);
-        window.apRenderParentsTable();
-        apRefreshDashboardLocal();
-    };
-
-    window.apRemoveParentTemp = function (studentId, vid) {
-        var perms = getAllParentPerms();
-        var p = migrateParentPerm(perms[studentId], studentId);
-        if (p.temporary[vid]) {
-            delete p.temporary[vid];
-            p.history.push({ type: 'temp_removed', detail: 'عارضی رسائی ہٹائی: ' + apParentViewName(vid), by: apCurrentAdmin(), at: apNow() });
-            p.updatedAt = apNow();
-            perms[studentId] = p;
-            saveAllParentPerms(perms);
-            apToast('عارضی رسائی ہٹا دی گئی۔', 'warning');
+        apCommitParentPermission(studentId, p, perms).then(function () {
+            apToast(dur + ' دن کی عارضی رسائی دے دی گئی۔', 'success');
             var listEl = document.getElementById('ap-ptemp-list');
             if (listEl) listEl.innerHTML = apRenderParentTempList(p);
             window.apRenderParentsTable();
             apRefreshDashboardLocal();
+        }).catch(function () {
+            apToast('عارضی رسائی محفوظ نہیں ہوئی؛ فائر بیس رابطہ چیک کریں۔', 'error');
+        });
+    };
+
+    window.apRemoveParentTemp = function (studentId, vid) {
+        var perms = getAllParentPerms();
+        var p = migrateParentPerm(apDeepClone(perms[studentId]), studentId);
+        if (p.temporary[vid]) {
+            delete p.temporary[vid];
+            p.history.push({ type: 'temp_removed', detail: 'عارضی رسائی ہٹائی: ' + apParentViewName(vid), by: apCurrentAdmin(), at: apNow() });
+            p.updatedAt = apNow();
+            apCommitParentPermission(studentId, p, perms).then(function () {
+                apToast('عارضی رسائی ہٹا دی گئی۔', 'warning');
+                var listEl = document.getElementById('ap-ptemp-list');
+                if (listEl) listEl.innerHTML = apRenderParentTempList(p);
+                window.apRenderParentsTable();
+                apRefreshDashboardLocal();
+            }).catch(function () {
+                apToast('عارضی رسائی نہیں ہٹی؛ فائر بیس نے تبدیلی قبول نہیں کی۔', 'error');
+            });
         }
     };
 
     window.apSaveParentPerm = function (studentId) {
         var perms = getAllParentPerms();
-        var oldP = migrateParentPerm(perms[studentId], studentId);
+        var oldP = migrateParentPerm(apDeepClone(perms[studentId]), studentId);
         var newViews = emptyParentViews();
         document.querySelectorAll('#ap-parent-modal-body .ap-pview-check').forEach(function (cb) {
             newViews[cb.getAttribute('data-view')] = cb.checked;
@@ -2674,23 +2770,26 @@
         if (changes.length > 0) {
             oldP.history.push({ type: 'views_changed', detail: changes.join(' | '), by: apCurrentAdmin(), at: apNow() });
         }
-        perms[studentId] = oldP;
-        Promise.resolve(saveAllParentPerms(perms)).then(function () {
-            return apPushPermissionDoc('ParentPermissions', studentId, oldP);
+        apSetPermissionSaveState('parent', true, 'فائر بیس پر والدین کا اختیار محفوظ اور تصدیق ہو رہا ہے…', false);
+        apPushPermissionDoc('ParentPermissions', studentId, oldP, { strict: true }).then(function (docRes) {
+            perms[studentId] = oldP;
+            return Promise.resolve(saveAllParentPerms(perms)).then(function () { return docRes; });
         }).then(function (docRes) {
             return apConfirmCloudPushAfterPermSave().then(function (pushRes) {
                 var msg = changes.length > 0 ? 'رسائی محفوظ (' + changes.length + ' تبدیلیاں)۔' : 'محفوظ ہو گیا۔';
-                if (docRes && docRes.ok) msg += ' کلاؤڈ پر بھی بھیج دیا۔';
-                else if (docRes && docRes.ok === false) msg += ' ⚠️ کلاؤڈ دستاویز ناکام — سنک چیک کریں۔';
+                if (docRes && docRes.ok) msg += ' فائر بیس سے تصدیق ہو گئی۔';
                 if (pushRes && pushRes.ok === false) msg += ' قطار سنک زیر التواء۔';
-                apToast(msg, (docRes && docRes.ok === false) ? 'warning' : 'success');
+                apSetPermissionSaveState('parent', false, 'محفوظ: فائر بیس نے تبدیلی قبول کر لی۔', false);
+                apToast(msg, 'success');
+                if (typeof window.closeModal === 'function') window.closeModal('ap-parent-modal');
+                window.apRenderParentsTable();
+                apRefreshDashboardLocal();
             });
-        }).catch(function () {
-            apToast('رسائی مقامی محفوظ ہوئی؛ کلاؤڈ سنک ناکام۔', 'warning');
+        }).catch(function (err) {
+            var detail = (err && err.message) ? err.message : 'نامعلوم خرابی';
+            apSetPermissionSaveState('parent', false, 'محفوظ نہیں ہوا: ' + detail, true);
+            apToast('والدین کا اختیار محفوظ نہیں ہوا؛ فائر بیس رابطہ یا مالک کا اختیار چیک کریں۔', 'error');
         });
-        if (typeof window.closeModal === 'function') window.closeModal('ap-parent-modal');
-        window.apRenderParentsTable();
-        apRefreshDashboardLocal();
     };
 
     window.apOpenParentHistory = function (studentId) {
@@ -3241,11 +3340,13 @@
         }
         window.emsCreateParentLink(uid, studentId, email).then(function () {
             var perms = getAllParentPerms();
-            var p = migrateParentPerm(perms[studentId], studentId);
+            var p = migrateParentPerm(apDeepClone(perms[studentId]), studentId);
             p.parentEmail = email.toLowerCase();
-            perms[studentId] = p;
-            saveAllParentPerms(perms);
-            apToast('Parent Link بھیج دیا گیا۔', 'success');
+            p.updatedAt = apNow();
+            p.updatedBy = apCurrentAdmin();
+            return apCommitParentPermission(studentId, p, perms);
+        }).then(function () {
+            apToast('والدین کا رابطہ اور اختیار فائر بیس پر محفوظ ہو گیا۔', 'success');
         }).catch(function (e) { apToast('Link ناکام: ' + e.message, 'error'); });
     };
 
@@ -3274,6 +3375,79 @@
         }).catch(function (e) {
             apToast('سنک ناکام: ' + (e && e.message ? e.message : String(e)), 'error');
             apRenderSyncStatus();
+        });
+    };
+
+    /**
+     * صرف کنٹرول پینل کے عملہ/والدین اختیار نامے Firestore سے واپس لائیں۔
+     * حاضری، نظام الاوقات یا کسی دوسرے شعبے کی کنجی اس راستے میں شامل نہیں۔
+     */
+    window.apPullControlPanelFromCloud = function (button) {
+        var status = document.getElementById('ap-cloud-pull-status');
+        function setStatus(message, isError) {
+            if (!status) return;
+            status.textContent = message || '';
+            status.style.color = isError ? '#b91c1c' : '#047857';
+        }
+        if (!navigator.onLine) {
+            setStatus('انٹرنیٹ دستیاب نہیں؛ فائر بیس سے اختیارات نہیں لائے جا سکتے۔', true);
+            apToast('انٹرنیٹ دستیاب نہیں۔', 'error');
+            return Promise.resolve({ ok: false, offline: true });
+        }
+        if (!window.EmsDirect || typeof window.EmsDirect.pullKey !== 'function') {
+            setStatus('فائر بیس بحالی کی خدمت دستیاب نہیں۔', true);
+            apToast('فائر بیس بحالی کی خدمت دستیاب نہیں۔', 'error');
+            return Promise.resolve({ ok: false, unavailable: true });
+        }
+        var confirmed = window.confirm(
+            'فائر بیس سے عملہ اور والدین کے محفوظ اختیارات واپس لائے جائیں گے۔\n\n' +
+            'موجودہ مقامی اختیارات کی حفاظتی نقل پہلے بنے گی۔ حاضری اور نظام الاوقات میں کوئی تبدیلی نہیں ہوگی۔\n\nجاری رکھیں؟'
+        );
+        if (!confirmed) return Promise.resolve({ ok: false, cancelled: true });
+
+        var tenantId = (typeof window.emsGetTenantId === 'function' && window.emsGetTenantId()) || apGetUid() || 'unknown';
+        var backupKey = 'ems_control_panel_before_cloud_pull_' + tenantId + '_' + Date.now();
+        try {
+            localStorage.setItem(backupKey, JSON.stringify({
+                tenantId: tenantId,
+                createdAt: apNow(),
+                staffPermissions: getAllPerms(),
+                parentPermissions: getAllParentPerms()
+            }));
+        } catch (backupError) {
+            setStatus('حفاظتی نقل نہیں بن سکی؛ بحالی روک دی گئی۔', true);
+            apToast('حفاظتی نقل نہ بننے کی وجہ سے بحالی روک دی گئی۔', 'error');
+            return Promise.resolve({ ok: false, backupFailed: true });
+        }
+
+        var oldHtml = button && button.innerHTML;
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> فائر بیس سے لایا جا رہا ہے…';
+        }
+        setStatus('فائر بیس سے عملہ اور والدین کے اختیارات لائے جا رہے ہیں…', false);
+        var opts = { delta: false, forceFull: true, forceApply: true };
+        return Promise.all([
+            window.EmsDirect.pullKey(DB_STAFF_PERM, opts),
+            window.EmsDirect.pullKey(DB_PARENT_PERM, opts)
+        ]).then(function (results) {
+            window.apRenderStaffTable();
+            window.apRenderParentsTable();
+            window.apRenderHistory();
+            apRefreshDashboardLocal();
+            setStatus('فائر بیس سے کنٹرول پینل کے اختیارات بحال ہو گئے۔ حفاظتی نقل: ' + backupKey, false);
+            apToast('عملہ اور والدین کے اختیارات فائر بیس سے بحال ہو گئے۔', 'success');
+            return { ok: true, staff: !!results[0], parents: !!results[1], backupKey: backupKey };
+        }).catch(function (err) {
+            var detail = (err && err.message) ? err.message : 'نامعلوم خرابی';
+            setStatus('فائر بیس سے اختیارات نہیں لائے جا سکے: ' + detail, true);
+            apToast('فائر بیس سے اختیارات لانے میں خرابی آئی۔', 'error');
+            return { ok: false, error: detail, backupKey: backupKey };
+        }).finally(function () {
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = oldHtml || '<i class="fas fa-cloud-download-alt"></i> فائر بیس سے اختیارات لائیں';
+            }
         });
     };
 

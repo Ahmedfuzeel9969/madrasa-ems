@@ -255,7 +255,9 @@
         var staffId = getStaffIdForAccess();
         if (!staffId) return false;
         var perm = resolveStaffPerm(staffId);
-        if (!perm || perm.status === 'suspended') return false;
+        // صرف صریح فعال اجازت نامہ قابلِ استعمال ہے۔ پرانا `disabled`
+        // اسٹیٹس پہلے یہاں سے گزر جاتا تھا، جس سے بند عملہ پھر بھی رسائی پا سکتا تھا۔
+        if (!perm || (perm.status || 'active') !== 'active') return false;
         var mods = perm.modules || {};
         var keys = Object.keys(mods);
         for (var i = 0; i < keys.length; i++) {
@@ -277,7 +279,7 @@
         var staffId = getStaffIdForAccess();
         if (!staffId) return [];
         var perm = resolveStaffPerm(staffId);
-        if (!perm || perm.status === 'suspended') return [];
+        if (!perm || (perm.status || 'active') !== 'active') return [];
         var out = [];
         var catalogue = global.ADMIN_STAFF_MODULES || [];
         catalogue.forEach(function (m) {
@@ -310,7 +312,7 @@
         }
 
         var perm = resolveStaffPerm(staffId);
-        if (!perm || perm.status === 'suspended') return false;
+        if (!perm || (perm.status || 'active') !== 'active') return false;
 
         // Permanent permission must match the server rule exactly: the module
         // and the requested action must both be enabled. A module heading alone

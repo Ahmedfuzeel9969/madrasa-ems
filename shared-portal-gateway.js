@@ -11,6 +11,7 @@
     var FEATURE_FLAG = 'EMS_SHARED_PORTAL_GATEWAY_ENABLED';
     var EXCHANGE_KEY = 'ems_shared_portal_exchange_v1';
     var LOOP_KEY = 'ems_shared_portal_loop_v1';
+    var OWNER_TEST_KEY = 'ems_shared_portal_owner_test_v1';
     var LOOP_WINDOW_MS = 5 * 60 * 1000;
     var LOOP_LIMIT = 3;
     var RENEW_LEAD_MS = 5 * 60 * 1000;
@@ -229,6 +230,15 @@
 
     function clearLoopGuard() {
         removeSessionKey(LOOP_KEY);
+    }
+
+    function getOwnerTestMarker() {
+        var marker = readSessionJson(OWNER_TEST_KEY);
+        if (!marker || !marker.at || Date.now() - marker.at > 10 * 60 * 1000) {
+            removeSessionKey(OWNER_TEST_KEY);
+            return null;
+        }
+        return marker;
     }
 
     function normalizeEmail(value) {
@@ -930,6 +940,19 @@
         if (!user || !user.uid) return Promise.resolve({ handled: false });
 
         var portal = intendedPortal();
+        var ownerTest = getOwnerTestMarker();
+        if (ownerTest && ownerTest.portal === portal
+            && normalizeEmail(user.email) !== normalizeEmail(ownerTest.email)) {
+            markRawGateway(user, {}, portal);
+            showBlockedGateway(
+                'دوسرا گوگل اکاؤنٹ منتخب ہوا',
+                'آپ نے ' + normalizeEmail(user.email) + ' منتخب کیا، جبکہ کنٹرول پینل میں ' +
+                normalizeEmail(ownerTest.email) + ' محفوظ ہے۔ «گوگل اکاؤنٹ تبدیل کریں» دباکر عین محفوظ کھاتہ منتخب کریں۔',
+                false
+            );
+            return Promise.resolve({ handled: true, blocked: true, reason: 'owner-test-email-mismatch' });
+        }
+        if (ownerTest && ownerTest.portal === portal) removeSessionKey(OWNER_TEST_KEY);
         var resume = maybeResumePrincipal(user, portal);
         return resume.then(function (principalResult) {
             if (principalResult) {
@@ -1070,6 +1093,31 @@
         });
     }
 
+    function launchOwnerPortalTest(portal, email) {
+        email = normalizeEmail(email);
+        if (!validPortal(portal) || !validEmail(email)) {
+            return Promise.reject(makeError('invalid-argument', 'اس پورٹل کا محفوظ گوگل ای میل درست نہیں۔'));
+        }
+        if (!global.confirm(
+            'کنٹرول پینل سے عارضی طور پر باہر نکل کر ' + portalLabel(portal) + ' آزمایا جائے گا۔\n\n' +
+            'گوگل کی فہرست میں عین یہی کھاتہ منتخب کریں:\n' + email + '\n\nجاری رکھیں؟'
+        )) return Promise.resolve({ cancelled: true });
+
+        writeSessionJson(OWNER_TEST_KEY, { portal: portal, email: email, at: Date.now() });
+        if (typeof global.emsSetIntendedPortal === 'function') global.emsSetIntendedPortal(portal);
+        var auth = getAuth();
+        global.EMS_EXPLICIT_SIGNOUT = true;
+        return (auth ? auth.signOut() : Promise.resolve()).then(function () {
+            if (typeof global.emsClearTenantContext === 'function') global.emsClearTenantContext();
+            if (typeof global.emsShowLanding === 'function') global.emsShowLanding();
+            setTimeout(function () {
+                var card = document.querySelector('.ems-portal-card[data-portal="' + portal + '"]');
+                if (card && typeof card.click === 'function') card.click();
+            }, 120);
+            return { started: true, portal: portal };
+        });
+    }
+
     function resolveMount(target) {
         if (typeof target === 'string') return document.getElementById(target);
         return target && target.nodeType === 1 ? target : null;
@@ -1167,8 +1215,14 @@
         save.type = 'button';
         var reload = node('button', 'ems-spg-btn ems-spg-secondary', 'دوبارہ لوڈ کریں');
         reload.type = 'button';
+        var teacherTest = node('button', 'ems-spg-btn ems-spg-secondary', 'اساتذہ پورٹل آزمائیں');
+        teacherTest.type = 'button';
+        var parentTest = node('button', 'ems-spg-btn ems-spg-secondary', 'والدین پورٹل آزمائیں');
+        parentTest.type = 'button';
         actions.appendChild(save);
         actions.appendChild(reload);
+        actions.appendChild(teacherTest);
+        actions.appendChild(parentTest);
         box.appendChild(actions);
         mount.appendChild(box);
 
@@ -1188,6 +1242,8 @@
             teacher.input.disabled = mode !== MODES.SEPARATE;
             student.input.disabled = mode !== MODES.SEPARATE;
             parent.input.disabled = mode !== MODES.SEPARATE;
+            teacherTest.hidden = mode === MODES.INDIVIDUAL;
+            parentTest.hidden = mode === MODES.INDIVIDUAL;
         }
 
         function readForm() {
@@ -1218,6 +1274,8 @@
         function setBusy(busy) {
             save.disabled = !!busy;
             reload.disabled = !!busy;
+            teacherTest.disabled = !!busy;
+            parentTest.disabled = !!busy;
             Object.keys(modeInputs).forEach(function (key) { modeInputs[key].disabled = !!busy; });
             [single.input, teacher.input, student.input, parent.input].forEach(function (input) {
                 if (busy) input.disabled = true;
@@ -1274,6 +1332,18 @@
         });
         save.addEventListener('click', function () { saveConfig().catch(function () { /* UI has error */ }); });
         reload.addEventListener('click', function () { load().catch(function () { /* UI has error */ }); });
+        teacherTest.addEventListener('click', function () {
+            saveConfig().then(function (saved) {
+                var email = saved.mode === MODES.SINGLE ? saved.singleEmail : saved.emails.teacher;
+                return launchOwnerPortalTest(PORTALS.TEACHER, email);
+            }).catch(function () { /* visible status is enough */ });
+        });
+        parentTest.addEventListener('click', function () {
+            saveConfig().then(function (saved) {
+                var email = saved.mode === MODES.SINGLE ? saved.singleEmail : saved.emails.parent;
+                return launchOwnerPortalTest(PORTALS.PARENT, email);
+            }).catch(function () { /* visible status is enough */ });
+        });
         updateFieldVisibility();
 
         var controller = {
@@ -1315,6 +1385,7 @@
     global.emsRenderSharedPortalConfig = renderOwnerConfig;
     global.emsLoadSharedPortalConfig = loadOwnerConfig;
     global.emsSaveSharedPortalConfig = saveOwnerConfig;
+    global.emsLaunchSharedPortalTest = launchOwnerPortalTest;
 
     global.EmsSharedPortalGateway = Object.freeze({
         version: CONFIG_VERSION,
